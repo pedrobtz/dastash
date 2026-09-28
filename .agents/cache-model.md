@@ -183,7 +183,7 @@ therefore not an optimisation — it is forced.** Expiry lives in the *observati
 (Definition 2.4) and `expire()` is purely a resource-management operation that reclaims
 space already semantically dead.
 
-This is the formal content of `design.md` §8.3 and of diskcache's identical behaviour: a
+This is the formal content of `design.md` §4 and §9.1, and of diskcache's identical behaviour: a
 read never has to write in order to respect a deadline, because the deadline was never a
 property of the state in the first place.
 
@@ -242,7 +242,7 @@ opposed to `O(|R|)` — precisely when `≼` is materialised as a sorted structu
 A cull is then "read the first `n` in `≼` order", a bounded scan from one end.
 
 This is the whole reason the index exists, in both SQLite and mdbx. And it is where the
-abstract model touches `design.md` §5: in an ordered key-value store, "materialised as a
+abstract model touches `design.md` §7.4: in an ordered key-value store, "materialised as a
 sorted structure" means *the encoding of `≼`'s ranking function into bytes must be
 order-preserving*. A non-monotone encoding does not produce a slow cull; it produces the
 wrong victims, silently.
@@ -304,7 +304,7 @@ live_t^stale_ok(w)  ≡  t < w.usable_until
 
 | System | Instance |
 |---|---|
-| `diskcache`, `dastash` v1 | `fresh_until = usable_until`; the modes coincide |
+| `diskcache`, `dastash` | `fresh_until = usable_until`; the modes coincide |
 | `polars-diskcache` | `fresh_until = usable_until = ∞`; nothing ever expires |
 | `requests-cache` | the two differ; `stale_ok` is `stale-if-error` |
 | `storr` | `= ∞`, plus Axiom III |
@@ -333,7 +333,7 @@ and the global key space is the **dependent sum**
 K  =  Σ_{d ∈ D} K_d  =  { (d, κ) : d ∈ D, κ ∈ K_d }
 ```
 
-Keys are *total over the schema* (`dastash-design.md` §2.1) precisely because `K_d` is a
+Keys are *total over the schema* (`typed-layer.md` §2.1) precisely because `K_d` is a
 product: a partial assignment is not an element of a product type. And identity is
 domain-separated by dataset because `K` is a sum: `(d,κ)` and `(d',κ)` are distinct
 elements even when `κ` is the same tuple.
@@ -371,7 +371,8 @@ x ≤ y   ⟺   sort_f(x) ≤_lex sort_f(y)
 These are different requirements. `canon` must be injective and *frozen* (it defines
 identity, which cannot be revised once data exists); `sort` must be monotone and may be
 *revised*, because an index is derived and can be rebuilt. Hence they are different
-functions — `design.md` §3.3, and `plan.md`'s `canon_scalar`/`sort_scalar` split, derived.
+functions — `design.md` §7.5, and `typed-layer.md` §4's `canon_scalar`/`sort_scalar` split,
+derived.
 
 ---
 
@@ -395,7 +396,7 @@ and that `set` maintains it by forgetting the prior write. Drop the constraint a
 `R`; `R` shrinks only through explicit `forget`. Writes become monotone in `⊑`, and the
 state becomes a join-semilattice under `∪`.
 
-That is a real structural gain, and it is the reason `dastash-design.md` D2 keeps a
+That is a real structural gain, and it is the reason `typed-layer.md` D2 keeps a
 revision field from day one. Monotone state is mergeable state: two processes that each
 appended writes can be reconciled by union, whereas two processes that each overwrote
 cannot. Versioning is the difference between a structure that can be replicated and one
@@ -425,7 +426,7 @@ in which it is lossy, and precisely why `codec_auto()` must not select it (`desi
 **Result 11.2 (why an identifier forces a lossless codec).** If a system computes anything
 from the *decoded* value and compares it against the key — `identify(dec(enc(v))) ⊑ k` —
 then any collapse in `≈_c` that touches a field `identify` reads becomes a false verdict.
-The requirement in `dastash-design.md` §2.6 is therefore not a quality preference but a
+The requirement in `typed-layer.md` §2.6 is therefore not a quality preference but a
 soundness condition on the composite.
 
 ## 11.2 Artifact identity is not blob identity
@@ -441,7 +442,7 @@ changes the bytes without changing the answer.
 
 So **blob identity strictly refines value identity**. Content addressing therefore
 deduplicates *bytes*, never *values*, and the containment is one-directional. This is
-`dastash-design.md` §2.6 in two lines, and it is why a content hash can be trusted to
+`typed-layer.md` §2.6 in two lines, and it is why a content hash can be trusted to
 answer "is this the file the record means" and cannot be trusted to answer "have I seen
 this value before".
 
@@ -477,7 +478,7 @@ delete:  M := M ∖ k      ;  B := B ∖ h         11.5 holds throughout      �
 
 Hence: **publish the blob before committing the record; commit the deletion before
 unlinking the blob.** These are not two rules but one — *keep `B` a superset of `ran M` at
-every instant* — and every crash window in `design.md` §7 is an application of it. The
+every instant* — and every crash window in `design.md` §8 is an application of it. The
 asymmetry that makes orphans acceptable and dangling references fatal is exactly the
 asymmetry of Invariant 11.5, which is an inclusion, not an equality.
 
@@ -596,13 +597,13 @@ filled in.
 
 | | `diskcache` | `polars-diskcache` | `dastash` | `storr` |
 |---|---|---|---|---|
-| `K` | picklable objects | `sha256(repr(bound args))` | canonical encoding of typed keys | strings |
+| `K` | picklable objects | `sha256(repr(bound args))` | UTF-8 text; the canonical encoding of an R value | strings |
 | `V` | any picklable | `DataFrame`/`LazyFrame` | any R object | any R object |
 | `≈` | pickle round-trip | Parquet round-trip | per codec, declared | RDS round-trip |
 | `dies` | `now + expire` | `∞` | `now + expire` | `∞` |
-| `T` | one tag | — | one tag | — |
-| `D` | — | function identity | v2 (§9) | namespaces |
-| `R` (revisions) | capped at 1 | capped at 1 | capped at 1, field reserved | capped at 1 |
+| `T` | one tag | — | a set of tags | — |
+| `D` | — | function identity | the typed layer (§9) | namespaces |
+| `R` (revisions) | capped at 1 | capped at 1 | capped at 1 | capped at 1 |
 | `≼` | 4 policies | size only | 4 policies | — |
 | `B` addressing | random filename | hash of the **call** | hash of the **content** | hash of the content |
 | Axiom III? | no | no | no | **yes** |
@@ -615,11 +616,11 @@ Three readings fall out:
   limit. Its distinctive choice is `B`'s addressing: hashing the *call* rather than the
   *content* means Result 11.4 does not apply, so it cannot deduplicate and its blob names
   carry no integrity claim.
-- **`dastash` differs from `diskcache`** in exactly three parameters: `≈` is declared per
-  codec rather than fixed by pickle, `B` is content-addressed with transactional refcounts
-  (§11.6), and `K` is a specified injective encoding rather than an opaque pickle. The
-  typed layer of `dastash-design.md` is the further step of giving `K` the structure of
-  §9.
+- **`dastash` differs from `diskcache`** in four parameters: `≈` is declared per codec
+  rather than fixed by pickle, `B` is content-addressed with transactional refcounts
+  (Result 11.6), `K` is a specified injective encoding rather than an opaque pickle, and
+  `T` is a set of tags per write rather than one. The typed layer of `typed-layer.md` is
+  the further step of giving `K` the structure of §9.
 
 ---
 
@@ -638,7 +639,9 @@ Stated so the model is not over-trusted.
 - **Partial reads.** Result 12.2 treats a value as atomic. `polars-diskcache`'s real
   selling point is that a cached `LazyFrame` is *queried in place*, which means the
   observation is not `get(k)` but `q(B(M(k)))` for a query `q`. That is a different and
-  richer model.
+  richer model. `dastash` handles it outside the model, by recording laziness as a
+  `shape` on the record (`design.md` §6.4) — a query over a cached file is sound exactly
+  when the file is, which Invariant 11.5 already guarantees.
 - **Nondeterministic and effectful producers.** The moment `produce` is not a function,
   Result 12.2 fails and single-flight stops being optional. Most real producers — anything
   reading a live external system — are in this category, and the model has nothing to say

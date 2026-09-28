@@ -1,12 +1,10 @@
 # dastash — a disk cache for R
 
-**Status:** design v2, pre-implementation. Written 2026-09-10; §3.1, §7.2, §13 and §15
-revised 2026-09-13 for the engine fixes below. Supersedes `design-v1.md`.
-**Engine:** `mdbx` 0.1.0 — first-party R bindings to libmdbx, <https://github.com/pedrobtz/mdbx>,
-checked out at `../mdbx` and developed alongside this package. Submitted to CRAN, not yet
-accepted at the time of writing. §15 lists what it provides and what dastash asks of 0.2,
-and records the behaviour of [pedrobtz/mdbx#4](https://github.com/pedrobtz/mdbx/pull/4),
-open on 2026-09-13, which fixed issues #2 and #3.
+**Status:** design, pre-implementation. The package skeleton, CI and pkgdown site exist;
+`R/` holds only the package documentation. Revised 2026-09-28 for `mdbx` 0.1.1 on CRAN.
+**Engine:** [`mdbx`](https://github.com/pedrobtz/mdbx) (≥ 0.1.1), first-party R bindings to
+libmdbx, on CRAN. §15 records what it provides, verified by running 0.1.1, and what
+dastash asks of its next release.
 **Model:** Python's [`diskcache`](https://github.com/grantjenks/python-diskcache) for the
 cache, [`polars-diskcache`](https://github.com/lmmx/polars-diskcache) for file-backed
 frames, and the R ecosystem's own conventions for the API.
@@ -29,48 +27,25 @@ surface is one `stash_` prefix away from tab completion.
 
 ---
 
-# 0. Documents
+# 0. Documents and envelope
 
-Seven documents exist. This one is the contract.
+| Document | What it is |
+|---|---|
+| **`design.md`** (this) | The contract: semantics, API, storage, concurrency, engine |
+| `cache-model.md` | The formal model — axioms, `forget_P`, why the orderings of §8 are forced. §4 here is its summary |
+| `prior-art-diskcache.md` | What `diskcache` and `polars-diskcache` do and why people use them |
+| `typed-layer.md` | The deferred typed dataset layer that sits above this cache (§20) |
 
-| Document | What it is | Status |
-|---|---|---|
-| **`design.md`** (this) | The cache: semantics, API, storage, concurrency | **Current contract** |
-| `design-v1.md` | The previous contract: same storage design behind an R6 method API | Superseded. Kept because the three reference documents cite its section numbers |
-| `review.md` | What v1 got right, what it got wrong, and why each change below was made | Companion to this document |
-| `functional-api.md` | The argument for a functional surface | Absorbed into §2–§3; where it differs, this document wins |
-| `cache-model.md` | The formal model: axioms, `forget_P`, why the orderings in §8 are forced | Reference. §4 here is its summary |
-| `prior-art-diskcache.md` | What `diskcache` and `polars-diskcache` do and why people use them | Reference |
-| `dastash-design.md`, `plan.md` | A *typed artifact store* — schemas, producers, identifiers — and its plan | Deferred. It is a layer above this cache; §20 |
+Earlier drafts — the first contract behind an R6 method API, its review, the argument for
+a functional API, and the design and plan of a typed artifact store — were folded into
+these four on 2026-09-28 and removed. They are in git history at commit `c7216c9`. Where a
+decision here reverses one of them, §17 says so and why.
 
-**Section mapping for readers of the old citations.** `design-v1.md` §4 keys → §5; §5
-ordered encodings → §7.4; §6 values → §6; §7 orderings → §8; §8 API → §3; §9 → §9;
-§10 → §10; §11 → §11; §12 errors → §13; §13 mdbx → §15; §14 testing → §16;
-§15 decisions → §17; §16 roadmap → §19; §17 typed layer → §20.
-
-**What did not change** from v1, because it was right and the review confirmed it: the
-storage layout and named databases (§7), publish-then-commit and commit-then-unlink
-(§8), content addressing with transactional refcounts (§6.1, §8), the frozen key
-encoding with golden vectors and the ban on hashing `serialize()` output (§5), derived
-and rebuildable indexes (§7.5), order-preserving encodings (§7.4), lazy expiry and the
-read journal (§9), the store-level versus handle-level configuration split (§12), the
-classed error taxonomy (§13), and the deployment envelope: **many processes, one host,
-a local filesystem.**
-
-**What changed**, in one line each; `review.md` has the reasoning and §17 the decisions:
-
-- The public API is functions, not methods. There is no R6 and no S7 (§2, §3, D1–D2).
-- The three things `polars-diskcache` does that v1 had no answer to are in v1 scope:
-  laziness preserved through the cache (§6.4), a browsable tree over the blobs (§6.6),
-  and per-argument key control on memoised functions (§3.8).
-- Keys are text. Raw-vector keys are gone; doubles are accepted and encoded exactly;
-  NFC normalisation is not applied; the grammar is revised before anything is frozen
-  (§5).
-- A miss is signalled by `missing(default)`, not by a sentinel or by `NULL` (§3.3).
-- Entries carry a vector of tags, counters return doubles, `expire =` takes R's own
-  time types, never-expiring entries are not indexed (§3.4, §7.2).
-- Every `mdbx_*` call lives in one internal file (§14.2), and a gap in the binding is an
-  ask of `mdbx` 0.2 rather than a permanent workaround (§15). `mdbx` is first-party.
+**Deployment envelope: many processes on one host, over a local filesystem.** libmdbx
+needs a working `mmap` and a working lock file, and a local filesystem provides both.
+Several R sessions, scheduled jobs and workers share one directory on one machine. Network
+filesystems — NFS, SMB, Azure Files, blobfuse — are out of scope, and PID liveness checks
+are legitimate (§11.3).
 
 ---
 
@@ -169,7 +144,7 @@ libmdbx provides exactly those, and the correspondence is direct:
 | `ORDER BY x LIMIT n` | `mdbx_keys(txn, db = x, limit = n)` |
 | `WHERE x >= ? ORDER BY x LIMIT n` | `mdbx_keys(txn, db = x, start = k, limit = n)` |
 | `ORDER BY x DESC LIMIT 1` | `mdbx_keys(txn, db = x, limit = 1, reverse = TRUE)` |
-| `BEGIN … COMMIT` | `mdbx_with_write(env, fn)` |
+| `BEGIN … COMMIT` | a write transaction (§10) |
 | `filename TEXT` | `<root>/blobs/<aa>/<hash>[.<ext>]` |
 
 What gets harder is that **every ordering decision moves into the key encoding**. SQLite
@@ -192,9 +167,9 @@ Ten rules. Every exported function follows them; the reference in §3 relies on 
    `diskcache`'s `get(key, read=, expire_time=, tag=)` breaks this; here it is four
    functions: `stash_get()`, `stash_path()`, `stash_lazy()`, `stash_info()`.
 4. **Questions return answers; effects return the stash, invisibly.** `stash_has()`
-   returns a logical. `stash_set()` returns the stash so it chains. Three effects return
+   returns a logical. `stash_set()` returns the stash so it chains. Four effects return
    their outcome because the outcome is the point: `stash_add()` a logical, `stash_pop()`
-   the value, `stash_incr()` the new count.
+   the value, `stash_incr()` and `stash_decr()` the new count.
 5. **Scalar functions are scalar; plural functions are named.** `stash_get()` takes one key.
    `stash_mget()` — base R's name for "get several into a list" — takes many. Predicates
    and deletions are vectorised because a vector is the only sensible answer:
@@ -256,15 +231,16 @@ store and which belong to the handle, and what happens when two processes disagr
 create and raises `dastash_not_found` on a missing directory.
 
 **One environment per process and directory.** `mdbx` refuses a second `mdbx_env_open()`
-on a path this process already holds (verified, §15), and even if it did not, one thread
-plus one live transaction per environment would let a second handle wait only on itself.
-`stash()` therefore keeps a process-local registry keyed by the normalised path: a second
-call returns a new handle sharing the environment, and the environment closes when the
-last handle closes. That registry is not made redundant by `mdbx`'s own, which refuses the
-second open rather than sharing the first, and which compares paths as R spelled them:
-`"./c.mdbx"` and `"c.mdbx"` are one environment to `stash()` and two to `mdbx_env_open()`,
-which then fails with libmdbx's lock error instead. Handles record the PID that opened
-them and raise `dastash_forked` when used from a forked child (§10).
+on a path this process already holds, under any spelling — relative, `./`, or through a
+symlinked directory (§15) — and an environment runs one transaction at a time. `stash()`
+therefore keeps a process-local registry keyed by `normalizePath(dir)`: a second `stash()`
+on the same directory returns a new handle on the same environment, and the environment
+closes when the last handle closes. The registry exists to *share* the environment; `mdbx`
+already detects the conflict. The registry entry also owns the environment's current
+transaction (§10), so every handle on one directory sees the same one.
+
+Handles record the PID that opened them and raise `dastash_forked` when used from a
+forked child (§10).
 
 `local_stash()` is the `withr` idiom: it creates a stash, registers `stash_close()` on the
 calling frame, and returns it. `with_stash()` is the expression form.
@@ -364,7 +340,8 @@ stash_decr(stash, key, ..., by = 1, default = 0)                             # -
 
 **`expire`** is `NULL` or `Inf` for never; a number of seconds from now (zero or negative
 means already expired, which tests use); a `difftime`; or a `POSIXct` for an absolute
-deadline. `lubridate` users write `expire = hours(6)`, which is a `difftime`.
+deadline. `lubridate` users write `expire = hours(6)`, which is a `difftime`. `NaN` and
+`NA` are `dastash_type_error`.
 
 **`tags`** is a character vector, at most 16 tags of at most `TAG_MAX` bytes each.
 `stash_evict(s, tag = )` deletes every entry carrying the tag. One entry, many tags: an
@@ -377,15 +354,11 @@ a codec argument: it dispatches on what the record says was used.
 commits it in one transaction; names are string keys. `stash_add()` writes only if no
 live entry exists and returns whether it landed; an expired entry counts as absent, and
 the write itself is `mdbx_put(overwrite = FALSE)`, which answers `FALSE` on an existing
-key instead of raising.
-`stash_touch()` moves a deadline without rewriting the value and is a no-op on a missing
-key. `stash_delete()` removes every key given in one transaction and returns the stash.
+key instead of raising. `stash_touch()` moves a deadline without rewriting the value and
+is a no-op on a missing key. `stash_delete()` removes every key given in one transaction.
 `stash_pop()` reads and deletes atomically. The counters are atomic across processes,
 store a signed 64-bit integer, return a double, and raise `dastash_type_error` on a key
 that holds anything but a counter or a value beyond ±2⁵³ (D6).
-
-Everything here except `stash_add()`, `stash_pop()` and the counters returns the stash
-invisibly and chains.
 
 ## 3.5 Enumerating and accounting
 
@@ -423,10 +396,10 @@ indexes, a data frame for the rest (D11).
 
 `stash_count()` is `mdbx_env_stat(txn, db = meta)$entries` — exact, O(1), and immune to
 counter drift — and includes entries past their deadline that nothing has reclaimed yet;
-`length(stash_keys(s))` excludes those and is O(n). `stash_volume()` is
-bytes occupied: the mdbx file plus every blob. `stash_stats()` is one row: `count`,
+`length(stash_keys(s))` excludes those and is O(n). `stash_volume()` is bytes occupied:
+the mdbx file plus every blob (§9.2). `stash_stats()` is one row: `count`,
 `bytes_inline`, `bytes_blob`, `volume`, `size_limit`, `hits`, `misses`, `evictions`,
-`expired`, `eviction`, `durability` (effective, §12), `format_version`,
+`expired`, `eviction`, `durability` (effective, §11.1), `format_version`,
 `key_encoding_version`.
 
 ## 3.6 Maintenance
@@ -455,9 +428,10 @@ stash_transact(stash, code)
 ```
 
 `code` is evaluated in the caller's environment with one write transaction held open on
-the handle. Every `stash_set()`, `stash_delete()`, `stash_incr()` inside it commits or
-aborts together, and reads inside it see its own writes. A nested `stash_transact()`
-joins the outer transaction.
+the stash's environment. Every `stash_set()`, `stash_delete()`, `stash_incr()` inside it
+commits or aborts together, and reads inside it see its own writes. A nested
+`stash_transact()` joins the outer transaction, as does any verb on another handle to the
+same directory (§3.1).
 
 ```r
 stash_transact(s, {
@@ -475,9 +449,12 @@ Two rules survive inside a transaction. Blobs are still published *before* the r
 written and unlinks are still deferred until *after* the commit (§8), so a large
 `stash_set()` inside a block is safe and an aborted block leaves at most orphans. And the
 transaction blocks every other writer for as long as it is open — **never call a producer
-inside it** (§10). It is also the performance lever: `mdbx` measures 2000 single-write
-transactions at roughly 90× the cost of the same writes in one, which is the same win as
-weakening durability at none of the risk.
+inside it** (§10).
+
+It is also the performance lever. Under full durability every commit is a sync, and a
+sync dominates a small write: 2000 single-write transactions took 37 s where the same 2000
+writes in one took 0.06 s (§15). That is the win people reach for `durability = "fast"`
+to get, at none of the risk.
 
 ## 3.8 Memoisation
 
@@ -556,8 +533,8 @@ as.list(s)                 # every value; warns above 1000 entries and refuses a
 ```
 
 Not implemented, on purpose: `names()` implies cheap and total and it is neither, `[`
-because a subset of a cache is not a cache, `$` because `s$get` is the API this design
-retired.
+because a subset of a cache is not a cache, `$` because `s$get` is the method API this
+design rejected (D1).
 
 ## 3.10 The `cachem` interface
 
@@ -655,7 +632,7 @@ stash_get(s, k)  after  stash_set(s, k, v)   ∈   { v, absent }
 A store promises the first; a cache promises only that it is one of the two. Callers who
 need the value to be there hold it in a variable.
 
-Five consequences shape the design and are theorems rather than choices:
+Six consequences shape the design and are theorems rather than choices:
 
 - **Expiry is part of the read, not an operation.** Whether a write is live is a function
   of its deadline and the clock, so a read can decide it without writing anything, and
@@ -702,7 +679,7 @@ character vector (D12).
 
 Specified in `inst/spec/key-encoding-v1.md`, versioned by `KEY_ENCODING_VERSION`, and
 frozen by golden vectors in `tests/testthat/golden/key-vectors.csv` the day the first
-store is written. This grammar supersedes v1's; nothing has been stored under either.
+store is written.
 
 ```text
 key      := text                                  a character(1) not starting with an opener
@@ -755,14 +732,14 @@ which a cache — unlike the typed layer of §20 — must allow (D12).
 
 **Never hash `serialize()` output, and never call `digest()` without `serialize = FALSE`.**
 R's serialisation changes across versions and ALTREP representations; a cache that
-outlives an R upgrade would silently lose every key. A test greps `R/` for both and fails
-on a hit. This is also why `stash_memoise()` does not use `rlang::hash()`.
+outlives an R upgrade would silently lose every key. The grep guards of §16 enforce it.
+This is also why `stash_memoise()` does not use `rlang::hash()`.
 
 ## 5.3 Length, and why the limit is a constant
 
 libmdbx bounds key size by page size: `mdbx_limits()$keysize_max` is **2022 bytes on
-4 KiB pages and 8166 on 16 KiB pages**. A limit derived from the running machine would
-produce a store written on macOS that Linux cannot open. So:
+4 KiB pages and 8166 on 16 KiB pages** (§15). A limit derived from the running machine
+would produce a store written on one machine that another cannot open. So:
 
 ```text
 KEY_MAX = 512 bytes     TAG_MAX = 256 bytes     CANON_KEEP_MAX = 4096 bytes
@@ -785,10 +762,10 @@ memoised function called with a large vector gets a working, if unprintable, key
 
 ## 6.1 Inline or file
 
-A value whose encoded size is under `inline_max` (32 KiB, matching `diskcache`; D5 in
-v1) is stored in the `values` database. Anything larger is written to a file and the
-record keeps a pointer. `codec_file()` and `codec_parquet()` are always file-backed
-regardless of size, because the file is their point.
+A value whose encoded size is under `inline_max` (32 KiB, matching `diskcache`; D5) is
+stored in the `values` database. Anything larger is written to a file and the record
+keeps a pointer. `codec_file()` and `codec_parquet()` are always file-backed regardless
+of size, because the file is their point.
 
 Files are **content-addressed**: `blobs/<aa>/<hash>[.<ext>]` where `hash` is the SHA-256
 of the encoded bytes and `<aa>` its first two hex characters. Identical bytes are stored
@@ -813,7 +790,8 @@ codec(name, encode, decode, ..., ext = NULL, version = 1L, supports = NULL)   # 
 A codec is a plain classed list with `name`, `version`, `ext`, `encode(value, path)`,
 `decode(path)`, and `supports(value)`, a predicate for what it round-trips losslessly.
 `encode()` writes to a path (the staging file of §8); for values that will be inline the
-same path is read back into the record. Codecs never see the store.
+same path is read back into the record. Codecs never see the store, and never run inside
+a transaction (§10).
 
 **The record stores the codec name and version, and decode dispatches on it** — never
 on the stash's current default. Changing a default codec cannot orphan what is stored.
@@ -828,8 +806,8 @@ else → `codec_rds()`. **It never selects a lossy codec and never selects a cod
 and `qs2` are opted into, per call or per stash.
 
 Optional codecs raise `dastash_codec_error` with an install hint when their package is
-absent; a no-Suggests CI job proves the message rather than a stack trace is what a user
-sees.
+absent; the no-Suggests CI job proves the message rather than a stack trace is what a
+user sees.
 
 ## 6.3 The Parquet codec
 
@@ -894,8 +872,7 @@ outlive the entry copies it.
 ## 6.6 The tree
 
 A content-addressed directory is unbrowsable by construction: `blobs/9f/9fbc…parquet` says
-nothing. `polars-diskcache` fixes this with a second, disposable view made of symlinks,
-and it is the one feature in either model that v1 had no answer to.
+nothing. `polars-diskcache` fixes this with a second, disposable view made of symlinks.
 
 ```r
 stash_tree(s)                       # -> "<root>/tree", invisibly
@@ -912,8 +889,8 @@ stash_tree(s, prefix = "load_trades/")
 Rules:
 
 - **Derived, on demand.** `stash_tree()` rebuilds the tree under `dir` (default
-  `<root>/tree`) from the live records; nothing maintains it on write. It is a view, like
-  an index, and `stash_check()` ignores it, `stash_clear()` removes it, and a stale tree
+  `<root>/tree`) from the live records; nothing maintains it on write (D16). It is a view,
+  like an index: `stash_check()` ignores it, `stash_clear()` removes it, and a stale tree
   costs dangling symlinks and nothing else.
 - **Path from key.** A string key splits on `/`. A trailing canonical named list —
   what `stash_memoise()` produces — expands to one directory per field, `name=value`,
@@ -952,23 +929,27 @@ past what `list.files()` handles comfortably during `stash_check()`.
 `max_dbs = 16`, leaving room. Databases are created **on demand from the configuration**:
 a stash with least-recently-stored eviction never opens `accessed`; one that never tags
 never opens `tags`. An index is a cost on every write, and one nobody reads should not
-exist. Creation needs a write transaction — `mdbx_dbi_open(create = TRUE)` inside a read
-transaction is refused whether or not the database already exists — so a read-write
-`stash()` creates every database its configuration implies in one write transaction at
-open. A read-only handle can create nothing, so it reads `mdbx_dbi_list()` once at open
-and treats a database absent from that list as empty: opening a missing one is an error
-rather than `NULL`, and one list is cheaper and clearer than a `tryCatch` per index.
+exist.
+
+Creation needs a write transaction, so a read-write `stash()` creates every database its
+configuration implies in one write transaction at open. A read-only handle can create
+nothing: it reads `mdbx_dbi_list()` once at open and treats a database absent from that
+list as empty, which is one call instead of a failed open per index (§15).
 
 | Database | Key | Value | Present when |
 |---|---|---|---|
 | `meta` | stored key | the record (§7.3) | always |
 | `values` | stored key | payload bytes | always |
 | `expiry` | `enc_f64(expire) ‖ key` | empty | always; **an entry that never expires has no row** |
-| `stored` | `enc_f64(stored) ‖ key` | empty | `eviction != "none"` |
+| `stored` | `enc_f64(stored) ‖ key` | empty | least-recently-stored |
 | `accessed` | `enc_f64(accessed) ‖ key` | empty | least-recently-used |
 | `hits` | `enc_u64(hits) ‖ key` | empty | least-frequently-used |
 | `tags` | `tag ‖ 0x00 ‖ key` | empty | one row per (tag, key), when tags are used |
 | `blobs` | `hash` | `{refs, bytes, ext}` | always |
+
+Exactly one eviction index exists, the one the policy walks; `eviction = "none"` has
+none. `stash_entries()` reads `stored`, `accessed` and `hits` from the meta record, not
+from the indexes.
 
 Index entries carry the key after eight fixed bytes because entries must be unique — two
 records can share a millisecond — and because having the key inside the index means
@@ -1034,8 +1015,10 @@ else                bits[1] <- bits[1] | 0x80     non-negatives: set the sign bi
 
 Big-endian IEEE-754 alone is **not** order-preserving: `-1` has its high bit set and would
 sort above every positive number, and negatives sort in reverse among themselves. The
-transform fixes both and inverts cleanly. The `be8()` in `mdbx`'s `cache.Rmd` is plain
-big-endian and is correct there only because it encodes positive epoch times.
+transform fixes both and inverts cleanly. The `be8()` in `mdbx`'s
+[cache article](https://pedrobtz.github.io/mdbx/articles/cache.html) — the sketch this
+design started from — is plain big-endian and is correct there only because it encodes
+positive epoch times.
 
 `Inf` sorts last, so a never-expiring deadline needs no special case even where it is
 indexed. `NaN` has no position and is rejected at the boundary. The property test is one
@@ -1070,7 +1053,7 @@ encode  -> <root>/tmp/<pid>-<n>          same device as blobs/
                         then one write transaction:
                           put meta record
                           put value (inline) or nothing (blob)
-                          put expiry / stored / accessed / tags rows
+                          put expiry / eviction / tags rows
                           increment blobs[hash].refs
                           update counters
 ```
@@ -1093,8 +1076,8 @@ one write transaction:
                           unlink the collected paths
 ```
 
-The `cache.Rmd` vignette gets this deliberately wrong and explains why: unlinking inside
-the transaction means a later failure rolls the metadata back to an entry whose file has
+The cache article gets this deliberately wrong and says why: unlinking inside the
+transaction means a later failure rolls the metadata back to an entry whose file has
 already gone. Orphans are recoverable; dangling references are not. If the process dies
 between commit and unlink, the orphan is collected later.
 
@@ -1139,9 +1122,9 @@ chunks.
 ## 9.2 Accounting is exact and O(1)
 
 `counters` is updated in the same transaction as every mutation, so `stash_volume()` reads
-one record; `stash_count()` reads the exact `entries` figure libmdbx keeps for `meta`. A single hot row would be a contention problem in
-SQLite; under mdbx there is exactly one writer at a time already, so the hot record costs
-nothing that is not already being paid.
+one record; `stash_count()` reads the exact `entries` figure libmdbx keeps for `meta`. A
+single hot row would be a contention problem in SQLite; under mdbx there is exactly one
+writer at a time already, so the hot record costs nothing that is not already being paid.
 
 `stash_volume()` is `mdbx_env_info()$file_size + counters$bytes_blob`. The mdbx file only
 grows on disk — freed pages are reused, not returned — so this is bytes occupied, which is
@@ -1172,10 +1155,10 @@ ordinary read touches nothing at all.
 
 ## 9.4 Retention
 
-`retain_until` is written into the record from v1 and **not enforced** until the lifecycle
-work lands. It costs one field now; `dastash-design.md` §6.3 is right that an eviction
-that deletes an artifact inside a regulatory retention window is an incident rather than
-a miss, and that the field cannot be retrofitted to a store that already has data.
+`retain_until` is written into the record from v1 and **not enforced** until v1.x. It
+costs one field now. An eviction that deletes an artifact inside a regulatory retention
+window is an incident rather than a miss, and the field cannot be retrofitted to a store
+that already has data (`typed-layer.md` §6).
 
 ---
 
@@ -1190,22 +1173,24 @@ existed when it began. `stash_get()`, `stash_mget()`, `stash_has()`, `stash_keys
 and access times are journalled they stay read transactions.
 
 **Writers serialise.** A second writer waits on the lock file. dastash begins every write
-transaction itself with `mdbx_txn_begin(env, write = TRUE, flags = "TRY")` — the
-`mdbx_with_write()` wrapper takes no flags — which fails with `MDBX_BUSY` instead of
+transaction itself with `mdbx_txn_begin(env, write = TRUE, flags = "TRY")` —
+`mdbx_with_write()` takes no flags — which fails at once with `mdbx_busy` instead of
 blocking, and retries with exponential backoff up to `timeout` seconds before raising
 `dastash_busy`. A worker that never returns is worse than an error that says the store is
 busy. Both behaviours are verified across processes (§15).
 
-**One live transaction per handle.** `mdbx` refuses a second `mdbx_txn_begin()` on an
-environment rather than deadlocking. The handle therefore owns the current transaction:
-inside `stash_transact()` every verb uses it, and outside one every verb opens and closes
-its own. Nothing in the API takes a callback that could run a verb inside a read
-transaction.
+**One live transaction per environment.** `mdbx` refuses a second `mdbx_txn_begin()` on
+an environment rather than deadlocking. The registry entry of §3.1 therefore owns the
+current transaction: inside `stash_transact()` every verb, on every handle to that
+directory, uses it; outside one, every verb opens and closes its own. No user code runs
+while a transaction is open except the body of `stash_transact()`: codecs encode before
+the write transaction and decode after the read transaction has returned the bytes, and
+nothing in the API takes a callback that runs inside one.
 
 **One environment per process, opened in the process that uses it.** An environment does
 not survive `fork()`: `parallel::mclapply()` gives the child the R object but not the
 mapping, lock or reader slot. The handle records its PID and raises `dastash_forked`, with
-the instruction to open inside the worker, before the native error can.
+the instruction to open inside the worker, before `mdbx` can refuse.
 
 ```r
 parallel::mclapply(keys, function(k) {
@@ -1249,15 +1234,15 @@ transaction itself.
 Full durability is the default even though this is a cache, because `stash_set()`
 returning is read by users as a promise, and a user who has to reason about which of the
 last N writes survived is reasoning about the wrong thing. `stash_transact()` recovers
-most of the performance with no risk. `"fast"` plus a periodic `mdbx_env_sync()` is a
-reasonable choice for a purely derived cache, and its failure mode is the recoverable one:
-a lost metadata commit after a blob was fsynced is an orphan, the direction §8 already
-tolerates.
+most of the performance with no risk (§3.7). `"fast"` plus a periodic `mdbx_env_sync()` is
+a reasonable choice for a purely derived cache, and its failure mode is the recoverable
+one: a lost metadata commit after a blob was fsynced is an orphan, the direction §8
+already tolerates.
 
 Sync flags are a property of the environment *as currently open*, and a process joining an
-open environment inherits them: verified, a joiner asking for `SAFE_NOSYNC` without
-`ACCEDE` gets `MDBX_INCOMPATIBLE`, and with `ACCEDE` it gets the incumbent's flags.
-`stash()` therefore always passes `ACCEDE` and reports the effective mode from
+open environment inherits them: a joiner asking for `SAFE_NOSYNC` without `ACCEDE` gets
+`mdbx_incompatible`, and with `ACCEDE` it gets the incumbent's flags (§15). `stash()`
+therefore always passes `ACCEDE` and reports the effective mode from
 `mdbx_env_get_flags()` in `stash_stats()`, rather than pretending the argument won.
 
 ## 11.2 Capacity
@@ -1265,7 +1250,7 @@ open environment inherits them: verified, a joiner asking for `SAFE_NOSYNC` with
 `map_size` is the upper bound the mapped file may grow to, fixed at open. Values above
 `inline_max` live outside the file, so the map holds metadata — a few hundred bytes per
 entry — and the 1 GiB default covers millions of entries. Exhausting it is
-`MDBX_MAP_FULL`, raised as `dastash_store_full` with `geo_current` and `geo_upper` from
+`mdbx_map_full`, raised as `dastash_store_full` with `geo_current` and `geo_upper` from
 `mdbx_env_info()` and the instruction to reopen with a larger `map_size`. An operational
 limit, not a crash.
 
@@ -1285,8 +1270,7 @@ Because indexes are derived, most damage is repairable:
 | `reader_stale` — reader slot of a dead process | `mdbx_env_reader_check()` |
 | `blob_corrupt` — with `hash = TRUE`, bytes do not hash to the name | delete the record and the file |
 
-PID liveness is legitimate here because the deployment is one host; the argument against
-it in `dastash-design.md` §5.3 assumed containers across machines. `hash = TRUE` reads
+PID liveness is legitimate because the deployment is one host (§0). `hash = TRUE` reads
 every blob and is the only expensive check; `stash_get()` does not verify hashes on the
 way in (D20), because hashing a 200 MB file on every read defeats `stash_path()`.
 
@@ -1311,7 +1295,8 @@ affected indexes; in v1 it is `stash_clear()`.
 **`durability`** is neither; §11.1.
 
 `readonly = TRUE` opens the environment read-only, disables the journal, and raises
-`dastash_readonly` on any write verb, including `stash_expire()` and `stash_cull()`.
+`dastash_readonly` on any write verb, including `stash_expire()` and `stash_cull()`,
+before a transaction is attempted.
 
 The `format` record carries `format_version`, `key_encoding_version` and
 `index_encoding_version`. A store whose `format_version` or `key_encoding_version` is
@@ -1330,11 +1315,11 @@ from "your store is broken".
 
 | Class | Raised when |
 |---|---|
-| `dastash_key_invalid` | An object the encoding does not cover; a partially named vector; `NaN` where forbidden; an anonymous memoised function without `name` |
+| `dastash_key_invalid` | An object the encoding does not cover; a partially named vector; an anonymous memoised function without `name` |
 | `dastash_not_found` | `stash_get()`, `stash_pop()`, `s[[key]]` on an absent or expired key without `default`; `stash()` with `create = FALSE` on a missing directory |
-| `dastash_type_error` | `stash_incr()` on a non-counter or past ±2⁵³; `stash_path()` or `stash_lazy()` on an entry of the wrong shape; a value a codec's `supports()` rejects |
+| `dastash_type_error` | `stash_incr()` on a non-counter or past ±2⁵³; `stash_path()` or `stash_lazy()` on an entry of the wrong shape; a value a codec's `supports()` rejects; an `expire` that is `NA` or `NaN` |
 | `dastash_codec_error` | Encode or decode failed; a codec package from `Suggests` is not installed; a record names a codec the handle does not know |
-| `dastash_blob_corrupt` | Blob missing, or hash mismatch under `stash_check(hash = TRUE)` |
+| `dastash_blob_corrupt` | A read finds the record's blob file missing. `stash_check()` reports the same condition as a finding instead of raising |
 | `dastash_busy` | Write lock not acquired within `timeout` |
 | `dastash_store_full` | `map_size` exhausted |
 | `dastash_readonly` | A write verb on a read-only handle |
@@ -1343,17 +1328,20 @@ from "your store is broken".
 | `dastash_forked` | A handle used in a process that did not open it |
 | `dastash_closed` | A verb on a closed handle |
 | `dastash_unsupported` | The platform cannot do it: symlinks for `stash_tree()` |
-| `dastash_engine_error` | Any other `mdbx` failure — corruption, panic, version mismatch — carrying the libmdbx name and code |
+| `dastash_engine_error` | Any other `mdbx` failure, with the original condition as `parent` |
 
-**Translating engine errors.** `mdbx` 0.1.0 has no condition classes, and its errors come
-in two shapes. A libmdbx failure raises a plain error whose message ends in
-`(mdbx error <code>)`. The binding's own refusals — already open, read-only transaction,
-missing database, belongs to another process — carry no code at all and are recognisable
-only by their text. The engine file (§14.2) is the one place that reads either, mapping
-`MDBX_BUSY` (−30778) to `dastash_busy`, `MDBX_MAP_FULL` (−30792) to `dastash_store_full`,
-the "belongs to process" refusal to `dastash_forked`, and everything else to
-`dastash_engine_error`. Matching on text is fragile, and is why classed conditions are the
-first ask of `mdbx` 0.2 in §15; when they arrive the parser goes.
+**Translating engine errors.** `mdbx` signals every libmdbx failure as a condition of
+class `mdbx_error`, with a subclass named after the status and `code` and `name` fields
+(§15). `R/engine.R` catches by class: `mdbx_busy` feeds the retry loop of §10 and becomes
+`dastash_busy` when `timeout` runs out, `mdbx_map_full` becomes `dastash_store_full`, and
+any other `mdbx_error` becomes `dastash_engine_error`. **No code reads a message's text.**
+
+The binding's own refusals — a second open, a second transaction, a write in a read
+transaction, a missing named database, a handle inherited across `fork()` — are
+unclassed, and dastash is built never to reach them: the registry (§3.1), the shared
+transaction (§10), the read-only check (§12), `mdbx_dbi_list()` at open (§7.2) and the
+PID check (§10) each stop the call first. One that gets through anyway is a dastash bug,
+and surfaces as `dastash_engine_error`.
 
 ```r
 rlang::try_fetch(
@@ -1371,15 +1359,15 @@ rlang::try_fetch(
 
 ```text
 Depends:   R (>= 4.1)
-Imports:   mdbx, rlang, digest
+Imports:   mdbx (>= 0.1.1), rlang, digest
 Suggests:  qs2, nanoparquet, arrow, duckdb, DBI, dbplyr, dplyr, bit64, cachem, memoise,
            utf8, testthat (>= 3.0), callr, withr, knitr, rmarkdown
 ```
 
 `Imports` is short on purpose and adding to it is a decision, not a convenience.
 
-- `mdbx` is the engine and is first-party: developed at `../mdbx` alongside this package,
-  bundling libmdbx through `cpp11` with no system dependency. dastash reaches CRAN after it.
+- `mdbx` is the engine: first-party, on CRAN, bundling libmdbx through `cpp11` with no
+  system dependency. 0.1.1 is the version §15 was verified against.
 - `rlang` for classed conditions, `check_dots_empty()`, and `!!!` in `key =` helpers.
 - `digest` for SHA-256 with `serialize = FALSE`, streaming over files. R 4.5 added
   `tools::sha256sum(bytes =)`, which would remove this dependency at the cost of raising
@@ -1389,14 +1377,15 @@ Suggests:  qs2, nanoparquet, arrow, duckdb, DBI, dbplyr, dplyr, bit64, cachem, m
   data frames are plain; `rlang::abort()` formats bullets on its own.
 
 Every `Suggests` codec and engine degrades to a `dastash_codec_error` naming the package,
-verified by a no-Suggests CI job. `polars` is not on CRAN and is used only when it is
+verified by the no-Suggests CI job. `polars` is not on CRAN and is used only when it is
 found installed.
 
 ## 14.2 The engine file
 
 The design does not abstract the engine — every ordering decision in §7 is an mdbx
-decision, and `mdbx` is first-party, so a gap in the binding is fixed in the binding. The
-code still talks to it through one internal file, `R/engine.R`, with ten functions:
+decision, and `mdbx` is first-party, so a gap in the binding is fixed in the binding
+(D14). The code still talks to it through one internal file, `R/engine.R`, with ten
+functions:
 
 ```text
 engine_open(dir, opts) / engine_close(e)
@@ -1408,88 +1397,67 @@ engine_info(e)                                        file size, page size, limi
 ```
 
 Nothing outside that file calls `mdbx_*`. That buys three things. The error translation of
-§13 lives in one place and disappears in one place when `mdbx` grows condition classes.
-The `TRY`-and-backoff loop, the prefix stop on scans and the per-process environment
-registry are written once. And the storage layer can be unit-tested against a fake engine
-without a directory, which keeps the `callr` suite for the claims only a real process can
-test. It is not a public extension point.
+§13 is one `tryCatch` by class in one place. The `TRY`-and-backoff loop, the prefix stop
+on scans and the per-process environment registry are written once. And the storage
+layer can be unit-tested against a fake engine without a directory, which keeps the
+`callr` suite for the claims only a real process can test. It is not a public extension
+point.
 
 ---
 
-# 15. What `mdbx` 0.1.0 provides, and what dastash asks of 0.2
+# 15. The engine: what `mdbx` 0.1.1 provides
 
-Verified on 2026-09-10 by reading the source at `../mdbx` (build `6521821`) and by running
-the installed package. The design needs nothing outside this list.
+Verified on 2026-09-28 against `mdbx` 0.1.1 from CRAN, by reading its source and running
+it, in one process and across two, on macOS. The design needs nothing outside this list.
 
 | Call | Shape | Used for |
 |---|---|---|
-| `mdbx_env_open(path, readonly, create, subdir = FALSE, max_dbs = 16L, map_size, max_readers, mode, flags)` | flags are libmdbx names without `MDBX_`: `SAFE_NOSYNC`, `UTTERLY_NOSYNC`, `NOMETASYNC`, … | `stash()` |
+| `mdbx_env_open(path, readonly, create, subdir = FALSE, max_dbs = 16L, map_size, max_readers, mode, flags)` | flags are libmdbx names without `MDBX_`: `ACCEDE`, `SAFE_NOSYNC`, `UTTERLY_NOSYNC`, … | `stash()` |
 | `mdbx_env_close()`, `mdbx_env_is_open()`, `mdbx_env_sync()` | | close, `"fast"` mode |
-| `mdbx_env_info()`, `mdbx_env_stat()`, `mdbx_env_get_flags()`, `mdbx_env_set_flags()`, `mdbx_flags()` | | volume, effective durability |
+| `mdbx_env_info()`, `mdbx_env_stat()`, `mdbx_env_get_flags()`, `mdbx_env_set_flags()`, `mdbx_flags()` | `mdbx_env_info()` has `file_size`, `geo_current`, `geo_upper`, `mapsize`, `pagesize` | volume, capacity, effective durability |
 | `mdbx_env_reader_check()` | | `stash_check()` |
-| `mdbx_limits(x)` | `keysize_max` 2022 at 4 KiB, 8166 at 16 KiB | the §5.3 assertion |
-| `mdbx_txn_begin(env, write, flags)`, `mdbx_txn_commit()`, `mdbx_txn_abort()`, `mdbx_txn_state()` | `flags = "TRY"` fails with `MDBX_BUSY` instead of blocking; one live transaction per environment | `stash_transact()`, the retry loop |
-| `mdbx_with_read(env, fn)`, `mdbx_with_write(env, fn)` | | every other verb |
-| `mdbx_dbi_open(txn, name, create)`, `mdbx_dbi_drop()`, `mdbx_dbi_list()`, `mdbx_dbi_sequence()` | a missing database is an error, not `NULL`; `create = TRUE` needs a write transaction | named databases; index rebuild; `mdbx_dbi_list()` is how a read-only handle sees which exist (§7.2) |
-| `mdbx_put(txn, key, value, db)`, `mdbx_get(txn, key, db, as)`, `mdbx_del(txn, key, db)` | | records |
-| `mdbx_keys(txn, limit, as, db, start, reverse)`, `mdbx_items(...)` | `start` is inclusive; no `end` or `prefix`; `limit = NULL` respects `mdbx_scan_max` | scans |
+| `mdbx_limits(pagesize)` | `keysize_max` | the §5.3 assertion |
+| `mdbx_txn_begin(env, write, flags)`, `mdbx_txn_commit()`, `mdbx_txn_abort()`, `mdbx_txn_state()` | `flags = "TRY"` for a write | `stash_transact()`, the retry loop |
+| `mdbx_with_read(env, fun)`, `mdbx_with_write(env, fun)` | no flags | reads |
+| `mdbx_dbi_open(txn, name, create)`, `mdbx_dbi_drop()`, `mdbx_dbi_list()` | | named databases, index rebuild |
+| `mdbx_put(txn, key, value, overwrite, db)`, `mdbx_get(txn, key, default, as, db)`, `mdbx_del(txn, key, db)` | | records |
+| `mdbx_keys(txn, limit, as, db, start, reverse)`, `mdbx_items(...)` | no `end` or `prefix` | scans |
 
-**Observed by running it**, not only by reading it:
+**Observed**, each with the part of the design that depends on it:
 
-- A second `mdbx_env_open()` on a path this process already holds is refused by the
-  binding — "mdbx environment '<path>' is already open in this process" — with or without
-  `ACCEDE`, read-only included, whatever the second call's other arguments say. §3.1's
-  registry is still required: it exists to share the environment rather than to improve
-  the error, and it keys on the normalised path where `mdbx` keys on the spelling.
-- `mdbx_dbi_open(create = TRUE)` in a read transaction is refused before libmdbx is
-  reached, whether or not the database already exists; a database that does not exist is
-  refused by name in a read and a write transaction alike. Neither returns `NULL` and
-  neither is classed, so a read-only handle uses `mdbx_dbi_list()` (§7.2). Creation
-  happens at open, in a write transaction.
-- `mdbx_put(overwrite = FALSE)` returns `FALSE` on an existing key; `mdbx_del()` returns
-  whether anything existed; `mdbx_get()` takes `default`.
-- `mdbx_keys(start = "a/")` positions at the first key at or after `start` and runs past
-  the prefix, so the client-side stop is real.
-- A 2022-byte key stores on 4 KiB pages; 2023 bytes is `MDBX_BAD_VALSIZE`. The empty key
-  stores.
-- `TRY` against a writer in another process fails at once with
-  `MDBX_BUSY: Another write transaction is running … (mdbx error -30778)`; without `TRY`
-  the call blocks until the writer finishes. Readers proceed throughout.
-- A joiner requesting `SAFE_NOSYNC` while another process holds the environment in the
-  default mode gets `MDBX_INCOMPATIBLE` (−30784) without `ACCEDE`, and the incumbent's
-  flags with it.
-- `MDBX_MAP_FULL: Environment mapsize limit reached (mdbx error -30792)` when `map_size`
-  is exhausted; `mdbx_env_info()` reports `geo_upper`, `geo_current`, `mapsize`,
-  `file_size`.
-- Errors are plain strings. A libmdbx failure ends in `(mdbx error N)` and the code is
-  recoverable only from that suffix; the binding's own refusals — already open, read-only
-  transaction, missing database, inherited across a `fork()` — carry no code and are
-  recognisable only by their text.
-- `mdbx_env_stat(txn, db = )$entries` is exact within the transaction.
+| Behaviour | Observed in 0.1.1 | Design |
+|---|---|---|
+| Errors | Every libmdbx failure is a condition `c("mdbx_<name>", "mdbx_error", "error", "condition")` with `code` and `name`: `mdbx_busy` (−30778), `mdbx_map_full` (−30792), `mdbx_incompatible` (−30784), `mdbx_bad_valsize` (−30781). The binding's own refusals are unclassed `simpleError`s | §13 |
+| Second open in one process | Refused, unclassed, naming the incumbent, for the same spelling, a relative one, `./`, and a path through a symlinked directory | §3.1 |
+| Second transaction on one environment | Refused, unclassed, rather than deadlocking | §3.1, §10 |
+| `TRY` against a writer in another process | `mdbx_busy` at once. Without `TRY` the call blocked until the writer committed (3.6 s for a 4 s writer). A reader proceeded throughout and saw the last commit | §10 |
+| `ACCEDE` | A joiner asking for `SAFE_NOSYNC` without it gets `mdbx_incompatible`; with it, the incumbent's flags | §11.1 |
+| Named databases | `create = TRUE` in a read transaction is refused whether or not the database exists; a missing database is refused by name in either kind of transaction; both unclassed. `mdbx_dbi_list()` names the existing ones | §7.2 |
+| Writes in a read-only environment or transaction | Refused, unclassed | §12 |
+| `mdbx_put(overwrite = FALSE)`, `mdbx_del()`, `mdbx_get(default =)` | `FALSE` on an existing key; `TRUE`/`FALSE` for whether a record existed; `default` for an absent key | §3.4 |
+| `mdbx_keys(start =)` | Positions at the first key at or after `start` and runs past a prefix; `limit = NULL` is guarded at `mdbx_scan_max` (10⁶) | §3.5, §9.1: stop client-side, always pass `limit` |
+| Key size | `keysize_max` 2022 at 4 KiB pages, 8166 at 16 KiB. A key one byte over is `mdbx_bad_valsize`. The empty key stores | §5.3 |
+| `mdbx_env_stat(txn, db =)$entries` | Exact within the transaction | `stash_count()` |
+| Map exhaustion | `mdbx_map_full` | §11.2 |
+| After `fork()` | `mdbx_env_is_open()` is `FALSE` in the child and any use is refused, unclassed, naming the fork | §10 |
+| Cost of a commit | 2000 single-put write transactions took 37.4 s; the same 2000 puts in one took 0.058 s (default durability, APFS) | §3.7 |
 
-**What dastash asks of `mdbx` 0.2**, in priority order, with what each removes here:
+**What dastash asks of the next `mdbx`**, in priority order, with what each removes here:
 
 | Ask | Removes from dastash |
 |---|---|
-| Classed conditions: an `mdbx_error` with `code` and `name` fields and a subclass per code — `mdbx_busy`, `mdbx_map_full`, `mdbx_notfound`, `mdbx_incompatible` | the message parser in `R/engine.R` (§13) |
 | An upper bound on scans, `mdbx_keys(end =)` or `prefix =`, stopping in C | the client-side prefix stop and the over-read at the end of every prefix scan (§3.5, §9.1) |
-| `mdbx_with_write(env, fun, flags = NULL)`, or a `try = TRUE` argument | the hand-rolled begin/abort/commit loop |
+| `mdbx_with_write(env, fun, flags = NULL)`, or a `try = TRUE` argument | the hand-rolled begin/commit/abort loop |
 | Batch `mdbx_get()`, `mdbx_put()` and `mdbx_del()` over lists of keys in one crossing | one R–C crossing per record in `stash_mget()`, culls and journal flushes |
 | A cursor API, later | nothing v1 needs; prefix scans get cheaper |
 
-**Two earlier asks are closed**, for different reasons. The first was documentation:
-`?mdbx-concurrency` claimed two environments on one file in one session were independent
-([#2](https://github.com/pedrobtz/mdbx/issues/2)).
-[#4](https://github.com/pedrobtz/mdbx/pull/4) corrects it *and* refuses the second open by
-name, which is more than was asked for. The second was `mdbx_dbi_open()` returning `NULL`
-for a missing database, or a classed not-found
-([#3](https://github.com/pedrobtz/mdbx/issues/3) suggested it; #4 named the refusal but
-deliberately left the return alone, as an API choice). It goes anyway: `mdbx_dbi_list()`
-answers the same question in one call, so §7.2 has no `tryCatch` per index waiting on 0.2.
-
-Not asked for: `DUPSORT`, because composite index keys `<value><key>` are clearer, and
-`estimate_range()`, which only the typed layer's `find()` would use (§20). `plan.md` §0
-assumed both plus `mget`/`mput`; none exists, and only the batch calls are wanted.
+**Closed asks.** Classed conditions, once the first ask, are in 0.1.1.
+[#2](https://github.com/pedrobtz/mdbx/issues/2) (a second open was documented as
+independent, and failed with the lock file's `EAGAIN`) and
+[#3](https://github.com/pedrobtz/mdbx/issues/3) (named-database refusals surfaced raw
+libmdbx text) were fixed before the first CRAN release. Not asked for: `DUPSORT`, because
+composite index keys `<value><key>` are clearer, and `estimate_range()`, which only the
+typed layer's `find()` might use (§20).
 
 ---
 
@@ -1513,9 +1481,10 @@ stash_tree(): one leaf per file-backed live entry, every symlink resolves
 ```
 
 **Golden vectors** in `tests/testthat/golden/key-vectors.csv` freeze the encoding of §5.2.
-**Grep guards** over `R/` fail on `serialize(` outside the codecs and the meta record, and
-on any `digest(` call lacking `serialize = FALSE`. **A portability assertion** checks
-`KEY_MAX` and `TAG_MAX` against `mdbx_limits(4096)` as well as the running machine.
+**Grep guards** over `R/` fail on `serialize(` outside the RDS codec and the meta record
+(§7.3), on any `digest(` call lacking `serialize = FALSE`, and on `mdbx_` outside
+`R/engine.R`. **A portability assertion** checks `KEY_MAX` and `TAG_MAX` against
+`mdbx_limits(4096)` as well as the running machine.
 
 **Cross-process**, with `callr` spawning real R sessions — the only tests that can catch
 the concurrency and atomicity claims:
@@ -1539,12 +1508,15 @@ concluding a storage change is sound.
 
 # 17. Decisions
 
-Each is the decision this document makes, what v1 had, and why. Overruling one is cheap
-now and expensive after data exists.
+Each is a decision this document makes and why. Overruling one is cheap now and expensive
+after data exists. "Reverses" names what an earlier draft had.
 
-**D1 — The API is functions.** v1: R6 methods, `s$get()`. Now: `stash_get(s, …)`. Verbs
-pipe, pass to `lapply()`, dispatch, appear in `methods()` and the NAMESPACE, and the
-package reads like `fs`, `httr2`, `pins` and `DBI`. `functional-api.md` is the argument.
+**D1 — The API is functions.** `stash_get(s, …)`, not `s$get(…)`. Functions pipe, pass to
+`lapply()`, dispatch, and appear in `methods()` and the NAMESPACE; the package reads like
+`fs`, `httr2`, `pins` and `DBI`. Names follow what R users already know: `stash_mget()`
+after base `mget()`, `stash_memoise()` after `memoise::memoise()`, and `stash_count()` and
+`stash_volume()` rather than an ambiguous `stash_size()`. Reverses the first draft's R6
+methods and the functional proposal's `stash_get_many()` and `stashed()`.
 
 **D2 — The handle is an environment with an S3 class; no R6, no S7.** With functions as
 the interface the object needs identity, mutability and a print method, which an
@@ -1552,56 +1524,58 @@ environment has. R6 would add a dependency for method syntax the API does not ex
 S7 would add one for validation of a single class. Codecs, keys and memoised functions
 are plain classed lists and closures with value semantics.
 
-**D3 — A miss is `missing(default)`.** v1: `get(key, default = NULL)` plus `[[` raising.
-`NULL` is a legal value, so it cannot signal absence; a sentinel is a thing to learn;
-`missing()` is an R idiom that gives both behaviours from one name.
+**D3 — A miss is `missing(default)`.** `NULL` is a legal value, so `default = NULL` cannot
+signal absence; a sentinel is a thing to learn; `missing()` is an R idiom that gives both
+behaviours from one name.
 
-**D4 — Default eviction is least-recently-stored** (kept). The only policy that needs no
-write on a read; the default configuration never opens `accessed` and an ordinary read
-touches nothing.
+**D4 — Default eviction is least-recently-stored.** The only policy that needs no write
+on a read; the default configuration never opens `accessed` and an ordinary read touches
+nothing.
 
-**D5 — Inline threshold 32 KiB, store-level** (kept). Below it mdbx's own storage beats a
-file; above it the file keeps the map proportional to metadata and makes §6.3 possible.
+**D5 — Inline threshold 32 KiB, store-level.** Below it mdbx's own storage beats a file;
+above it the file keeps the map proportional to metadata and makes §6.3 possible.
 
-**D6 — Counters return doubles and `bit64` leaves `Imports`.** v1 returned `integer64`.
-A counter past 2⁵³ is not a cache counter; the storage stays 64-bit; the dependency goes.
+**D6 — Counters return doubles; `bit64` is not imported.** A counter past 2⁵³ is not a
+cache counter; the storage stays 64-bit; the dependency goes.
 
-**D7 — Never-expiring entries have no `expiry` row.** v1 indexed `Inf`. One write per
-`set()` saved and the index halved, for rows the scan could never reach.
+**D7 — Never-expiring entries have no `expiry` row.** One write per `stash_set()` saved
+and the index halved, for rows the scan could never reach.
 
-**D8 — `expire =` accepts seconds, `difftime` and `POSIXct`.** v1 and `functional-api.md`
-weighed `expire_in()`/`expire_at()` constructors. R already has the types; constructors
-would be a second way to say them.
+**D8 — `expire =` accepts seconds, `difftime` and `POSIXct`.** R already has the types;
+`expire_in()`/`expire_at()` constructors would be a second way to say them.
 
-**D9 — Tags are a vector.** v1: one tag. The index is one row per (tag, key) either way,
-and an entry derived from two sources belongs to both.
+**D9 — Tags are a vector.** The index is one row per (tag, key) either way, and an entry
+derived from two sources belongs to both.
 
 **D10 — Enumerations are strings, behaviour is objects.** `eviction` and `durability` are
-`match.arg()` strings with `diskcache`'s names, because they are closed choices; codecs
-are objects, because they carry code. `functional-api.md`'s `evict_lru()` constructors
-are dropped.
+`match.arg()` strings with `diskcache`'s names, because they are closed choices and those
+are the names users search for; codecs are objects, because they carry code. No
+`evict_lru()` constructors.
 
 **D11 — `stash_entries()` takes two indexed filters, not data-masked predicates.** Tidy
 evaluation with index pushdown by pattern-matching the quosure is a query planner in
-disguise. `prefix` and `tag` are what the indexes answer; everything else is `dplyr` on a
-data frame.
+disguise, whose fallback is a full scan nobody asked for. `prefix` and `tag` are what the
+indexes answer; everything else is `dplyr` on a data frame. For the same reason there is
+no general `stash_forget(s, predicate)`: an irreversible bulk delete driven by an
+expression is a foot-gun, and the named verbs cover every indexed predicate.
 
-**D12 — Doubles are legal keys, encoded exactly; no NFC normalisation; no raw keys.**
-v1 rejected doubles without a declared precision, normalised strings, and accepted raw
-keys. A cache keyed on a memoised function's arguments must accept `0.1`; hex floats
-make it exact and portable. Normalisation needs a package base R does not have, and a
-cache miss is the whole cost of skipping it. Raw keys made `stash_keys()` unprintable.
-The typed layer of §20 may impose precision and normalisation; the cache does not.
+**D12 — Doubles are legal keys, encoded exactly; no NFC normalisation; no raw keys.** A
+cache keyed on a memoised function's arguments must accept `0.1`; hex floats make it
+exact and portable. Normalisation needs a package base R does not have, and a cache miss
+is the whole cost of skipping it. Raw keys would make `stash_keys()` unprintable. The
+typed layer may impose precision and normalisation; the cache does not. Reverses the
+first draft, which rejected doubles, normalised strings and accepted raw keys.
 
 **D13 — `digest` stays; R ≥ 4.1.** Open. R 4.5's `tools::sha256sum(bytes =)` would remove
 the dependency at the cost of excluding R 4.1–4.4 installs, which are common where this
 package is aimed. Revisit at release.
 
-**D14 — `mdbx` is the engine, first-party, and all of it is in one file.** `plan.md` wanted
-`storr`'s driver contract and a filesystem driver as insurance against a binding that did
-not yet exist; the binding exists and is ours, so a gap is a feature request (§15), not an
-abstraction. `R/engine.R` isolates the binding for error translation, the write loop and
-testing, and is not a public extension point.
+**D14 — `mdbx` is the engine, first-party, and all of it is in one file.** No driver
+contract and no fallback engine: every ordering decision is an mdbx decision, the binding
+is ours, and a gap in it is a feature request (§15). `R/engine.R` isolates the binding
+for error translation, the write loop and testing, and is not a public extension point.
+Reverses the typed-store plan, which wanted `storr`'s driver contract as insurance
+against a binding that did not yet exist.
 
 **D15 — Laziness is a recorded shape, not a flag.** A lazy frame in is a lazy scan out,
 decided by what was written, so `stash_get()` and a memoised function behave the same
@@ -1614,14 +1588,20 @@ symlink into the publish path of §8. Rebuilding it is O(entries) and scoped by 
 A string key so it prefix-scans, evicts and browses. Defaults included so an omitted
 argument and its default are one entry; `omit` and `key` for everything else.
 
-**D18 — Full durability by default** (kept). §11.1.
+**D18 — Full durability by default.** §11.1.
 
-**D19 — The typed layer lives in this package, later, as a layer** (kept). Splitting it
-into a second package before either exists is a decision made with no information.
+**D19 — The typed layer lives in this package, later, as a layer.** Splitting it into a
+second package before either exists is a decision made with no information.
 
-**D20 — `stash_get()` does not verify blob hashes** (kept). Hashing a 200 MB Parquet file
-on every read defeats `stash_path()`; `stash_check(hash = TRUE)` verifies on demand, and a
+**D20 — `stash_get()` does not verify blob hashes.** Hashing a 200 MB Parquet file on
+every read defeats `stash_path()`; `stash_check(hash = TRUE)` verifies on demand, and a
 corrupt file surfaces as `dastash_codec_error` from the decoder.
+
+**D21 — The transaction belongs to the environment, not the handle.** Handles on one
+directory share one environment (§3.1), and an environment runs one transaction. If each
+handle owned its own, a verb on a second handle inside `stash_transact()` would hit
+`mdbx`'s unclassed refusal; owning it in the registry entry makes that verb join the open
+transaction instead.
 
 ---
 
@@ -1632,7 +1612,7 @@ tests green and `R CMD check` clean.
 
 | Stage | Delivers | Freezes |
 |---|---|---|
-| 0 | `DESCRIPTION`, `R/conditions.R` with every class in §13, testthat 3e, CI on three platforms plus a no-Suggests job, the grep guards | the error vocabulary |
+| 0 | `DESCRIPTION` with the dependencies of §14.1, `R/conditions.R` with every class in §13, `nosuggests: true` on the shared R-CMD-check workflow, `^\.agents$` in `.Rbuildignore`, the grep guards | the error vocabulary |
 | 1 | `R/key.R`: the grammar of §5.2, `stash_key()`, golden vectors, `inst/spec/key-encoding-v1.md` | **the key encoding** |
 | 2 | `R/encode.R` (`enc_f64`, `enc_u64`), `R/engine.R` over `mdbx` with the error translation of §13 and the `TRY` loop (§14.2), `R/store.R` layout and `format`/`config` records | on-disk layout, `format_version` |
 | 3 | `R/codec.R`: `codec()`, `codec_rds()`, `codec_raw()`, `codec_file()`, `codec_auto()`, the round-trip matrix | codec names and the record's `codec` field |
@@ -1642,8 +1622,10 @@ tests green and `R CMD check` clean.
 | 7 | `codec_qs2()`, `codec_parquet()` with `shape`, `stash_path()`, `stash_lazy()`, `stash_memoise()` and companions, `stash_tree()`, `as_cachem()` | — |
 | 8 | The `callr` suite of §16, vignettes (getting started; frames and Parquet; operating a shared store), README with the deployment envelope, performance numbers at 10⁴ and 10⁶ entries, release | — |
 
-Stage 1 comes before anything that touches disk because the encoding cannot be revised
-once a store exists. Stages 1, 2 and 3 are independent after stage 0.
+Already in place: the `usethis` skeleton, testthat 3rd edition, and the R-CMD-check,
+coverage and pkgdown workflows from `pedrobtz/r-actions`. Stage 1 comes before anything
+that touches disk because the encoding cannot be revised once a store exists. Stages 1,
+2 and 3 are independent after stage 0.
 
 ---
 
@@ -1658,6 +1640,9 @@ single-flight leases        a lease record with holder and expiry, claimed in a 
                             transaction, never held across a producer (§10)
 stale-while-revalidate      probabilistic early recompute in stash_memoise(); the
                             memoize_stampede recipe
+stale-if-error              stash_fallback(f, s): serve the last good value when f fails;
+                            a second deadline per record, not a subsystem
+                            (cache-model.md §8)
 retention                   enforce retain_until; cull and evict refuse to cross it
 stash_reconfigure()         change a store-level setting by rebuilding indexes (§12)
 fanout sharding             N environments, key hash picks one; the answer to writer
@@ -1675,19 +1660,19 @@ layer of §20.
 
 # 20. The typed layer, later
 
-`dastash-design.md` describes something this document does not build: datasets with
+`typed-layer.md` describes something this document does not build: datasets with
 declared, typed key schemas, producers, partial identifiers, a verification relation
 `identify(produce(k)) ⊑ k`, and a mismatch policy. It is a good design and it is not a
 cache. It sits above one:
 
 ```text
-dataset("prices", keys = list(date = key_date(), exchange = key_character()),
+dataset("prices", s, keys = list(date = key_date(), exchange = key_character()),
         produce = ..., identify = ..., on_mismatch = "error")
         |
-        |  stash_key(date = , exchange = )   ->  a stash key
-        |  ds_find(exchange == "XSWX")       ->  an index dastash does not yet maintain
+        |  "prices/" ‖ canon(date = , exchange = )   ->  a stash key
+        |  ds_find(prices, exchange = "XSWX")         ->  an index v1 does not maintain
         v
-      stash                                  <- this document
+      stash                                          <- this document
 ```
 
 Three things v1 does that let it arrive without a migration: the key encoding is the same
@@ -1698,7 +1683,7 @@ and the codec is recorded per record, so a dataset can change codec without orph
 anything.
 
 The one thing it needs that v1 does not build is `find(field = value)`: an index over
-key *components*, which requires a schema to know what the components are. It is a second
-family of index databases keyed `i ‖ dataset ‖ field ‖ sort_value ‖ key`, using the
-order-preserving encodings of §7.4 and the same "indexes are derived" property of §7.5.
-Designed, and out of scope here.
+key *components*, which requires a schema to know what the components are. It is one more
+index database, `fields`, keyed `dataset ‖ 0x00 ‖ field ‖ 0x00 ‖ sort(value) ‖ key`, using
+the order-preserving encodings of §7.4 and the same "indexes are derived" property of §7.5.
+Designed in `typed-layer.md` §4, and out of scope here.

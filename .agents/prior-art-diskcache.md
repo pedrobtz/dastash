@@ -1,7 +1,7 @@
 # diskcache and polars-diskcache — what they are for
 
 Reference notes on the two Python libraries `dastash` is modelled on. This is about what
-they do and why people reach for them; `design.md` §1.3 and §8.5 are where the mapping
+they do and why people reach for them; `design.md` §1.3 and §3.12 are where the mapping
 onto R and mdbx lives.
 
 > **Sources.** The `diskcache` sections are stated from the library's documented
@@ -622,34 +622,28 @@ cache_instance.clear()
 
 # 8. What this means for dastash
 
-The short version; `design.md` is the long one.
+The short version; `design.md` is the long one, and its §3.12 maps the two APIs call by
+call.
 
-| From diskcache | dastash's position |
+| From diskcache and plcache | dastash's position |
 |---|---|
-| One table, six indexes, no joins | Named mdbx databases, one per index (`design.md` §1.3) |
-| Values above a threshold become files | Same, at 32 KiB — but content-addressed with refcounts, so identical bytes are stored once and deletion is safe |
-| Random file names | SHA-256 of the encoded bytes |
-| Indexes created on demand | Copied directly (`design.md` §3.1) |
-| `statistics` off, LRS default, tag index off | Copied directly, for the same reason: an ordinary read must touch nothing (`design.md` §9.3) |
-| Lazy expiry, bounded `cull()` on write | Copied directly |
-| `Timeout` with `retry=` | `TRY` plus backoff, then `dastash_busy` |
+| One table, six indexes, no joins | Named mdbx databases, one per index (`design.md` §1.3, §7.2) |
+| Values above a threshold become files | Same, at 32 KiB — but content-addressed with refcounts, so identical bytes are stored once and deletion is safe (§6.1, §8) |
+| Random file names; plcache's blob = hash of the *call* | SHA-256 of the encoded bytes |
+| Indexes created on demand | Copied (§7.2) |
+| `statistics` off, LRS default, tag index off | Copied, for the same reason: an ordinary read touches nothing (§9.3, D4) |
+| Lazy expiry, bounded `cull()` on write | Copied (§9.1) |
+| `Timeout` with `retry=` | `TRY` plus backoff, then `dastash_busy` (§10) |
 | `FanoutCache` for write contention | v1.x; mdbx serialises writers per environment exactly as SQLite does |
-| `memoize` keys on arguments, not code | Copied, with an explicit `version =` lever |
-| Pickle as the default format | RDS, with the ban on hashing `serialize()` output for *identity* |
-| polars-diskcache's Parquet path | `codec_parquet()` plus `s$path(key)` (`design.md` §6.3) |
-| plcache keys on `repr(bound_args)` | A specified canonical encoding instead (`design.md` §4) — same goal, but `1L` and `1` agree and no `repr` can drift |
-| plcache's blob = hash of the *call* | dastash hashes the *content*, so identical bytes are stored once and a refcount makes deletion safe |
-| plcache's `functions/` symlink tree | **Not in v1, and it should be considered.** See below |
-| plcache has no expiry | dastash has `expire=` from v1 |
+| `memoize` keys on arguments, not code | Copied, with an explicit `version =` lever (§3.8) |
+| Pickle as the default format | RDS, with the ban on hashing `serialize()` output for *identity* (§5.2) |
+| plcache's Parquet path | `codec_parquet()`, `stash_path()` and `stash_lazy()` (§6.3–§6.5) |
+| A `LazyFrame` comes back lazy | A lazy arrow or polars frame comes back as a scan of the cached file (§6.4) |
+| plcache keys on `repr(bound_args)` | A specified canonical encoding (§5) — same goal, but `1L` and `1` agree and no `repr` can drift |
+| `cache_key=`, `ignore=` | `key =` and `omit =` on `stash_memoise()` (§3.8) |
+| plcache's `functions/` symlink tree | `stash_tree()`: derived, on demand, relative symlinks (§6.6) |
+| plcache has no expiry | `expire =` (§3.4) |
 
-The symlink tree is the one feature in either library that dastash has no answer to. A
-content-addressed store is unbrowsable by construction — `blobs/9f/9fbc…` tells a human
-nothing — and plcache solves that for free with a second, throwaway view built from
-symlinks. An `s$browse()` that materialises `<root>/keys/<key>/value.parquet` pointing
-into `blobs/` would cost nothing to maintain (it is derived, like every index in
-`design.md` §3.3) and would make a dastash directory inspectable with `ls`, a file
-browser, or a DuckDB glob. Worth an entry in `design.md` §16.
-
-The one thing neither library has, and the reason `dastash-design.md` exists at all, is a
-notion of what a value *is*. diskcache will store anything under any key and cannot tell
-you it is wrong. That gap is the deferred typed layer, not the cache.
+The one thing neither library has is a notion of what a value *is*. diskcache will store
+anything under any key and cannot tell you it is wrong. That gap is the deferred typed
+layer (`typed-layer.md`), not the cache.

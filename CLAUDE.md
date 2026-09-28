@@ -4,30 +4,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-`dastash` is an R package at **design stage, pre-implementation**. `R/` is empty and
-`DESCRIPTION` is still a `usethis` placeholder. Seven documents exist and they do not all
-describe the same thing:
+`dastash` is an R package at **design stage, pre-implementation**. The `usethis` skeleton,
+testthat 3e, and the R-CMD-check, coverage and pkgdown workflows (from
+`pedrobtz/r-actions`) exist; `R/` holds only `dastash-package.R` and `DESCRIPTION` is
+still a placeholder. The design lives in `.agents/`, four documents:
 
-- **`design.md`** — **the current contract** (v2, 2026-09-10). A persistent, cross-process
-  disk cache on `mdbx` with a functional `stash_*()` API. Section references `§N`, `Dn`
+- **`.agents/design.md`** — **the contract**: semantics, API, storage, concurrency, and the
+  engine as verified against `mdbx` 0.1.1. Section references `§N` and decisions `Dn`
   point here unless the text says otherwise.
-- **`design-v1.md`** — the previous contract: the same storage design behind an R6 method
-  API. Superseded. `cache-model.md`, `prior-art-diskcache.md` and `functional-api.md`
-  cite *its* section numbers; `design.md` §0 has the mapping.
-- **`review.md`** — what v1 got right and wrong, every change in v2 with its reason, and
-  the external facts verified on 2026-09-10 (F-numbered findings).
-- **`functional-api.md`** — the argument for the functional surface. Absorbed into
-  `design.md` §2–§3; where a signature differs, `design.md` wins.
-- **`cache-model.md`** — the formal model. `design.md` §4 is its summary; read it before
-  arguing about expiry, eviction or the publish ordering.
-- **`prior-art-diskcache.md`** — what `diskcache` and `polars-diskcache` do.
-- **`dastash-design.md`** and **`plan.md`** — a *typed artifact store* (schemas, producers,
-  identifiers) and its plan. **Deferred**; a layer that will sit above the cache.
-  `design.md` §20 says which of its decisions survive. `plan.md` §0 assumes
-  `mdbx_estimate_range()` and `mget`/`mput`, which do not exist.
+- **`.agents/cache-model.md`** — the formal model. `design.md` §4 is its summary; read it
+  before arguing about expiry, eviction or the publish ordering.
+- **`.agents/prior-art-diskcache.md`** — what `diskcache` and `polars-diskcache` do.
+- **`.agents/typed-layer.md`** — the typed dataset layer (schemas, producers,
+  identifiers). **Deferred**; it sits above the cache and is built after it.
 
-**Read `design.md` §0 first**, then `review.md` if you need to know why something is the
-way it is.
+**Read `design.md` §0 first.** Earlier drafts (an R6-based first contract, its review, a
+functional-API proposal, a typed-store design and plan) were folded into these on
+2026-09-28; they are in git history at `c7216c9`, and `design.md` §17 records which of
+their decisions were reversed and why.
 
 ## What the package does
 
@@ -47,10 +41,8 @@ functions with the stash first: `stash_get(s, key)`, `s |> stash_set(key, value)
 ## Deployment envelope
 
 **Multiple processes on a single host, over a local filesystem.** libmdbx needs a working
-`mmap` and lock file and gets both. `dastash-design.md` §5.1–§5.2 claim the store sits on
-Azure Files or blobfuse and derive a lock-independent architecture from that; the premise
-is wrong and `design.md` §0 corrects it. PID liveness checks are legitimate here
-(`design.md` §11.3).
+`mmap` and lock file and gets both. Network filesystems are out of scope, and PID liveness
+checks are legitimate (`design.md` §0, §11.3).
 
 ## Storage
 
@@ -62,10 +54,11 @@ is wrong and `design.md` §0 corrects it. PID liveness checks are legitimate her
 <root>/tree/...                    derived browsable view, only when stash_tree() ran
 ```
 
-Named databases: `meta`, `values`, `expiry`, `stored`, `accessed`, `hits`, `tags`, `blobs`,
-plus `format`/`config`/`counters` in the unnamed main database. `design.md` §7.2 is the
-table. Indexes are **created on demand from the configuration**; never-expiring entries
-have **no** `expiry` row.
+Named databases: `meta`, `values`, `expiry`, `blobs`, one eviction index (`stored`,
+`accessed` or `hits`, whichever the policy walks), `tags` when tags are used, plus
+`format`/`config`/`counters` in the unnamed main database. `design.md` §7.2 is the table.
+Indexes are **created on demand from the configuration**; never-expiring entries have
+**no** `expiry` row.
 
 ## Invariants
 
@@ -76,12 +69,13 @@ Load-bearing, and expensive to repair after a store exists.
   nothing. `design.md` §8.
 - **Delete in the transaction, `unlink()` after it commits.** Collect paths during the
   transaction and remove them only once `mdbx_txn_commit()` returns. Unlinking inside the
-  transaction is how the `mdbx` `cache.Rmd` vignette deliberately gets it wrong.
+  transaction is how `mdbx`'s cache article deliberately gets it wrong.
 - **Stage via `<root>/tmp/`, never `tempdir()`.** A cross-device rename is a copy.
 - **Never hash `serialize()` output**, and never call `digest()` without
   `serialize = FALSE`. Identity comes from the text encoding in
   `inst/spec/key-encoding-v1.md` (`design.md` §5.2), frozen by golden vectors and
-  versioned (`KEY_ENCODING_VERSION`). A test greps `R/` for both and fails on a hit.
+  versioned (`KEY_ENCODING_VERSION`). Grep guards fail on `serialize(` outside the RDS
+  codec and the meta record, and on a `digest(` lacking `serialize = FALSE`.
   `stash_memoise()` does not use `rlang::hash()` for the same reason.
 - **Keys are text.** A string is its UTF-8 bytes, unnormalised; anything else is
   canonicalised by the grammar in `design.md` §5.2 or is `dastash_key_invalid`. No raw
@@ -92,8 +86,8 @@ Load-bearing, and expensive to repair after a store exists.
 - **Index encodings are revisable; the key encoding is not.** Every index is a projection
   of `meta` and can be rebuilt, which is what makes `stash_check(repair = TRUE)` possible.
 - **Ordered encoding is not plain big-endian.** `enc_f64()` inverts all bits of a negative
-  and sets the sign bit of a non-negative. `design.md` §7.4. The vignette's `be8()` is
-  correct only for positive epoch times.
+  and sets the sign bit of a non-negative. `design.md` §7.4. The cache article's `be8()`
+  is correct only for positive epoch times.
 - **Decode dispatches on the codec recorded in the meta record**, never the stash's
   current codec. No read verb takes a `codec` argument.
 - **`codec_auto()` never selects a lossy codec and never selects a `Suggests` codec.**
@@ -104,81 +98,85 @@ Load-bearing, and expensive to repair after a store exists.
   lease record claimed in a short transaction, not the transaction itself.
 - **Reads stay read transactions.** Expiry is lazy and access times are journalled
   (`design.md` §9.3), so an ordinary `stash_get()` writes nothing.
-- **One live transaction per handle** (`mdbx` refuses a second). Inside
-  `stash_transact()` every verb uses the open one.
-- **One environment per process and directory.** `stash()` shares one environment between
-  handles on the same path; `mdbx` refuses a second `mdbx_env_open()` on a path this
-  process already holds.
+- **One environment per process and directory; one transaction per environment.**
+  `stash()` shares one environment between handles on the same normalised path, and the
+  registry entry — not the handle — owns the current transaction, so every handle inside
+  `stash_transact()` joins it (`design.md` §3.1, §10, D21). No user code runs inside a
+  transaction except the body of `stash_transact()`: codecs encode before the write and
+  decode after the read.
 - **Every named database the configuration implies is created in one write transaction
-  at open.** Read-only handles treat a missing index database as empty.
+  at open.** Read-only handles read `mdbx_dbi_list()` once and treat a missing index
+  database as empty.
 - **Errors come from the fixed taxonomy** in `design.md` §13, raised via `rlang::abort()`
-  with a class and `dastash_error` as parent. No bare `stop()`.
+  with a class and `dastash_error` as parent. No bare `stop()`. Engine errors are
+  translated **by class**, never by message text.
 - **No object system.** The stash is an environment with S3 class `dastash_stash`; codecs
   and keys are plain classed lists; memoised functions are closures with a class. No R6,
   no S7.
 - **Effects return the stash invisibly; questions return answers.** Exceptions:
   `stash_add()` (logical), `stash_pop()` (value), `stash_incr()`/`stash_decr()` (double).
   A miss is decided by `missing(default)`.
-- **`Imports` is `mdbx`, `rlang`, `digest`.** Adding a dependency is a decision
+- **`Imports` is `mdbx (>= 0.1.1)`, `rlang`, `digest`.** Adding a dependency is a decision
   (`design.md` §14.1, D13).
 
 ## Working with mdbx
 
-`mdbx` 0.1.0 is **first-party**: <https://github.com/pedrobtz/mdbx>, checked out at
-`../mdbx` and installed locally (`R CMD INSTALL ../mdbx`). Submitted to CRAN, not yet
-accepted; dastash reaches CRAN after it. Verified behaviour is recorded in `design.md` §15
-and `review.md` §4, and is that of **pedrobtz/mdbx#4** — open on 2026-09-13, and the fix
-for issues #2 and #3 — so install that branch rather than `main`. The short version:
+`mdbx` is **first-party** (<https://github.com/pedrobtz/mdbx>) and **on CRAN**; 0.1.1 is
+the version the design was verified against, and `design.md` §15 records what it does.
+The short version:
 
-- Many readers and one writer across processes; **one live transaction per environment**,
-  and `mdbx_env_open()` refuses a path this process already holds, naming it: "mdbx
-  environment '<path>' is already open in this process". Hence the per-process registry in
-  `design.md` §3.1 — which is there to *share* the environment, not to improve the error,
-  and which keys on the **normalised** path where `mdbx` compares the spelling R gave it.
-- `mdbx_txn_begin(env, write = TRUE, flags = "TRY")` fails with `MDBX_BUSY` instead of
+- Many readers and one writer across processes; **one live transaction per environment**.
+  `mdbx_env_open()` refuses a path this process already holds, under any spelling
+  (relative, `./`, symlinked directory) — hence the registry in `design.md` §3.1, which is
+  there to *share* the environment.
+- **Classed conditions.** Every libmdbx failure is `c("mdbx_<name>", "mdbx_error", ...)`
+  with `code` and `name` fields: `mdbx_busy`, `mdbx_map_full`, `mdbx_incompatible`,
+  `mdbx_bad_valsize`. The binding's own refusals — second open, second transaction, write
+  in a read transaction, missing named database, use after `fork()` — are unclassed, and
+  dastash is designed never to reach them. `R/engine.R` is the only place that catches
+  either (`design.md` §13).
+- `mdbx_txn_begin(env, write = TRUE, flags = "TRY")` fails with `mdbx_busy` instead of
   blocking; `mdbx_with_write()` takes no flags, so the write loop is dastash's own.
-- There are no condition classes. A libmdbx failure is a plain string ending in
-  `(mdbx error N)`; the binding's own refusals — already open, read-only transaction,
-  missing database, belongs to another process — carry no code and are recognisable only
-  by their text. `R/engine.R` is the only place that reads either (`design.md` §13).
-- Named databases are created in a write transaction at open; `create = TRUE` in a read
+- Named databases are created in a write transaction; `create = TRUE` in a read
   transaction is refused whether or not the database exists, and a missing one is refused
-  by name in either kind of transaction. Neither is catchable by class, so a read-only
-  handle asks `mdbx_dbi_list()` which databases exist rather than opening each inside a
-  `tryCatch`.
+  by name in either kind of transaction.
 - `mdbx_put(overwrite = FALSE)` returns `FALSE` on an existing key; `mdbx_get()` takes
-  `default`; `mdbx_env_stat(txn, db =)$entries` is exact.
+  `default`; `mdbx_del()` returns whether a record existed;
+  `mdbx_env_stat(txn, db =)$entries` is exact.
 - An environment does not survive `fork()`; open it inside the worker.
 - Always open with `ACCEDE`; the effective sync flags come from `mdbx_env_get_flags()`.
 
-**Not in 0.1.0:** cursors, an upper bound on a scan, batch get/put, `DUPSORT`,
+**Not in 0.1.1:** cursors, an upper bound on a scan, batch get/put/del, `DUPSORT`,
 `estimate_range()`. Prefix scans are `mdbx_keys(txn, start = prefix, limit = n, db = )`
 plus a client-side stop at the first non-matching key, in chunks; `start` is inclusive, so
-drop the first element when paging. `design.md` §15 lists what dastash asks of `mdbx` 0.2
-in priority order; when a gap in the binding hurts, the fix goes in `../mdbx`, not around
-it.
+drop the first element when paging, and always pass `limit` (`limit = NULL` is guarded at
+`mdbx_scan_max`). `design.md` §15 lists what dastash asks of the next release in priority
+order; when a gap in the binding hurts, the fix goes into `pedrobtz/mdbx`, not around it.
 
-All `mdbx_*` calls live in one file (`R/engine.R`); nothing else calls the binding.
-`../mdbx/vignettes/articles/cache.Rmd` is the sketch this design started from.
+All `mdbx_*` calls live in one file (`R/engine.R`); nothing else calls the binding, and a
+grep guard enforces it. `mdbx`'s [cache article](https://pedrobtz.github.io/mdbx/articles/cache.html)
+is the sketch this design started from.
 
 ## Scope discipline
 
 v1 is `design.md` §3 in full and nothing else. Single-flight leases, stale-while-revalidate,
-retention enforcement, `stash_reconfigure()`, fanout sharding, namespaces, a lazy DuckDB
-round trip and `codec_json()` are **v1.x** (`design.md` §19); remote blob backends and the
-typed dataset layer are **v2**. v1 writes `retain_until` and does not enforce it.
+stale-if-error, retention enforcement, `stash_reconfigure()`, fanout sharding, namespaces,
+a lazy DuckDB round trip and `codec_json()` are **v1.x** (`design.md` §19); remote blob
+backends and the typed dataset layer are **v2**. v1 writes `retain_until` and does not
+enforce it.
 
 ## Dependencies
 
-`Imports`: rlang, digest, mdbx. Optional codecs and engines (`qs2`, `nanoparquet`, `arrow`,
-`duckdb`/`DBI`/`dbplyr`), `bit64`, `cachem`, `memoise` and `utf8` live in `Suggests` and
-must degrade to a clear `dastash_codec_error`, verified by a no-Suggests CI job. The R
-`polars` package is not on CRAN and is used only when found installed.
+`Imports`: `mdbx (>= 0.1.1)`, rlang, digest. Optional codecs and engines (`qs2`,
+`nanoparquet`, `arrow`, `duckdb`/`DBI`/`dbplyr`), `bit64`, `cachem`, `memoise` and `utf8`
+live in `Suggests` and must degrade to a clear `dastash_codec_error`, verified by the
+`nosuggests` job of the shared R-CMD-check workflow. The R `polars` package is not on CRAN
+and is used only when found installed.
 
 ## Commands
 
 ```sh
-R CMD INSTALL ../mdbx                                  # the engine, from the sibling checkout
+Rscript -e 'install.packages("mdbx")'                  # the engine, from CRAN
 Rscript -e 'devtools::load_all()'                      # load for interactive work
 Rscript -e 'devtools::test()'                          # full test suite
 Rscript -e 'devtools::test(filter = "key")'            # one test file (test-key.R)
