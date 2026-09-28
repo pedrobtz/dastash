@@ -36,22 +36,16 @@
 <p>This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.</p>
 <div class="section level2">
 <h2 id="repository-state">Repository state<a class="anchor" aria-label="anchor" href="#repository-state"></a></h2>
-<p><code>dastash</code> is an R package at <strong>design stage, pre-implementation</strong>. <code>R/</code> is empty and <code>DESCRIPTION</code> is still a <code>usethis</code> placeholder. Seven documents exist and they do not all describe the same thing:</p>
+<p><code>dastash</code> is an R package at <strong>design stage, pre-implementation</strong>. The <code>usethis</code> skeleton, testthat 3e, and the R-CMD-check, coverage and pkgdown workflows (from <code>pedrobtz/r-actions</code>) exist; <code>R/</code> holds only <code>dastash-package.R</code> and <code>DESCRIPTION</code> is still a placeholder. The design lives in <code>.agents/</code>, four documents:</p>
 <ul><li>
-<strong><code>design.md</code></strong> — <strong>the current contract</strong> (v2, 2026-09-10). A persistent, cross-process disk cache on <code>mdbx</code> with a functional <code>stash_*()</code> API. Section references <code>§N</code>, <code>Dn</code> point here unless the text says otherwise.</li>
+<strong><code>.agents/design.md</code></strong> — <strong>the contract</strong>: semantics, API, storage, concurrency, and the engine as verified against <code>mdbx</code> 0.1.1. Section references <code>§N</code> and decisions <code>Dn</code> point here unless the text says otherwise.</li>
 <li>
-<strong><code>design-v1.md</code></strong> — the previous contract: the same storage design behind an R6 method API. Superseded. <code>cache-model.md</code>, <code>prior-art-diskcache.md</code> and <code>functional-api.md</code> cite <em>its</em> section numbers; <code>design.md</code> §0 has the mapping.</li>
+<strong><code>.agents/cache-model.md</code></strong> — the formal model. <code>design.md</code> §4 is its summary; read it before arguing about expiry, eviction or the publish ordering.</li>
 <li>
-<strong><code>review.md</code></strong> — what v1 got right and wrong, every change in v2 with its reason, and the external facts verified on 2026-09-10 (F-numbered findings).</li>
+<strong><code>.agents/prior-art-diskcache.md</code></strong> — what <code>diskcache</code> and <code>polars-diskcache</code> do.</li>
 <li>
-<strong><code>functional-api.md</code></strong> — the argument for the functional surface. Absorbed into <code>design.md</code> §2–§3; where a signature differs, <code>design.md</code> wins.</li>
-<li>
-<strong><code>cache-model.md</code></strong> — the formal model. <code>design.md</code> §4 is its summary; read it before arguing about expiry, eviction or the publish ordering.</li>
-<li>
-<strong><code>prior-art-diskcache.md</code></strong> — what <code>diskcache</code> and <code>polars-diskcache</code> do.</li>
-<li>
-<strong><code>dastash-design.md</code></strong> and <strong><code>plan.md</code></strong> — a <em>typed artifact store</em> (schemas, producers, identifiers) and its plan. <strong>Deferred</strong>; a layer that will sit above the cache. <code>design.md</code> §20 says which of its decisions survive. <code>plan.md</code> §0 assumes <code>mdbx_estimate_range()</code> and <code>mget</code>/<code>mput</code>, which do not exist.</li>
-</ul><p><strong>Read <code>design.md</code> §0 first</strong>, then <code>review.md</code> if you need to know why something is the way it is.</p>
+<strong><code>.agents/typed-layer.md</code></strong> — the typed dataset layer (schemas, producers, identifiers). <strong>Deferred</strong>; it sits above the cache and is built after it.</li>
+</ul><p><strong>Read <code>design.md</code> §0 first.</strong> Earlier drafts (an R6-based first contract, its review, a functional-API proposal, a typed-store design and plan) were folded into these on 2026-09-28; they are in git history at <code>c7216c9</code>, and <code>design.md</code> §17 records which of their decisions were reversed and why.</p>
 </div>
 <div class="section level2">
 <h2 id="what-the-package-does">What the package does<a class="anchor" aria-label="anchor" href="#what-the-package-does"></a></h2>
@@ -60,7 +54,7 @@
 </div>
 <div class="section level2">
 <h2 id="deployment-envelope">Deployment envelope<a class="anchor" aria-label="anchor" href="#deployment-envelope"></a></h2>
-<p><strong>Multiple processes on a single host, over a local filesystem.</strong> libmdbx needs a working <code>mmap</code> and lock file and gets both. <code>dastash-design.md</code> §5.1–§5.2 claim the store sits on Azure Files or blobfuse and derive a lock-independent architecture from that; the premise is wrong and <code>design.md</code> §0 corrects it. PID liveness checks are legitimate here (<code>design.md</code> §11.3).</p>
+<p><strong>Multiple processes on a single host, over a local filesystem.</strong> libmdbx needs a working <code>mmap</code> and lock file and gets both. Network filesystems are out of scope, and PID liveness checks are legitimate (<code>design.md</code> §0, §11.3).</p>
 </div>
 <div class="section level2">
 <h2 id="storage">Storage<a class="anchor" aria-label="anchor" href="#storage"></a></h2>
@@ -69,7 +63,7 @@
 &lt;root&gt;/blobs/&lt;aa&gt;/&lt;hash&gt;[.&lt;ext&gt;]   values above inline_max, content-addressed, mode 0444
 &lt;root&gt;/tmp/&lt;pid&gt;-&lt;n&gt;               staging, same device, for atomic rename
 &lt;root&gt;/tree/...                    derived browsable view, only when stash_tree() ran</code></pre>
-<p>Named databases: <code>meta</code>, <code>values</code>, <code>expiry</code>, <code>stored</code>, <code>accessed</code>, <code>hits</code>, <code>tags</code>, <code>blobs</code>, plus <code>format</code>/<code>config</code>/<code>counters</code> in the unnamed main database. <code>design.md</code> §7.2 is the table. Indexes are <strong>created on demand from the configuration</strong>; never-expiring entries have <strong>no</strong> <code>expiry</code> row.</p>
+<p>Named databases: <code>meta</code>, <code>values</code>, <code>expiry</code>, <code>blobs</code>, one eviction index (<code>stored</code>, <code>accessed</code> or <code>hits</code>, whichever the policy walks), <code>tags</code> when tags are used, plus <code>format</code>/<code>config</code>/<code>counters</code> in the unnamed main database. <code>design.md</code> §7.2 is the table. Indexes are <strong>created on demand from the configuration</strong>; never-expiring entries have <strong>no</strong> <code>expiry</code> row.</p>
 </div>
 <div class="section level2">
 <h2 id="invariants">Invariants<a class="anchor" aria-label="anchor" href="#invariants"></a></h2>
@@ -77,17 +71,17 @@
 <ul><li>
 <strong>Publish the blob first, commit the transaction second.</strong> A crash between them leaves an unreferenced blob (invisible, reclaimable); the reverse commits a record pointing at nothing. <code>design.md</code> §8.</li>
 <li>
-<strong>Delete in the transaction, <code><a href="https://rdrr.io/r/base/unlink.html" class="external-link">unlink()</a></code> after it commits.</strong> Collect paths during the transaction and remove them only once <code>mdbx_txn_commit()</code> returns. Unlinking inside the transaction is how the <code>mdbx</code> <code>cache.Rmd</code> vignette deliberately gets it wrong.</li>
+<strong>Delete in the transaction, <code><a href="https://rdrr.io/r/base/unlink.html" class="external-link">unlink()</a></code> after it commits.</strong> Collect paths during the transaction and remove them only once <code>mdbx_txn_commit()</code> returns. Unlinking inside the transaction is how <code>mdbx</code>’s cache article deliberately gets it wrong.</li>
 <li>
 <strong>Stage via <code>&lt;root&gt;/tmp/</code>, never <code><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir()</a></code>.</strong> A cross-device rename is a copy.</li>
 <li>
-<strong>Never hash <code><a href="https://rdrr.io/r/base/serialize.html" class="external-link">serialize()</a></code> output</strong>, and never call <code>digest()</code> without <code>serialize = FALSE</code>. Identity comes from the text encoding in <code>inst/spec/key-encoding-v1.md</code> (<code>design.md</code> §5.2), frozen by golden vectors and versioned (<code>KEY_ENCODING_VERSION</code>). A test greps <code>R/</code> for both and fails on a hit. <code>stash_memoise()</code> does not use <code><a href="https://rlang.r-lib.org/reference/hash.html" class="external-link">rlang::hash()</a></code> for the same reason.</li>
+<strong>Never hash <code><a href="https://rdrr.io/r/base/serialize.html" class="external-link">serialize()</a></code> output</strong>, and never call <code>digest()</code> without <code>serialize = FALSE</code>. Identity comes from the text encoding in <code>inst/spec/key-encoding-v1.md</code> (<code>design.md</code> §5.2), frozen by golden vectors and versioned (<code>KEY_ENCODING_VERSION</code>). Grep guards fail on <code>serialize(</code> outside the RDS codec and the meta record, and on a <code>digest(</code> lacking <code>serialize = FALSE</code>. <code>stash_memoise()</code> does not use <code><a href="https://rlang.r-lib.org/reference/hash.html" class="external-link">rlang::hash()</a></code> for the same reason.</li>
 <li>
 <strong>Keys are text.</strong> A string is its UTF-8 bytes, unnormalised; anything else is canonicalised by the grammar in <code>design.md</code> §5.2 or is <code>dastash_key_invalid</code>. No raw keys. Doubles are legal and encoded exactly (<code>sprintf("%a")</code>); a whole double within ±2⁵³ encodes as an integer so <code>1L</code> and <code>1</code> agree. <code>KEY_MAX = 512</code>, <code>TAG_MAX = 256</code>, constants, not page-derived; longer keys are digested with the text kept in the record up to <code>CANON_KEEP_MAX</code>.</li>
 <li>
 <strong>Index encodings are revisable; the key encoding is not.</strong> Every index is a projection of <code>meta</code> and can be rebuilt, which is what makes <code>stash_check(repair = TRUE)</code> possible.</li>
 <li>
-<strong>Ordered encoding is not plain big-endian.</strong> <code>enc_f64()</code> inverts all bits of a negative and sets the sign bit of a non-negative. <code>design.md</code> §7.4. The vignette’s <code>be8()</code> is correct only for positive epoch times.</li>
+<strong>Ordered encoding is not plain big-endian.</strong> <code>enc_f64()</code> inverts all bits of a negative and sets the sign bit of a non-negative. <code>design.md</code> §7.4. The cache article’s <code>be8()</code> is correct only for positive epoch times.</li>
 <li>
 <strong>Decode dispatches on the codec recorded in the meta record</strong>, never the stash’s current codec. No read verb takes a <code>codec</code> argument.</li>
 <li>
@@ -99,46 +93,45 @@
 <li>
 <strong>Reads stay read transactions.</strong> Expiry is lazy and access times are journalled (<code>design.md</code> §9.3), so an ordinary <code>stash_get()</code> writes nothing.</li>
 <li>
-<strong>One live transaction per handle</strong> (<code>mdbx</code> refuses a second). Inside <code>stash_transact()</code> every verb uses the open one.</li>
+<strong>One environment per process and directory; one transaction per environment.</strong> <code>stash()</code> shares one environment between handles on the same normalised path, and the registry entry — not the handle — owns the current transaction, so every handle inside <code>stash_transact()</code> joins it (<code>design.md</code> §3.1, §10, D21). No user code runs inside a transaction except the body of <code>stash_transact()</code>: codecs encode before the write and decode after the read.</li>
 <li>
-<strong>One environment per process and directory.</strong> <code>stash()</code> shares one environment between handles on the same path; <code>mdbx</code> refuses a second <code>mdbx_env_open()</code> on a path this process already holds.</li>
+<strong>Every named database the configuration implies is created in one write transaction at open.</strong> Read-only handles read <code>mdbx_dbi_list()</code> once and treat a missing index database as empty.</li>
 <li>
-<strong>Every named database the configuration implies is created in one write transaction at open.</strong> Read-only handles treat a missing index database as empty.</li>
-<li>
-<strong>Errors come from the fixed taxonomy</strong> in <code>design.md</code> §13, raised via <code><a href="https://rlang.r-lib.org/reference/abort.html" class="external-link">rlang::abort()</a></code> with a class and <code>dastash_error</code> as parent. No bare <code><a href="https://rdrr.io/r/base/stop.html" class="external-link">stop()</a></code>.</li>
+<strong>Errors come from the fixed taxonomy</strong> in <code>design.md</code> §13, raised via <code><a href="https://rlang.r-lib.org/reference/abort.html" class="external-link">rlang::abort()</a></code> with a class and <code>dastash_error</code> as parent. No bare <code><a href="https://rdrr.io/r/base/stop.html" class="external-link">stop()</a></code>. Engine errors are translated <strong>by class</strong>, never by message text.</li>
 <li>
 <strong>No object system.</strong> The stash is an environment with S3 class <code>dastash_stash</code>; codecs and keys are plain classed lists; memoised functions are closures with a class. No R6, no S7.</li>
 <li>
 <strong>Effects return the stash invisibly; questions return answers.</strong> Exceptions: <code>stash_add()</code> (logical), <code>stash_pop()</code> (value), <code>stash_incr()</code>/<code>stash_decr()</code> (double). A miss is decided by <code>missing(default)</code>.</li>
 <li>
-<strong><code>Imports</code> is <code>mdbx</code>, <code>rlang</code>, <code>digest</code>.</strong> Adding a dependency is a decision (<code>design.md</code> §14.1, D13).</li>
+<strong><code>Imports</code> is <code>mdbx (&gt;= 0.1.1)</code>, <code>rlang</code>, <code>digest</code>.</strong> Adding a dependency is a decision (<code>design.md</code> §14.1, D13).</li>
 </ul></div>
 <div class="section level2">
 <h2 id="working-with-mdbx">Working with mdbx<a class="anchor" aria-label="anchor" href="#working-with-mdbx"></a></h2>
-<p><code>mdbx</code> 0.1.0 is <strong>first-party</strong>: <a href="https://github.com/pedrobtz/mdbx" class="external-link uri">https://github.com/pedrobtz/mdbx</a>, checked out at <code>../mdbx</code> and installed locally (<code>R CMD INSTALL ../mdbx</code>). Submitted to CRAN, not yet accepted; dastash reaches CRAN after it. Verified behaviour is recorded in <code>design.md</code> §15 and <code>review.md</code> §4, and is that of <strong>pedrobtz/mdbx#4</strong> — open on 2026-09-13, and the fix for issues #2 and #3 — so install that branch rather than <code>main</code>. The short version:</p>
-<ul><li>Many readers and one writer across processes; <strong>one live transaction per environment</strong>, and <code>mdbx_env_open()</code> refuses a path this process already holds, naming it: “mdbx environment ‘<path>’ is already open in this process”. Hence the per-process registry in <code>design.md</code> §3.1 — which is there to <em>share</em> the environment, not to improve the error, and which keys on the <strong>normalised</strong> path where <code>mdbx</code> compares the spelling R gave it.</path></li>
+<p><code>mdbx</code> is <strong>first-party</strong> (<a href="https://github.com/pedrobtz/mdbx" class="external-link uri">https://github.com/pedrobtz/mdbx</a>) and <strong>on CRAN</strong>; 0.1.1 is the version the design was verified against, and <code>design.md</code> §15 records what it does. The short version:</p>
+<ul><li>Many readers and one writer across processes; <strong>one live transaction per environment</strong>. <code>mdbx_env_open()</code> refuses a path this process already holds, under any spelling (relative, <code>./</code>, symlinked directory) — hence the registry in <code>design.md</code> §3.1, which is there to <em>share</em> the environment.</li>
 <li>
-<code>mdbx_txn_begin(env, write = TRUE, flags = "TRY")</code> fails with <code>MDBX_BUSY</code> instead of blocking; <code>mdbx_with_write()</code> takes no flags, so the write loop is dastash’s own.</li>
-<li>There are no condition classes. A libmdbx failure is a plain string ending in <code>(mdbx error N)</code>; the binding’s own refusals — already open, read-only transaction, missing database, belongs to another process — carry no code and are recognisable only by their text. <code>R/engine.R</code> is the only place that reads either (<code>design.md</code> §13).</li>
-<li>Named databases are created in a write transaction at open; <code>create = TRUE</code> in a read transaction is refused whether or not the database exists, and a missing one is refused by name in either kind of transaction. Neither is catchable by class, so a read-only handle asks <code>mdbx_dbi_list()</code> which databases exist rather than opening each inside a <code>tryCatch</code>.</li>
+<strong>Classed conditions.</strong> Every libmdbx failure is <code>c("mdbx_&lt;name&gt;", "mdbx_error", ...)</code> with <code>code</code> and <code>name</code> fields: <code>mdbx_busy</code>, <code>mdbx_map_full</code>, <code>mdbx_incompatible</code>, <code>mdbx_bad_valsize</code>. The binding’s own refusals — second open, second transaction, write in a read transaction, missing named database, use after <code>fork()</code> — are unclassed, and dastash is designed never to reach them. <code>R/engine.R</code> is the only place that catches either (<code>design.md</code> §13).</li>
 <li>
-<code>mdbx_put(overwrite = FALSE)</code> returns <code>FALSE</code> on an existing key; <code>mdbx_get()</code> takes <code>default</code>; <code>mdbx_env_stat(txn, db =)$entries</code> is exact.</li>
+<code>mdbx_txn_begin(env, write = TRUE, flags = "TRY")</code> fails with <code>mdbx_busy</code> instead of blocking; <code>mdbx_with_write()</code> takes no flags, so the write loop is dastash’s own.</li>
+<li>Named databases are created in a write transaction; <code>create = TRUE</code> in a read transaction is refused whether or not the database exists, and a missing one is refused by name in either kind of transaction.</li>
+<li>
+<code>mdbx_put(overwrite = FALSE)</code> returns <code>FALSE</code> on an existing key; <code>mdbx_get()</code> takes <code>default</code>; <code>mdbx_del()</code> returns whether a record existed; <code>mdbx_env_stat(txn, db =)$entries</code> is exact.</li>
 <li>An environment does not survive <code>fork()</code>; open it inside the worker.</li>
 <li>Always open with <code>ACCEDE</code>; the effective sync flags come from <code>mdbx_env_get_flags()</code>.</li>
-</ul><p><strong>Not in 0.1.0:</strong> cursors, an upper bound on a scan, batch get/put, <code>DUPSORT</code>, <code>estimate_range()</code>. Prefix scans are <code>mdbx_keys(txn, start = prefix, limit = n, db = )</code> plus a client-side stop at the first non-matching key, in chunks; <code>start</code> is inclusive, so drop the first element when paging. <code>design.md</code> §15 lists what dastash asks of <code>mdbx</code> 0.2 in priority order; when a gap in the binding hurts, the fix goes in <code>../mdbx</code>, not around it.</p>
-<p>All <code>mdbx_*</code> calls live in one file (<code>R/engine.R</code>); nothing else calls the binding. <code>../mdbx/vignettes/articles/cache.Rmd</code> is the sketch this design started from.</p>
+</ul><p><strong>Not in 0.1.1:</strong> cursors, an upper bound on a scan, batch get/put/del, <code>DUPSORT</code>, <code>estimate_range()</code>. Prefix scans are <code>mdbx_keys(txn, start = prefix, limit = n, db = )</code> plus a client-side stop at the first non-matching key, in chunks; <code>start</code> is inclusive, so drop the first element when paging, and always pass <code>limit</code> (<code>limit = NULL</code> is guarded at <code>mdbx_scan_max</code>). <code>design.md</code> §15 lists what dastash asks of the next release in priority order; when a gap in the binding hurts, the fix goes into <code>pedrobtz/mdbx</code>, not around it.</p>
+<p>All <code>mdbx_*</code> calls live in one file (<code>R/engine.R</code>); nothing else calls the binding, and a grep guard enforces it. <code>mdbx</code>’s <a href="https://pedrobtz.github.io/mdbx/articles/cache.html" class="external-link">cache article</a> is the sketch this design started from.</p>
 </div>
 <div class="section level2">
 <h2 id="scope-discipline">Scope discipline<a class="anchor" aria-label="anchor" href="#scope-discipline"></a></h2>
-<p>v1 is <code>design.md</code> §3 in full and nothing else. Single-flight leases, stale-while-revalidate, retention enforcement, <code>stash_reconfigure()</code>, fanout sharding, namespaces, a lazy DuckDB round trip and <code>codec_json()</code> are <strong>v1.x</strong> (<code>design.md</code> §19); remote blob backends and the typed dataset layer are <strong>v2</strong>. v1 writes <code>retain_until</code> and does not enforce it.</p>
+<p>v1 is <code>design.md</code> §3 in full and nothing else. Single-flight leases, stale-while-revalidate, stale-if-error, retention enforcement, <code>stash_reconfigure()</code>, fanout sharding, namespaces, a lazy DuckDB round trip and <code>codec_json()</code> are <strong>v1.x</strong> (<code>design.md</code> §19); remote blob backends and the typed dataset layer are <strong>v2</strong>. v1 writes <code>retain_until</code> and does not enforce it.</p>
 </div>
 <div class="section level2">
 <h2 id="dependencies">Dependencies<a class="anchor" aria-label="anchor" href="#dependencies"></a></h2>
-<p><code>Imports</code>: rlang, digest, mdbx. Optional codecs and engines (<code>qs2</code>, <code>nanoparquet</code>, <code>arrow</code>, <code>duckdb</code>/<code>DBI</code>/<code>dbplyr</code>), <code>bit64</code>, <code>cachem</code>, <code>memoise</code> and <code>utf8</code> live in <code>Suggests</code> and must degrade to a clear <code>dastash_codec_error</code>, verified by a no-Suggests CI job. The R <code>polars</code> package is not on CRAN and is used only when found installed.</p>
+<p><code>Imports</code>: <code>mdbx (&gt;= 0.1.1)</code>, rlang, digest. Optional codecs and engines (<code>qs2</code>, <code>nanoparquet</code>, <code>arrow</code>, <code>duckdb</code>/<code>DBI</code>/<code>dbplyr</code>), <code>bit64</code>, <code>cachem</code>, <code>memoise</code> and <code>utf8</code> live in <code>Suggests</code> and must degrade to a clear <code>dastash_codec_error</code>, verified by the <code>nosuggests</code> job of the shared R-CMD-check workflow. The R <code>polars</code> package is not on CRAN and is used only when found installed.</p>
 </div>
 <div class="section level2">
 <h2 id="commands">Commands<a class="anchor" aria-label="anchor" href="#commands"></a></h2>
-<div class="sourceCode" id="cb3"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="ex">R</span> CMD INSTALL ../mdbx                                  <span class="co"># the engine, from the sibling checkout</span></span>
+<div class="sourceCode" id="cb3"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="ex">Rscript</span> <span class="at">-e</span> <span class="st">'install.packages("mdbx")'</span>                  <span class="co"># the engine, from CRAN</span></span>
 <span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a><span class="ex">Rscript</span> <span class="at">-e</span> <span class="st">'devtools::load_all()'</span>                      <span class="co"># load for interactive work</span></span>
 <span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a><span class="ex">Rscript</span> <span class="at">-e</span> <span class="st">'devtools::test()'</span>                          <span class="co"># full test suite</span></span>
 <span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a><span class="ex">Rscript</span> <span class="at">-e</span> <span class="st">'devtools::test(filter = "key")'</span>            <span class="co"># one test file (test-key.R)</span></span>
