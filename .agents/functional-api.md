@@ -1,3 +1,8 @@
+> **Absorbed into `design.md` §3 on 2026-09-10.** The functional surface argued for here is now
+> the public API. This file is kept for the argument and the ten conventions; where a signature
+> here differs from `design.md`, `design.md` wins. Section references to `design.md` in this file
+> point at `design-v1.md`.
+
 # A functional API for dastash
 
 **Status:** speculative design, one day
