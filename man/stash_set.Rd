@@ -26,7 +26,8 @@ seconds from now (zero or less means already expired); a \link{difftime} from
 now; or a \link{POSIXct} for an absolute time. An expired entry is absent to
 every read at once, and \code{\link[=stash_expire]{stash_expire()}} reclaims its space.}
 
-\item{tags}{Not yet supported: leave as \code{NULL}.}
+\item{tags}{A character vector of up to 16 tags, each at most 256 bytes, to
+group entries for \code{\link[=stash_evict]{stash_evict()}} and \code{\link[=stash_entries]{stash_entries()}}.}
 
 \item{codec}{The codec to write with, or \code{NULL} for the stash's default. See
 \code{\link[=codec]{codec()}}.}

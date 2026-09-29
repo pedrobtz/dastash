@@ -230,7 +230,8 @@ bounded transactions of `cull_limit`; one bounded cull from `stash_set()` when o
 `stash_entries(prefix =, tag =, n =)`, `stash_stats()`; `stash_check(repair =, hash =)`
 with every finding kind of `design.md` §11.3.
 
-**Tests** The volume stays under the limit after any sequence of writes; one value
+**Tests** What the entries hold stays near the limit after any sequence of writes
+(`design.md` §9.1: the limit counts held bytes, not the never-shrinking file); one value
 larger than the limit is stored and everything else is evicted around it; eviction by tag
 and by prefix; every `stash_check()` finding produced deliberately and repaired; no index
 row without a meta record, none missing, after a randomised sequence of mutations; one

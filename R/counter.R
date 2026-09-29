@@ -76,6 +76,7 @@ counter_add <- function(stash, key, by, default, call = rlang::caller_env()) {
     if (is.null(record)) {
       current <- as.double(default)
       expire <- Inf
+      tags <- character()
     } else {
       if (!identical(record$codec, "counter")) {
         abort_type_error(
@@ -85,6 +86,7 @@ counter_add <- function(stash, key, by, default, call = rlang::caller_env()) {
       }
       current <- counter_value(engine_get(txn, engine_db(stash$engine, "values"), key$stored))
       expire <- record$expire
+      tags <- record$tags
     }
     value <- current + by
     if (abs(value) > COUNTER_MAX) {
@@ -94,7 +96,7 @@ counter_add <- function(stash, key, by, default, call = rlang::caller_env()) {
       )
     }
     enc <- codec_encode_value(codec, value, stage = function() NULL, call = call)
-    store_put_entry(stash, txn, key, enc, now, expire = expire)
+    store_put_entry(stash, txn, key, enc, now, expire = expire, tags = tags)
     value
   }, timeout = stash$timeout, call = call)
 }

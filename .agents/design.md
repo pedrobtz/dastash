@@ -1144,13 +1144,21 @@ for (row in due) { if (when(row) > now) break; forget(key_of(row)) }
 victims <- mdbx_keys(txn, db = index_for(eviction), limit = n, as = "raw")
 ```
 
-`stash_cull()` expires everything due, then evicts until `stash_volume()` is under
-`size_limit`, in transactions of at most `cull_limit` victims so no single transaction
-holds the write lock for long. `stash_set()` runs one bounded cull when the store is over
-its limit, which is what keeps the limit honest without a background process — and there
-is no background process, by design. A single value larger than `size_limit` is stored
-and everything else is evicted around it, as in `diskcache`; `size_limit = Inf` disables
-culling.
+`stash_cull()` expires everything due, then evicts until the bytes the entries hold —
+`bytes_inline + bytes_blob` — are within `size_limit`, in transactions of at most
+`cull_limit` victims so no single transaction holds the write lock for long. Every write
+that leaves the store over its limit runs one bounded cull step in its own transaction,
+never evicting what it just wrote; that is what keeps the limit honest without a
+background process — and there is no background process, by design. A single value
+larger than `size_limit` is stored and everything else is evicted around it, as in
+`diskcache`; `size_limit = Inf` disables culling.
+
+**The limit counts held bytes, not `stash_volume()`** (decided in S7, correcting the
+first version of this section). The mdbx file never shrinks: freed pages are kept for
+reuse. A store whose file had once grown past the limit could never get its volume back
+under it, and a cull measured by volume would evict every entry and still fail.
+Evicting an inline entry frees space inside the file for the next writes, which is the
+point; `stash_volume()` goes on reporting bytes on disk.
 
 `stash_evict(tag =)` walks `tags` from `tag ‖ 0x00`; `stash_evict(prefix =)` walks
 `meta` from the prefix. Both stop at the first non-matching key and delete in bounded
@@ -1164,8 +1172,8 @@ single hot row would be a contention problem in SQLite; under mdbx there is exac
 writer at a time already, so the hot record costs nothing that is not already being paid.
 
 `stash_volume()` is `mdbx_env_info()$file_size + counters$bytes_blob`. The mdbx file only
-grows on disk — freed pages are reused, not returned — so this is bytes occupied, which is
-the number a size limit should be about.
+grows on disk — freed pages are reused, not returned — so this is bytes occupied. It is
+what a user asks about; the size limit is about held bytes instead (§9.1).
 
 ## 9.3 The read journal
 
@@ -1299,13 +1307,15 @@ Because indexes are derived, most damage is repairable:
 |---|---|
 | `index_orphan` — index row with no meta record | delete the row |
 | `index_missing` — meta record missing an index row | insert it |
+| `value_orphan` — inline value with no meta record | delete it |
+| `value_missing` — inline record with no value | delete the record |
 | `blob_missing` — record whose file is absent | delete the record; count it |
 | `blob_orphan` — file with no referring record | delete the file |
 | `refcount_drift` — `blobs.refs` disagrees with the records | recompute from `meta` |
 | `counter_drift` — `counters` disagrees with a full scan | recompute |
 | `tmp_stale` — file in `tmp/` | delete when its PID is not live and it is over an hour old |
 | `reader_stale` — reader slot of a dead process | `mdbx_env_reader_check()` |
-| `blob_corrupt` — with `hash = TRUE`, bytes do not hash to the name | delete the record and the file |
+| `blob_corrupt` — the file's size differs from its records', or with `hash = TRUE` its bytes do not hash to its name | delete the records and the file |
 
 PID liveness is legitimate because the deployment is one host (§0). `hash = TRUE` reads
 every blob and is the only expensive check; `stash_get()` does not verify hashes on the

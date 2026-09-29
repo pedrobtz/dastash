@@ -4,10 +4,17 @@
 # Settings every process on a store must agree on (design.md §12).
 store_level_settings <- c("size_limit", "eviction", "inline_max", "codec")
 
-# The named databases this configuration uses. Later stages add the eviction,
-# tag and blob indexes.
+# The named databases this configuration uses (design.md §7.2): one eviction
+# index, the one the policy walks, and none for `eviction = "none"`.
 store_databases <- function(config) {
-  c("meta", "values", "expiry", "blobs")
+  c("meta", "values", "expiry", "blobs", "tags", eviction_index(config$eviction))
+}
+
+eviction_index <- function(eviction) {
+  switch(eviction,
+    "least-recently-stored" = "stored",
+    NULL
+  )
 }
 
 store_create_layout <- function(dir) {
@@ -104,11 +111,12 @@ store_get_record <- function(s, txn, stored) {
 # inline value goes into `values`; a blob gets its reference first, then the
 # old value is released, so replacing an entry with the same bytes never lets
 # their file go.
-store_put_entry <- function(s, txn, key, enc, now, expire = Inf) {
+store_put_entry <- function(s, txn, key, enc, now, expire = Inf, tags = character()) {
   e <- s$engine
   old <- store_get_record(s, txn, key$stored)
   inline <- is.null(enc$blob)
   record <- record_entry(enc, key, now, inline = inline, expire = expire)
+  record$tags <- tags
   if (inline) {
     engine_put(txn, engine_db(e, "values"), key$stored, enc$bytes)
     store_counters_add(txn, list(bytes_inline = record$bytes))
@@ -145,19 +153,46 @@ store_update_record <- function(s, txn, stored, old, record) {
   invisible(record)
 }
 
-# The index rows of one entry. Every index is a projection of the record, so
-# these two are the only places that know which rows a record implies
-# (design.md §7.2, §7.5). A never-expiring entry has no expiry row (D7).
-store_index <- function(s, txn, stored, record) {
+# The index rows one record implies, as a list of `db` and `key`. Every index
+# is a projection of the record, so this is the only place that knows which
+# rows exist (design.md §7.2, §7.5), and stash_check() rebuilds from it. A
+# never-expiring entry has no expiry row (D7).
+index_rows <- function(s, stored, record) {
+  rows <- list()
   if (is.finite(record$expire)) {
-    engine_put(txn, engine_db(s$engine, "expiry"), index_key(record$expire, stored), raw())
+    rows[[length(rows) + 1L]] <- list(db = "expiry", key = index_key(record$expire, stored))
+  }
+  if (identical(s$config$eviction, "least-recently-stored")) {
+    rows[[length(rows) + 1L]] <- list(db = "stored", key = index_key(record$stored, stored))
+  }
+  for (tag in record$tags) {
+    rows[[length(rows) + 1L]] <- list(db = "tags", key = tag_key(tag, stored))
+  }
+  rows
+}
+
+store_index <- function(s, txn, stored, record) {
+  for (row in index_rows(s, stored, record)) {
+    engine_put(txn, engine_db(s$engine, row$db), row$key, raw())
   }
 }
 
 store_unindex <- function(s, txn, stored, record) {
-  if (is.finite(record$expire)) {
-    engine_del(txn, engine_db(s$engine, "expiry"), index_key(record$expire, stored))
+  for (row in index_rows(s, stored, record)) {
+    engine_del(txn, engine_db(s$engine, row$db), row$key)
   }
+}
+
+# `tag ‖ 0x00 ‖ key`: every key carrying a tag is one prefix scan.
+tag_key <- function(tag, stored) {
+  c(charToRaw(tag), as.raw(0L), charToRaw(stored))
+}
+
+tag_key_stored <- function(bytes) {
+  nul <- which(bytes == as.raw(0L))[[1L]]
+  stored <- rawToChar(bytes[-seq_len(nul)])
+  Encoding(stored) <- "UTF-8"
+  stored
 }
 
 # An ordered index key: eight bytes of order, then the stored key, so rows are
