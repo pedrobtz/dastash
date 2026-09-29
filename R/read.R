@@ -128,9 +128,35 @@ stash_keys <- function(stash, ..., prefix = NULL, start = NULL, n = Inf) {
   check_number(n, "n", rlang::current_env(), min = 0, whole = TRUE, allow_inf = TRUE)
   from <- if (!is.null(start)) store_key(start)$stored
   e <- stash$engine
+  now <- unclass(Sys.time())
   engine_read(e, function(txn) {
-    stored <- engine_scan(txn, engine_db(e, "meta"), prefix = prefix, start = from, n = n, as = "character")
-    vapply(stored, function(k) store_display_key(stash, txn, k), character(1), USE.NAMES = FALSE)
+    out <- character()
+    first <- TRUE
+    # Expired entries are skipped, so filling a page of `n` can take more than
+    # one scan. The records come with the keys, so skipping costs no lookup.
+    repeat {
+      remaining <- n - length(out)
+      ask <- if (is.finite(remaining)) remaining + !first else Inf
+      got <- engine_scan(
+        txn, engine_db(e, "meta"),
+        prefix = prefix, start = from, n = ask, as = "character", values = TRUE
+      )
+      keys <- got$keys
+      records <- lapply(got$values, record_decode)
+      if (!first && length(keys) > 0L) {
+        keys <- keys[-1L]
+        records <- records[-1L]
+      }
+      live <- vapply(records, is_live, logical(1), now = now)
+      shown <- vapply(seq_along(keys), function(i) {
+        if (startsWith(keys[[i]], "#")) records[[i]]$key_text %||% keys[[i]] else keys[[i]]
+      }, character(1))
+      out <- c(out, shown[live])
+      if (!is.finite(ask) || length(got$keys) < ask || length(out) >= n) break
+      from <- got$keys[[length(got$keys)]]
+      first <- FALSE
+    }
+    out[seq_len(min(length(out), n))]
   })
 }
 
@@ -153,13 +179,19 @@ store_read_entry <- function(s, txn, key) {
   list(record = record, bytes = engine_get(txn, engine_db(s$engine, "values"), key$stored))
 }
 
-# The record under `key`, if it is the key asked for.
-store_live_record <- function(s, txn, key) {
+# The record under `key`, if it is the key asked for and has not expired.
+# Expiry is part of the read: an entry past its deadline is absent to every
+# reader before anything deletes it (design.md §4, §9.1).
+store_live_record <- function(s, txn, key, now = unclass(Sys.time())) {
   record <- store_get_record(s, txn, key$stored)
-  if (is.null(record) || !store_record_matches(record, key)) {
+  if (is.null(record) || !store_record_matches(record, key) || !is_live(record, now)) {
     return(NULL)
   }
   record
+}
+
+is_live <- function(record, now) {
+  now < record$expire
 }
 
 store_decode_entry <- function(s, hit, call = rlang::caller_env()) {

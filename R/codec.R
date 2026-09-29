@@ -244,6 +244,7 @@ codec_lookup <- function(name, version, codecs = list(), call = rlang::caller_en
     rds = codec_rds(),
     raw = codec_raw(),
     file = codec_file(),
+    counter = codec_counter(),
     codecs[[name]]
   )
   if (is.null(codec)) {
