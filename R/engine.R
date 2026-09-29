@@ -268,6 +268,15 @@ engine_del <- function(txn, db, key) {
   engine_try(mdbx::mdbx_del(txn, key, db = db))
 }
 
+# Remove every record from a named database, keeping the database.
+engine_clear_db <- function(txn, db) {
+  if (inherits(db, "dastash_missing_db")) {
+    return(invisible())
+  }
+  engine_try(mdbx::mdbx_dbi_drop(txn, db, delete = FALSE))
+  invisible()
+}
+
 engine_count <- function(txn, db) {
   if (inherits(db, "dastash_missing_db")) {
     return(0)
@@ -362,4 +371,10 @@ engine_translate <- function(cnd, call) {
     )
   }
   abort_engine_error("The storage engine failed.", parent = cnd, call = call)
+}
+
+# Release the reader slots of processes that died holding a read transaction.
+# Returns how many.
+engine_reader_check <- function(e) {
+  as.integer(engine_try(mdbx::mdbx_env_reader_check(e$env)))
 }

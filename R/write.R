@@ -19,7 +19,8 @@
 #'   seconds from now (zero or less means already expired); a [difftime] from
 #'   now; or a [POSIXct] for an absolute time. An expired entry is absent to
 #'   every read at once, and [stash_expire()] reclaims its space.
-#' @param tags Not yet supported: leave as `NULL`.
+#' @param tags A character vector of up to 16 tags, each at most 256 bytes, to
+#'   group entries for [stash_evict()] and [stash_entries()].
 #' @param codec The codec to write with, or `NULL` for the stash's default. See
 #'   [codec()].
 #'
@@ -40,7 +41,8 @@ stash_set <- function(stash, key, value, ..., expire = NULL, tags = NULL, codec 
   entry <- stash_prepare(stash, key, value, expire, tags, codec)
   on.exit(unstage(list(entry)))
   engine_write(stash$engine, function(txn) {
-    store_put_entry(stash, txn, entry$key, entry$enc, unclass(Sys.time()), expire = entry$expire)
+    store_put_entry(stash, txn, entry$key, entry$enc, unclass(Sys.time()), expire = entry$expire, tags = entry$tags)
+    store_cull_step(stash, txn, protect = entry$key$stored)
   }, timeout = stash$timeout)
   invisible(stash)
 }
@@ -61,7 +63,8 @@ stash_mset <- function(stash, values, ..., expire = NULL, tags = NULL, codec = N
   }
   engine_write(stash$engine, function(txn) {
     now <- unclass(Sys.time())
-    for (entry in entries) store_put_entry(stash, txn, entry$key, entry$enc, now, expire = entry$expire)
+    for (entry in entries) store_put_entry(stash, txn, entry$key, entry$enc, now, expire = entry$expire, tags = entry$tags)
+    store_cull_step(stash, txn, protect = vapply(entries, function(x) x$key$stored, character(1)))
   }, timeout = stash$timeout)
   invisible(stash)
 }
@@ -81,9 +84,7 @@ stash_delete <- function(stash, keys) {
 # that will write it, and its bytes.
 stash_prepare <- function(s, key, value, expire, tags, codec, call = rlang::caller_env()) {
   deadline <- parse_expire(expire, unclass(Sys.time()), call = call)
-  if (length(tags) > 0L) {
-    abort_unsupported("`tags` is not supported yet.", call = call)
-  }
+  tags <- parse_tags(tags, call = call)
   key <- store_key(key, call = call)
   codec <- codec %||% s$codec
   if (is.null(codec)) {
@@ -110,7 +111,25 @@ stash_prepare <- function(s, key, value, expire, tags, codec, call = rlang::call
     unlink(enc$path)
     enc$path <- NULL
   }
-  list(key = key, enc = enc, expire = deadline)
+  list(key = key, enc = enc, expire = deadline, tags = tags)
+}
+
+# `tags` as a sorted, unique character vector (design.md §3.4).
+parse_tags <- function(tags, call = rlang::caller_env()) {
+  if (is.null(tags)) {
+    return(character())
+  }
+  if (!is.character(tags) || anyNA(tags) || !all(nzchar(tags))) {
+    abort_type_error("`tags` must be a character vector of non-empty strings.", call = call)
+  }
+  tags <- utf8_text(unique(tags), call = call)
+  if (length(tags) > 16L) {
+    abort_type_error("An entry can carry at most 16 tags.", call = call)
+  }
+  if (any(nchar(tags, type = "bytes") > TAG_MAX)) {
+    abort_type_error(sprintf("A tag can be at most %d bytes.", TAG_MAX), call = call)
+  }
+  sort(tags, method = "radix")
 }
 
 # An `expire` argument as an absolute deadline in epoch seconds: Inf for never.
@@ -184,7 +203,8 @@ stash_add <- function(stash, key, value, ..., expire = NULL, tags = NULL, codec 
     if (!is.null(store_live_record(stash, txn, entry$key, now))) {
       return(FALSE)
     }
-    store_put_entry(stash, txn, entry$key, entry$enc, now, expire = entry$expire)
+    store_put_entry(stash, txn, entry$key, entry$enc, now, expire = entry$expire, tags = entry$tags)
+    store_cull_step(stash, txn, protect = entry$key$stored)
     TRUE
   }, timeout = stash$timeout)
 }
