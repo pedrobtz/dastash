@@ -202,7 +202,8 @@ one key produce eight.
 
 The two orderings of `design.md` §8, and the stage the crash tests exist for.
 
-**Delivers** Staging in `<root>/tmp/<pid>-<n>`, hashing while writing, `fsync`, rename
+**Delivers** Staging in `<root>/tmp/<pid>-<n>`, hashing, no `fsync` (a size check on read
+instead; `design.md` §8), rename
 into `blobs/<aa>/<hash>[.<ext>]` at mode `0444`; the `blobs` database with refcounts in
 the same transaction as the record; commit-then-unlink on delete; `codec_file()` always
 file-backed; `stash_path()`; `stash_volume()` from `mdbx_env_info()$file_size` plus

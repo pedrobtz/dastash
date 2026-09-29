@@ -244,14 +244,6 @@ test_that("verbs chain and return the stash invisibly", {
   expect_identical(stash_keys(s), "b")
 })
 
-test_that("values of inline_max or more are not stored yet", {
-  s <- local_stash(inline_max = 100)
-  expect_error(stash_set(s, "big", runif(100)), class = "dastash_unsupported")
-  expect_false(stash_has(s, "big"))
-  expect_length(list.files(file.path(s$dir, "tmp")), 0L)
-  expect_error(stash_set(s, "f", withr::local_tempfile(lines = "x"), codec = codec_file()), class = "dastash_unsupported")
-})
-
 test_that("inline bytes are counted", {
   s <- local_stash()
   stash_set(s, "a", "abc")

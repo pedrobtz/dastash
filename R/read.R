@@ -39,7 +39,8 @@ stash_get <- function(stash, key, default) {
   check_open(stash)
   key <- store_key(key)
   hit <- engine_read(stash$engine, function(txn) store_read_entry(stash, txn, key))
-  if (is.null(hit)) {
+  value <- if (!is.null(hit)) store_decode_entry(stash, hit, key)
+  if (is.null(value)) {
     if (missing(default)) {
       abort_not_found(
         c(
@@ -51,7 +52,7 @@ stash_get <- function(stash, key, default) {
     }
     return(default)
   }
-  store_decode_entry(stash, hit)
+  value[[1L]]
 }
 
 #' @rdname stash_get
@@ -62,7 +63,10 @@ stash_mget <- function(stash, keys, default) {
   hits <- engine_read(stash$engine, function(txn) {
     lapply(infos, function(key) store_read_entry(stash, txn, key))
   })
-  absent <- vapply(hits, is.null, logical(1))
+  values <- lapply(seq_along(hits), function(i) {
+    if (!is.null(hits[[i]])) store_decode_entry(stash, hits[[i]], infos[[i]])
+  })
+  absent <- vapply(values, is.null, logical(1))
   if (any(absent) && missing(default)) {
     abort_not_found(
       c(
@@ -76,10 +80,9 @@ stash_mget <- function(stash, keys, default) {
       key = vapply(infos[absent], function(k) k$text, character(1))
     )
   }
-  out <- vector("list", length(hits))
-  for (i in seq_along(hits)) {
-    if (!is.null(hits[[i]])) out[i] <- list(store_decode_entry(stash, hits[[i]]))
-    else out[i] <- list(default)
+  out <- vector("list", length(values))
+  for (i in seq_along(values)) {
+    out[i] <- if (is.null(values[[i]])) list(default) else values[[i]]
   }
   names(out) <- vapply(infos, function(k) k$text, character(1))
   out
@@ -103,7 +106,9 @@ stash_has <- function(stash, keys) {
 #' and `start` with `n` to page through a large stash: `start` is inclusive, so
 #' drop the first key of every page after the first.
 #'
-#' `stash_count()` returns the number of entries.
+#' `stash_count()` returns the number of entries, including expired ones that
+#' [stash_expire()] has not reclaimed yet. `stash_volume()` returns the bytes
+#' the stash occupies on disk: its database file and every stored file.
 #'
 #' @inheritParams stash_get
 #' @param ... Must be empty.
@@ -111,7 +116,8 @@ stash_has <- function(stash, keys) {
 #' @param start Begin at this key, inclusive.
 #' @param n The most keys to return.
 #'
-#' @return `stash_keys()` returns a character vector; `stash_count()` an integer.
+#' @return `stash_keys()` returns a character vector, `stash_count()` an integer,
+#'   and `stash_volume()` a number of bytes.
 #'
 #' @examples
 #' s <- local_stash()
@@ -176,7 +182,10 @@ store_read_entry <- function(s, txn, key) {
   if (is.null(record)) {
     return(NULL)
   }
-  list(record = record, bytes = engine_get(txn, engine_db(s$engine, "values"), key$stored))
+  if (isTRUE(record$inline)) {
+    return(list(record = record, bytes = engine_get(txn, engine_db(s$engine, "values"), key$stored)))
+  }
+  list(record = record, path = blob_path(s, record_blob_name(record)))
 }
 
 # The record under `key`, if it is the key asked for and has not expired.
@@ -194,10 +203,73 @@ is_live <- function(record, now) {
   now < record$expire
 }
 
-store_decode_entry <- function(s, hit, call = rlang::caller_env()) {
+# The value of an entry read by store_read_entry(), wrapped in a list, or NULL
+# if its file went before it could be read.
+store_decode_entry <- function(s, hit, key, call = rlang::caller_env()) {
   record <- hit$record
   codec <- codec_lookup(record$codec, record$codec_version, s$codecs, call = call)
-  codec_decode_bytes(codec, hit$bytes, record$codec_meta, stage = function() stage_path(s), call = call)
+  if (isTRUE(record$inline)) {
+    return(list(codec_decode_bytes(codec, hit$bytes, record$codec_meta, stage = function() stage_path(s), call = call)))
+  }
+  # A read transaction has ended by now, so another process may delete or
+  # replace the entry, and unlink its file, at any moment: before the size is
+  # checked, or between the check and the decoder opening the file. Either way
+  # the entry is gone, which a cache may always answer as a miss (design.md
+  # §4). Only a record that still names a file that stays missing is damage.
+  for (attempt in 1:3) {
+    if (!store_blob_ready(s, hit, key, call)) {
+      return(NULL)
+    }
+    value <- tryCatch(
+      withCallingHandlers(
+        list(codec_decode(codec, hit$path, record$codec_meta, call = call)),
+        # A decoder's "cannot open file" warning, when the file just went.
+        warning = function(cnd) if (!file.exists(hit$path)) invokeRestart("muffleWarning")
+      ),
+      dastash_codec_error = function(cnd) {
+        if (file.exists(hit$path)) rlang::cnd_signal(cnd)
+        NULL
+      }
+    )
+    if (!is.null(value)) {
+      return(value)
+    }
+  }
+  NULL
+}
+
+# TRUE when the blob's file is there at the size its record holds; FALSE when
+# the entry has since been deleted or now names another file (a miss); an
+# error when the record still names a file that is missing or the wrong size.
+# The size is what a crash before the data reached the disk would leave wrong;
+# stash_check(hash = TRUE) verifies the bytes themselves.
+store_blob_ready <- function(s, hit, key, call) {
+  record <- hit$record
+  size <- file.size(hit$path)
+  if (is.na(size)) {
+    current <- engine_read(s$engine, function(txn) store_live_record(s, txn, key))
+    if (is.null(current) || !identical(record_blob_name(current), record_blob_name(record))) {
+      return(FALSE)
+    }
+    # The same bytes may have been stored again after we looked.
+    size <- file.size(hit$path)
+    if (is.na(size)) {
+      abort_blob_corrupt(
+        sprintf("The file behind key %s is missing.", display_key(key$text)),
+        key = key$text, path = hit$path, call = call
+      )
+    }
+  }
+  if (size != record$bytes) {
+    abort_blob_corrupt(
+      sprintf(
+        "The file behind key %s has %s bytes where %s were written.",
+        display_key(key$text), format(size), format(record$bytes)
+      ),
+      key = key$text, path = hit$path, call = call
+    )
+  }
+  TRUE
 }
 
 # `keys` as a list of keys: a character or other atomic vector is one key per
@@ -224,4 +296,55 @@ check_string_or_empty <- function(x, arg, call = rlang::caller_env()) {
   if (!is.character(x) || length(x) != 1L || is.na(x)) {
     abort_type_error(sprintf("`%s` must be a single string.", arg), call = call)
   }
+}
+
+#' The file behind an entry
+#'
+#' @description
+#' An entry of `inline_max` bytes or more, or one written with a file-backed
+#' codec such as [codec_file()], is stored as a file. `stash_path()` returns its
+#' path without reading it, so other tools can read it in place.
+#'
+#' The file is read-only, and identical content is one file however many keys
+#' refer to it. The path is valid while the entry lives: deleting, replacing
+#' or expiring the entry, from any process, may remove the file. Copy the file
+#' if you need it to outlive the entry.
+#'
+#' @inheritParams stash_get
+#'
+#' @return The path, a string. A missing key is a `dastash_not_found` error,
+#'   and an entry stored inline a `dastash_type_error`.
+#'
+#' @examples
+#' s <- local_stash()
+#' stash_set(s, "numbers", runif(1e5))
+#' path <- stash_path(s, "numbers")
+#' file.size(path)
+#' identical(readRDS(path), stash_get(s, "numbers"))
+#' @export
+stash_path <- function(stash, key) {
+  check_open(stash)
+  key <- store_key(key)
+  record <- engine_read(stash$engine, function(txn) store_live_record(stash, txn, key))
+  if (is.null(record)) {
+    abort_not_found(sprintf("No entry for key %s.", display_key(key$text)), key = key$text)
+  }
+  if (isTRUE(record$inline)) {
+    abort_type_error(
+      c(
+        sprintf("The entry for key %s is stored inline, not as a file.", display_key(key$text)),
+        i = "Values smaller than `inline_max` are kept in the database."
+      ),
+      key = key$text
+    )
+  }
+  blob_path(stash, record_blob_name(record))
+}
+
+#' @rdname stash_keys
+#' @export
+stash_volume <- function(stash) {
+  check_open(stash)
+  counters <- engine_read(stash$engine, store_counters)
+  as.double(engine_info(stash$engine)$file_size) + counters$bytes_blob
 }

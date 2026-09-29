@@ -1055,23 +1055,29 @@ every instant** (`cache-model.md` §11.3).
 **Writing: blob first, commit second.**
 
 ```text
-encode  -> <root>/tmp/<pid>-<n>          same device as blobs/
-        -> hash while writing
-        -> fsync
-        -> rename into blobs/<aa>/<hash>[.<ext>], mode 0444
-           (target exists: it is the same bytes; discard the staging file)
+encode  -> <root>/tmp/<pid>-<n>          same device as blobs/; no lock held
+        -> hash
                         then one write transaction:
+                          if blobs[name] exists: increment its refs,
+                                                 discard the staging file
+                          else: rename the staging file into
+                                blobs/<aa>/<hash>[.<ext>], mode 0444,
+                                replacing any orphan of that name;
+                                insert blobs[name] with refs = 1
                           put meta record
                           put value (inline) or nothing (blob)
                           put expiry / eviction / tags rows
-                          increment blobs[hash].refs
+                          release what the key held before
                           update counters
 ```
 
-A crash between the two leaves an **unreferenced blob**: invisible, harmless, reclaimed
-by `stash_check(repair = TRUE)`. The reverse order would commit a record pointing at a
-file that does not exist, which is a soundness violation. Staging is in `<root>/tmp`, not
-`tempdir()`: a cross-device rename is a copy, and a copy is not atomic.
+The rename happens inside the transaction, while the write lock is held, and before the
+commit: still published first, committed second. A crash between the two leaves an
+**unreferenced blob**: invisible, harmless, reclaimed by `stash_check(repair = TRUE)`.
+The reverse order would commit a record pointing at a file that does not exist, which is
+a soundness violation. Staging and hashing, the slow part, happen before the lock is
+taken. Staging is in `<root>/tmp`, not `tempdir()`: a cross-device rename is a copy, and
+a copy is not atomic.
 
 **Deleting: commit first, unlink second.**
 
@@ -1079,11 +1085,13 @@ file that does not exist, which is a soundness violation. Staging is in `<root>/
 one write transaction:
   read meta                -> expire, stored, accessed, tags, blob
   delete meta, value, every index row
-  decrement blobs[hash].refs; if it reached zero, delete the blobs row
-                              and collect the path
+  decrement blobs[name].refs; if it reached zero, delete the blobs row
+                              and collect the name
   update counters
-                        then, after mdbx_txn_commit() returns:
-                          unlink the collected paths
+                        then, after mdbx_txn_commit() returns,
+                        one more write transaction:
+                          for each collected name still without a blobs row:
+                            unlink its file
 ```
 
 The cache article gets this deliberately wrong and says why: unlinking inside the
@@ -1091,12 +1099,31 @@ transaction means a later failure rolls the metadata back to an entry whose file
 already gone. Orphans are recoverable; dangling references are not. If the process dies
 between commit and unlink, the orphan is collected later.
 
+**Both file operations happen under the write lock**, and that is a correction of the
+first version of this section, which renamed before taking the lock and unlinked after
+releasing it. That order races. Process A commits the deletion of the last reference to a
+file and is about to unlink it; process B finds the file present, discards its identical
+staging copy, and commits a new reference; A unlinks; B's record now points at nothing.
+With the rename inside B's transaction and the unlink inside a transaction that first
+checks the file is still unreferenced, the two cannot interleave, and **a `blobs` row
+exists exactly while its file does**. A follow-up transaction that finds the lock busy
+leaves the file as an orphan, which is always safe.
+
 This is why the refcount lives in the same transaction as the record. "Is anyone still
 using this file" is a function of the records, and a refcount kept anywhere else can
-disagree with them.
+disagree with them. Blobs are named, and counted, by `<hash>[.<ext>]`: the same bytes
+copied by `codec_file()` from a `.csv` and from a `.txt` are two files.
 
-On Windows, `file.rename()` fails when the target exists; the target is the same content
-and the staging file is discarded. Read-only files must have the attribute cleared before
+**No `fsync`, and what stands in for it.** Base R cannot flush a file to disk, so 0.1.0
+writes a blob without one (decided 2026-09-29). A process crash loses nothing: the bytes
+are in the operating system's page cache, which survives it. A power loss or an operating
+system crash can leave a recently committed blob short or empty. Every read therefore
+compares the file's size with the size its record holds and treats a mismatch as
+`dastash_blob_corrupt`, never as a value; `stash_check(hash = TRUE)` verifies the bytes
+themselves. A real `fsync` arrives when a first-party package offers one.
+
+On Windows, `file.rename()` fails when the target exists, so an orphan in the way is
+removed first, under the lock. Read-only files must have the attribute cleared before
 `unlink()`; the delete path does so.
 
 ---
@@ -1246,7 +1273,7 @@ returning is read by users as a promise, and a user who has to reason about whic
 last N writes survived is reasoning about the wrong thing. `stash_transact()` recovers
 most of the performance with no risk (§3.7). `"fast"` plus a periodic `mdbx_env_sync()` is
 a reasonable choice for a purely derived cache, and its failure mode is the recoverable
-one: a lost metadata commit after a blob was fsynced is an orphan, the direction §8
+one: a lost metadata commit after a blob was written is an orphan, the direction §8
 already tolerates.
 
 Sync flags are a property of the environment *as currently open*, and a process joining an

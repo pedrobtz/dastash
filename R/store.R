@@ -7,7 +7,7 @@ store_level_settings <- c("size_limit", "eviction", "inline_max", "codec")
 # The named databases this configuration uses. Later stages add the eviction,
 # tag and blob indexes.
 store_databases <- function(config) {
-  c("meta", "values", "expiry")
+  c("meta", "values", "expiry", "blobs")
 }
 
 store_create_layout <- function(dir) {
@@ -100,21 +100,41 @@ store_get_record <- function(s, txn, stored) {
   if (is.null(bytes)) NULL else record_decode(bytes)
 }
 
-# Write one entry (its record and its inline value) in the open transaction,
-# replacing whatever the key held.
+# Write one entry in the open transaction, replacing whatever the key held. An
+# inline value goes into `values`; a blob gets its reference first, then the
+# old value is released, so replacing an entry with the same bytes never lets
+# their file go.
 store_put_entry <- function(s, txn, key, enc, now, expire = Inf) {
   e <- s$engine
   old <- store_get_record(s, txn, key$stored)
-  if (!is.null(old)) {
-    store_unindex(s, txn, key$stored, old)
+  inline <- is.null(enc$blob)
+  record <- record_entry(enc, key, now, inline = inline, expire = expire)
+  if (inline) {
+    engine_put(txn, engine_db(e, "values"), key$stored, enc$bytes)
+    store_counters_add(txn, list(bytes_inline = record$bytes))
+  } else {
+    record$blob <- enc$blob$hash
+    record$ext <- enc$blob$ext
+    store_ref_blob(s, txn, enc$blob)
   }
-  record <- record_entry(enc, key, now, inline = TRUE, expire = expire)
+  if (!is.null(old)) {
+    store_release(s, txn, key$stored, old, value_replaced = inline)
+  }
   engine_put(txn, engine_db(e, "meta"), key$stored, record_encode(record))
-  engine_put(txn, engine_db(e, "values"), key$stored, enc$bytes)
   store_index(s, txn, key$stored, record)
-  delta <- record$bytes - if (!is.null(old) && isTRUE(old$inline)) old$bytes else 0
-  store_counters_add(txn, list(bytes_inline = delta))
   invisible(record)
+}
+
+# Undo what a record held: its index rows, and its inline value or its
+# reference to a blob.
+store_release <- function(s, txn, stored, old, value_replaced = FALSE) {
+  store_unindex(s, txn, stored, old)
+  if (isTRUE(old$inline)) {
+    if (!value_replaced) engine_del(txn, engine_db(s$engine, "values"), stored)
+    store_counters_add(txn, list(bytes_inline = -old$bytes))
+  } else {
+    store_unref_blob(s, txn, record_blob_name(old))
+  }
 }
 
 # Rewrite an entry's record, keeping its value, and its index rows with it.
@@ -160,11 +180,7 @@ store_delete_entry <- function(s, txn, stored) {
     return(FALSE)
   }
   engine_del(txn, engine_db(e, "meta"), stored)
-  engine_del(txn, engine_db(e, "values"), stored)
-  store_unindex(s, txn, stored, old)
-  if (isTRUE(old$inline)) {
-    store_counters_add(txn, list(bytes_inline = -old$bytes))
-  }
+  store_release(s, txn, stored, old)
   TRUE
 }
 

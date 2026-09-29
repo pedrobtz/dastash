@@ -38,6 +38,7 @@ stash_set <- function(stash, key, value, ..., expire = NULL, tags = NULL, codec 
   rlang::check_dots_empty()
   check_writable(stash)
   entry <- stash_prepare(stash, key, value, expire, tags, codec)
+  on.exit(unstage(list(entry)))
   engine_write(stash$engine, function(txn) {
     store_put_entry(stash, txn, entry$key, entry$enc, unclass(Sys.time()), expire = entry$expire)
   }, timeout = stash$timeout)
@@ -53,9 +54,11 @@ stash_mset <- function(stash, values, ..., expire = NULL, tags = NULL, codec = N
   if (!is.list(values) || (length(values) > 0L && (is.null(nms) || anyNA(nms) || !all(nzchar(nms))))) {
     abort_type_error("`values` must be a named list: each name a key, each element its value.")
   }
-  entries <- lapply(seq_along(values), function(i) {
-    stash_prepare(stash, nms[[i]], values[[i]], expire, tags, codec)
-  })
+  entries <- list()
+  on.exit(unstage(entries))
+  for (i in seq_along(values)) {
+    entries[[i]] <- stash_prepare(stash, nms[[i]], values[[i]], expire, tags, codec)
+  }
   engine_write(stash$engine, function(txn) {
     now <- unclass(Sys.time())
     for (entry in entries) store_put_entry(stash, txn, entry$key, entry$enc, now, expire = entry$expire)
@@ -98,16 +101,11 @@ stash_prepare <- function(s, key, value, expire, tags, codec, call = rlang::call
   codec <- codec_for_value(codec, value)
   enc <- codec_encode_value(codec, value, stage = function() stage_path(s), call = call)
   if (isTRUE(codec$always_file) || enc$size >= s$config$inline_max) {
-    if (!is.null(enc$path)) unlink(enc$path)
-    abort_unsupported(
-      sprintf(
-        "This value encodes to %s bytes, and values of `inline_max` (%s bytes) or more are not supported yet.",
-        format(enc$size), format(s$config$inline_max)
-      ),
-      call = call
-    )
-  }
-  if (!is.null(enc$path)) {
+    # A file: staged in <root>/tmp and hashed now, published in the transaction.
+    enc$blob <- blob_stage(s, enc)
+    enc$bytes <- NULL
+    enc$path <- NULL
+  } else if (!is.null(enc$path)) {
     enc$bytes <- readBin(enc$path, "raw", n = enc$size)
     unlink(enc$path)
     enc$path <- NULL
@@ -180,6 +178,7 @@ stash_add <- function(stash, key, value, ..., expire = NULL, tags = NULL, codec 
   rlang::check_dots_empty()
   check_writable(stash)
   entry <- stash_prepare(stash, key, value, expire, tags, codec)
+  on.exit(unstage(list(entry)))
   engine_write(stash$engine, function(txn) {
     now <- unclass(Sys.time())
     if (!is.null(store_live_record(stash, txn, entry$key, now))) {
@@ -195,12 +194,26 @@ stash_add <- function(stash, key, value, ..., expire = NULL, tags = NULL, codec 
 stash_pop <- function(stash, key, default) {
   check_writable(stash)
   key <- store_key(key)
-  hit <- engine_write(stash$engine, function(txn) {
+  e <- stash$engine
+  nested <- !is.null(e$txn)
+  value <- NULL
+  hit <- engine_write(e, function(txn) {
     found <- store_read_entry(stash, txn, key)
-    if (!is.null(found)) store_delete_entry(stash, txn, key$stored)
+    if (is.null(found)) {
+      return(NULL)
+    }
+    if (!nested && !isTRUE(found$record$inline)) {
+      # The file is unlinked after the commit; read it first. (Inside
+      # stash_transact() it stays until the outer commit.)
+      engine_defer(e, function() value <<- store_decode_entry(stash, found, key))
+    }
+    store_delete_entry(stash, txn, key$stored)
     found
   }, timeout = stash$timeout)
-  if (is.null(hit)) {
+  if (!is.null(hit) && is.null(value)) {
+    value <- store_decode_entry(stash, hit, key)
+  }
+  if (is.null(value)) {
     if (missing(default)) {
       abort_not_found(
         c(
@@ -212,7 +225,7 @@ stash_pop <- function(stash, key, default) {
     }
     return(default)
   }
-  store_decode_entry(stash, hit)
+  value[[1L]]
 }
 
 #' @rdname stash_add
@@ -230,4 +243,13 @@ stash_touch <- function(stash, key, expire) {
     }
   }, timeout = stash$timeout)
   invisible(stash)
+}
+
+# Remove whatever staging files these prepared entries left: those whose blob
+# was already stored, or whose transaction did not commit. A published file
+# was renamed away and is not touched.
+unstage <- function(entries) {
+  for (entry in entries) {
+    if (!is.null(entry$enc$blob)) blob_unlink(entry$enc$blob$staged)
+  }
 }
