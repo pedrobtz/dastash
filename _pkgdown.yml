@@ -2,3 +2,45 @@ url: https://pedrobtz.github.io/dastash/
 template:
   bootstrap: 5
 
+articles:
+- title: Articles
+  contents:
+  - dastash
+  - shared-stash
+
+reference:
+- title: Open and close
+  contents:
+  - stash
+- title: Keys and codecs
+  contents:
+  - stash_key
+  - codec
+- title: Read
+  contents:
+  - stash_get
+  - stash_path
+- title: Write
+  contents:
+  - stash_set
+  - stash_add
+- title: List and describe
+  contents:
+  - stash_keys
+  - stash_entries
+- title: Maintain
+  contents:
+  - stash_expire
+  - stash_cull
+  - stash_check
+- title: Compose
+  contents:
+  - stash_transact
+  - stash_memoise
+- title: Interoperate
+  contents:
+  - as_cachem
+  - stash-generics
+- title: Conditions
+  contents:
+  - dastash-conditions
