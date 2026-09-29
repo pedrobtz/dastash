@@ -70,14 +70,18 @@ Each stage lists what it delivers, what it freezes, how it is tested, and when i
 **Delivers**
 
 - `DESCRIPTION`: real `Title`, `Description` and `Authors@R` (with `cph`);
-  `Depends: R (>= 4.1)`; `Imports: mdbx (>= 0.1.1), rlang, digest`; `Suggests:
-  testthat (>= 3.0.0), withr, callr, cachem, memoise, bit64, knitr, rmarkdown`; `URL` and
-  `BugReports`.
+  `Depends: R (>= 4.1)`; `URL` and `BugReports`. Each dependency of `design.md` §14.1 is
+  declared in the stage that first uses it — `rlang` here, `digest` in S1, `mdbx` in S2 —
+  because R CMD check notes an import that nothing uses.
+- `tests/testthat.R` runs the tests only when testthat is installed, so the `nosuggests`
+  job skips them instead of failing.
 - `.Rbuildignore`: add `^\.agents$` and `^CLAUDE\.md$`, both of which would otherwise
   ship in the tarball and draw a NOTE.
 - `R/conditions.R`: `dastash_abort()` and one constructor per class in `design.md` §13,
   each with `dastash_error` as parent and its structured fields.
-- CI: `nosuggests: true` on the shared R-CMD-check workflow.
+- CI: `nosuggests: true` on the shared R-CMD-check workflow, and no compiler containers,
+  since dastash has no compiled code. Pull requests carry the `full-ci` label, so the full
+  matrix gates every merge.
 - `tests/testthat/test-guards.R`: the grep guards of `design.md` §16 — `serialize(` only
   in the RDS codec and the meta record, no `digest(` without `serialize = FALSE`, no
   `mdbx_` outside `R/engine.R`, no bare `stop(`.
