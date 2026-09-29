@@ -3,11 +3,14 @@
 \name{stash_keys}
 \alias{stash_keys}
 \alias{stash_count}
+\alias{stash_volume}
 \title{List and count a stash's entries}
 \usage{
 stash_keys(stash, ..., prefix = NULL, start = NULL, n = Inf)
 
 stash_count(stash)
+
+stash_volume(stash)
 }
 \arguments{
 \item{stash}{A stash, from \code{\link[=stash]{stash()}}.}
@@ -21,7 +24,8 @@ stash_count(stash)
 \item{n}{The most keys to return.}
 }
 \value{
-\code{stash_keys()} returns a character vector; \code{stash_count()} an integer.
+\code{stash_keys()} returns a character vector, \code{stash_count()} an integer,
+and \code{stash_volume()} a number of bytes.
 }
 \description{
 \code{stash_keys()} returns keys in key order: the text of each key, as
@@ -29,7 +33,9 @@ stash_count(stash)
 and \code{start} with \code{n} to page through a large stash: \code{start} is inclusive, so
 drop the first key of every page after the first.
 
-\code{stash_count()} returns the number of entries.
+\code{stash_count()} returns the number of entries, including expired ones that
+\code{\link[=stash_expire]{stash_expire()}} has not reclaimed yet. \code{stash_volume()} returns the bytes
+the stash occupies on disk: its database file and every stored file.
 }
 \examples{
 s <- local_stash()
