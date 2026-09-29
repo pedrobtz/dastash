@@ -1,24 +1,25 @@
 # dastash
 
-The goal of dastash is to …
+dastash is a persistent disk cache that several R processes on one
+machine can share, in the style of Python’s
+[diskcache](https://github.com/grantjenks/python-diskcache). Keys map to
+values that outlive the session, expire on a clock, carry tags for bulk
+invalidation, and are culled when the cache grows past a size limit.
+Metadata and small values live in a transactional
+[libmdbx](https://libmdbx.dqdkfa.ru/) database through the
+[mdbx](https://github.com/pedrobtz/mdbx) package; larger values are
+content-addressed files.
+
+**Status:** under construction, heading for a first CRAN release
+(0.1.0). Nothing is usable yet.
 
 ## Installation
 
 You can install the development version of dastash from
-[GitHub](https://github.com/) with:
+[GitHub](https://github.com/pedrobtz/dastash) with:
 
 ``` r
 
 # install.packages("pak")
 pak::pak("pedrobtz/dastash")
-```
-
-## Example
-
-This is a basic example which shows you how to solve a common problem:
-
-``` r
-
-library(dastash)
-## basic example code
 ```

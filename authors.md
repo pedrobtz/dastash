@@ -2,16 +2,20 @@
 
 ## Authors
 
-- **First Last**. Author, maintainer.
+- **Pedro Baltazar**. Author, maintainer, copyright holder.
 
 ## Citation
 
-Last F (2026). *dastash: What the Package Does (One Line, Title Case)*.
-R package version 0.0.0.9000, <https://pedrobtz.github.io/dastash/>.
+Source:
+[`DESCRIPTION`](https://github.com/pedrobtz/dastash/blob/main/DESCRIPTION)
+
+Baltazar P (2026). *dastash: A Persistent Disk Cache Shared Between
+Processes*. R package version 0.0.0.9000,
+<https://pedrobtz.github.io/dastash/>.
 
     @Manual{,
-      title = {dastash: What the Package Does (One Line, Title Case)},
-      author = {First Last},
+      title = {dastash: A Persistent Disk Cache Shared Between Processes},
+      author = {Pedro Baltazar},
       year = {2026},
       note = {R package version 0.0.0.9000},
       url = {https://pedrobtz.github.io/dastash/},

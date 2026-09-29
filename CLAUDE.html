@@ -19,6 +19,7 @@
 <li class="nav-item"><a class="nav-link" href="news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
  <input class="form-control" type="search" name="search-input" id="search-input" autocomplete="off" aria-label="Search site" placeholder="Search for" data-search-index="search.json"></form></li>
+<li class="nav-item"><a class="external-link nav-link" href="https://github.com/pedrobtz/dastash/" aria-label="GitHub"><span class="fa fab fa-github fa-lg"></span></a></li>
       </ul></div>
 
 
@@ -28,7 +29,7 @@
   <main id="main" class="col-md-9"><div class="page-header">
 
       <h1>CLAUDE.md</h1>
-
+      <small class="dont-index">Source: <a href="https://github.com/pedrobtz/dastash/blob/main/CLAUDE.md" class="external-link"><code>CLAUDE.md</code></a></small>
     </div>
 
 <div id="claudemd" class="section level1">
@@ -36,13 +37,15 @@
 <p>This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.</p>
 <div class="section level2">
 <h2 id="repository-state">Repository state<a class="anchor" aria-label="anchor" href="#repository-state"></a></h2>
-<p><code>dastash</code> is an R package at <strong>design stage, pre-implementation</strong>. The <code>usethis</code> skeleton, testthat 3e, and the R-CMD-check, coverage and pkgdown workflows (from <code>pedrobtz/r-actions</code>) exist; <code>R/</code> holds only <code>dastash-package.R</code> and <code>DESCRIPTION</code> is still a placeholder. The design lives in <code>.agents/</code>, four documents:</p>
+<p><code>dastash</code> is an R package at <strong>design stage, pre-implementation</strong>. The <code>usethis</code> skeleton, testthat 3e, and the R-CMD-check, coverage and pkgdown workflows (from <code>pedrobtz/r-actions</code>) exist; <code>R/</code> holds only <code>dastash-package.R</code> and <code>DESCRIPTION</code> is still a placeholder. The design lives in <code>.agents/</code>, five documents:</p>
 <ul><li>
 <strong><code>.agents/design.md</code></strong> — <strong>the contract</strong>: semantics, API, storage, concurrency, and the engine as verified against <code>mdbx</code> 0.1.1. Section references <code>§N</code> and decisions <code>Dn</code> point here unless the text says otherwise.</li>
 <li>
 <strong><code>.agents/cache-model.md</code></strong> — the formal model. <code>design.md</code> §4 is its summary; read it before arguing about expiry, eviction or the publish ordering.</li>
 <li>
 <strong><code>.agents/prior-art-diskcache.md</code></strong> — what <code>diskcache</code> and <code>polars-diskcache</code> do.</li>
+<li>
+<strong><code>.agents/roadmap.md</code></strong> — the build order: stages S0–S10 to <strong>0.1.0 on CRAN</strong>, then 0.2.0 (frames), 0.3.0 (access-aware eviction) and 1.0.0 (<code>design.md</code> v1 complete). Work happens in its stage order; each stage ends with tests green and <code>R CMD check</code> clean.</li>
 <li>
 <strong><code>.agents/typed-layer.md</code></strong> — the typed dataset layer (schemas, producers, identifiers). <strong>Deferred</strong>; it sits above the cache and is built after it.</li>
 </ul><p><strong>Read <code>design.md</code> §0 first.</strong> Earlier drafts (an R6-based first contract, its review, a functional-API proposal, a typed-store design and plan) were folded into these on 2026-09-28; they are in git history at <code>c7216c9</code>, and <code>design.md</code> §17 records which of their decisions were reversed and why.</p>
@@ -139,7 +142,7 @@
 <span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a><span class="ex">Rscript</span> <span class="at">-e</span> <span class="st">'devtools::document()'</span>                      <span class="co"># roxygen -&gt; NAMESPACE, man/</span></span>
 <span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a><span class="ex">Rscript</span> <span class="at">-e</span> <span class="st">'devtools::check()'</span>                         <span class="co"># R CMD check</span></span>
 <span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a><span class="ex">R</span> CMD build . <span class="kw">&amp;&amp;</span> <span class="ex">R</span> CMD check <span class="at">--as-cran</span> dastash_<span class="pp">*</span>.tar.gz</span></code></pre></div>
-<p>Build order is <code>design.md</code> §18: conditions, then the key encoding and golden vectors, then the engine file and ordered encodings, then codecs, then the core with crash injection. Cross-process behaviour is tested by spawning real R sessions with <code>callr</code>, and the crash-window tests in <code>design.md</code> §16 are the only ones that can catch the ordering claims above. Run the full suite — not just a filtered file — before concluding a storage change is sound.</p>
+<p>Build order is <code>.agents/roadmap.md</code>: conditions, then the key encoding and golden vectors, then the engine file and ordered encodings, then codecs, then the core, blobs with crash injection, and the rest of 0.1.0. A release before 1.0.0 implements a subset of <code>design.md</code> §3 but always writes the final on-disk format. Cross-process behaviour is tested by spawning real R sessions with <code>callr</code>, and the crash-window tests in <code>design.md</code> §16 are the only ones that can catch the ordering claims above. Run the full suite — not just a filtered file — before concluding a storage change is sound.</p>
 </div>
 </div>
 
@@ -148,7 +151,7 @@
 
 
     <footer><div class="pkgdown-footer-left">
-  <p>Developed by First Last.</p>
+  <p>Developed by Pedro Baltazar.</p>
 </div>
 
 <div class="pkgdown-footer-right">
