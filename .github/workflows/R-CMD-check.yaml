@@ -22,3 +22,9 @@ jobs:
       # Quick on each push to a pull request, full after merge. The
       # `full-ci` label runs the full set on a pull request before merging.
       profile: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'full-ci') && 'quick' || 'full' }}
+      # CRAN's noSuggests flavor: every Suggests package must be optional.
+      nosuggests: true
+      # dastash has no compiled code, so the compiler containers have
+      # nothing to find; the runners cover the platforms.
+      containers: '[]'
+      quick-containers: '[]'

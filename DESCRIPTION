@@ -1,14 +1,25 @@
 Package: dastash
-Title: What the Package Does (One Line, Title Case)
+Title: A Persistent Disk Cache Shared Between Processes
 Version: 0.0.0.9000
-Authors@R: 
-    person("First", "Last", , "first.last@example.com", role = c("aut", "cre"))
-Description: What the package does (one paragraph).
+Authors@R:
+    person("Pedro", "Baltazar", , "pedrobtz@gmail.com", role = c("aut", "cre", "cph"))
+Description: A persistent, size-bounded cache that several R processes on
+    one machine can share, in the style of the Python 'diskcache' library.
+    Keys map to values that outlive the session, expire on a clock, carry
+    tags for bulk invalidation, and are culled when the cache grows past a
+    limit. Metadata and small values live in a transactional 'libmdbx'
+    database through the 'mdbx' package; larger values are stored as
+    content-addressed files.
 License: MIT + file LICENSE
-Encoding: UTF-8
-Roxygen: list(markdown = TRUE)
-RoxygenNote: 8.0.0
-Suggests: 
+URL: https://pedrobtz.github.io/dastash/, https://github.com/pedrobtz/dastash
+BugReports: https://github.com/pedrobtz/dastash/issues
+Depends:
+    R (>= 4.1.0)
+Imports:
+    rlang (>= 1.1.0)
+Suggests:
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
-URL: https://pedrobtz.github.io/dastash/
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+Config/roxygen2/version: 8.1.0
