@@ -70,9 +70,9 @@ Each stage lists what it delivers, what it freezes, how it is tested, and when i
 **Delivers**
 
 - `DESCRIPTION`: real `Title`, `Description` and `Authors@R` (with `cph`);
-  `Depends: R (>= 4.1)`; `URL` and `BugReports`. Each dependency of `design.md` §14.1 is
-  declared in the stage that first uses it — `rlang` here, `digest` in S1, `mdbx` in S2 —
-  because R CMD check notes an import that nothing uses.
+  `Depends: R (>= 4.5)` (raised from 4.1 in S1, D13); `URL` and `BugReports`. Each
+  dependency of `design.md` §14.1 is declared in the stage that first uses it — `rlang`
+  here, `mdbx` in S2 — because R CMD check notes an import that nothing uses.
 - `tests/testthat.R` runs the tests only when testthat is installed, so the `nosuggests`
   job skips them instead of failing.
 - `.Rbuildignore`: add `^\.agents$` and `^CLAUDE\.md$`, both of which would otherwise
@@ -83,8 +83,8 @@ Each stage lists what it delivers, what it freezes, how it is tested, and when i
   since dastash has no compiled code. Pull requests carry the `full-ci` label, so the full
   matrix gates every merge.
 - `tests/testthat/test-guards.R`: the grep guards of `design.md` §16 — `serialize(` only
-  in the RDS codec and the meta record, no `digest(` without `serialize = FALSE`, no
-  `mdbx_` outside `R/engine.R`, no bare `stop(`.
+  in the RDS codec and the meta record, `sha256sum(` only in `R/hash.R` and no `digest`
+  (added in S1), no `mdbx_` outside `R/engine.R`, no bare `stop(`.
 - Remove the `usethis` placeholder test and README text.
 
 **Freezes** the error vocabulary.
@@ -101,6 +101,8 @@ cannot be revised once a store exists.
 
 **Delivers**
 
+- `R/hash.R`: SHA-256 over bytes, text and files through `tools::sha256sum()` (D13), and
+  `Depends: R (>= 4.5)`, with the oldrel CI runner dropped.
 - `R/key.R`: the full grammar of `design.md` §5.2 — text keys with the opener rule,
   `NULL`, atomic scalars and vectors, named and unnamed lists, data frames, the per-type
   rules, percent-escaping, and `dastash_key_invalid` with the `omit =`/`key =` hint for

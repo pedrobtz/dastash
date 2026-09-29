@@ -14,11 +14,13 @@ License: MIT + file LICENSE
 URL: https://pedrobtz.github.io/dastash/, https://github.com/pedrobtz/dastash
 BugReports: https://github.com/pedrobtz/dastash/issues
 Depends:
-    R (>= 4.1.0)
+    R (>= 4.5.0)
 Imports:
     rlang (>= 1.1.0)
 Suggests:
-    testthat (>= 3.0.0)
+    bit64,
+    testthat (>= 3.0.0),
+    withr
 Config/testthat/edition: 3
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)

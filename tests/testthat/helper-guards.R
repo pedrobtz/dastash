@@ -65,9 +65,13 @@ guard_violations <- function(fns) {
       if (fn == "serialize" && !grepl("^(codec_rds|record_)", name)) {
         hits <- c(hits, sprintf("%s: serialize() outside the RDS codec and meta record", name))
       }
-      # digest() only ever hashes bytes it is given.
-      if (fn == "digest" && !isFALSE(call$serialize)) {
-        hits <- c(hits, sprintf("%s: digest() without serialize = FALSE", name))
+      # Hashing goes through R/hash.R, whose functions are hash_*; digest is
+      # not a dependency (D13).
+      if (fn == "sha256sum" && !startsWith(name, "hash_")) {
+        hits <- c(hits, sprintf("%s: sha256sum() outside R/hash.R", name))
+      }
+      if (fn == "digest" || identical(pkg, "digest")) {
+        hits <- c(hits, sprintf("%s: digest() is not used; hash through R/hash.R", name))
       }
       # Every mdbx call lives in the engine file, whose functions are engine_*.
       if ((startsWith(fn, "mdbx_") || identical(pkg, "mdbx")) && !startsWith(name, "engine_")) {

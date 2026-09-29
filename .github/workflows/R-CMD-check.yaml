@@ -24,6 +24,12 @@ jobs:
       profile: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'full-ci') && 'quick' || 'full' }}
       # CRAN's noSuggests flavor: every Suggests package must be optional.
       nosuggests: true
+      # Depends: R (>= 4.5.0), for tools::sha256sum() (D13), so there is no
+      # oldrel leg: R 4.4 cannot install the package.
+      runners: >-
+        [{"os": "macos-latest", "r": "release"},
+         {"os": "windows-latest", "r": "release"},
+         {"os": "ubuntu-latest", "r": "release"}]
       # dastash has no compiled code, so the compiler containers have
       # nothing to find; the runners cover the platforms.
       containers: '[]'

@@ -75,11 +75,12 @@ Load-bearing, and expensive to repair after a store exists.
   transaction and remove them only once `mdbx_txn_commit()` returns. Unlinking inside the
   transaction is how `mdbx`'s cache article deliberately gets it wrong.
 - **Stage via `<root>/tmp/`, never `tempdir()`.** A cross-device rename is a copy.
-- **Never hash `serialize()` output**, and never call `digest()` without
-  `serialize = FALSE`. Identity comes from the text encoding in
+- **Never hash `serialize()` output.** Identity comes from the text encoding in
   `inst/spec/key-encoding-v1.md` (`design.md` §5.2), frozen by golden vectors and
-  versioned (`KEY_ENCODING_VERSION`). Grep guards fail on `serialize(` outside the RDS
-  codec and the meta record, and on a `digest(` lacking `serialize = FALSE`.
+  versioned (`KEY_ENCODING_VERSION`). Every hash is SHA-256 from `tools::sha256sum()`,
+  called only in `R/hash.R` (D13); `digest` is not a dependency. Guards fail on
+  `serialize(` outside the RDS codec and the meta record, and on `sha256sum(` outside
+  `R/hash.R`.
   `stash_memoise()` does not use `rlang::hash()` for the same reason.
 - **Keys are text.** A string is its UTF-8 bytes, unnormalised; anything else is
   canonicalised by the grammar in `design.md` §5.2 or is `dastash_key_invalid`. No raw
@@ -120,8 +121,8 @@ Load-bearing, and expensive to repair after a store exists.
 - **Effects return the stash invisibly; questions return answers.** Exceptions:
   `stash_add()` (logical), `stash_pop()` (value), `stash_incr()`/`stash_decr()` (double).
   A miss is decided by `missing(default)`.
-- **`Imports` is `mdbx (>= 0.1.1)`, `rlang`, `digest`.** Adding a dependency is a decision
-  (`design.md` §14.1, D13).
+- **`Depends: R (>= 4.5)`; `Imports` is `mdbx (>= 0.1.1)` and `rlang`.** Adding a
+  dependency is a decision (`design.md` §14.1, D13).
 
 ## Working with mdbx
 
@@ -171,7 +172,7 @@ enforce it.
 
 ## Dependencies
 
-`Imports`: `mdbx (>= 0.1.1)`, rlang, digest. Optional codecs and engines (`qs2`,
+`Depends`: R (>= 4.5). `Imports`: `mdbx (>= 0.1.1)`, rlang. Optional codecs and engines (`qs2`,
 `nanoparquet`, `arrow`, `duckdb`/`DBI`/`dbplyr`), `bit64`, `cachem`, `memoise` and `utf8`
 live in `Suggests` and must degrade to a clear `dastash_codec_error`, verified by the
 `nosuggests` job of the shared R-CMD-check workflow. The R `polars` package is not on CRAN

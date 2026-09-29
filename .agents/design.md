@@ -731,9 +731,10 @@ timestamps ignoring `tzone` are the three rules that stop the same call producin
 keys; the hex-float rule is what lets `0.1` be a key at all without a declared precision,
 which a cache — unlike the typed layer of §20 — must allow (D12).
 
-**Never hash `serialize()` output, and never call `digest()` without `serialize = FALSE`.**
-R's serialisation changes across versions and ALTREP representations; a cache that
-outlives an R upgrade would silently lose every key. The grep guards of §16 enforce it.
+**Never hash `serialize()` output.** R's serialisation changes across versions and ALTREP
+representations; a cache that outlives an R upgrade would silently lose every key. Every
+hash is SHA-256 over bytes dastash chose, computed by `tools::sha256sum()` in one internal
+file, `R/hash.R` (D13), and the grep guards of §16 enforce both.
 This is also why `stash_memoise()` does not use `rlang::hash()`.
 
 ## 5.3 Length, and why the limit is a constant
@@ -1361,8 +1362,8 @@ rlang::try_fetch(
 ## 14.1 Dependencies
 
 ```text
-Depends:   R (>= 4.1)
-Imports:   mdbx (>= 0.1.1), rlang, digest
+Depends:   R (>= 4.5)
+Imports:   mdbx (>= 0.1.1), rlang
 Suggests:  qs2, nanoparquet, arrow, duckdb, DBI, dbplyr, dplyr, bit64, cachem, memoise,
            utf8, testthat (>= 3.0), callr, withr, knitr, rmarkdown
 ```
@@ -1372,9 +1373,8 @@ Suggests:  qs2, nanoparquet, arrow, duckdb, DBI, dbplyr, dplyr, bit64, cachem, m
 - `mdbx` is the engine: first-party, on CRAN, bundling libmdbx through `cpp11` with no
   system dependency. 0.1.1 is the version §15 was verified against.
 - `rlang` for classed conditions, `check_dots_empty()`, and `!!!` in `key =` helpers.
-- `digest` for SHA-256 with `serialize = FALSE`, streaming over files. R 4.5 added
-  `tools::sha256sum(bytes =)`, which would remove this dependency at the cost of raising
-  the floor to R 4.5; left open as D13.
+- SHA-256 comes from base R: `tools::sha256sum()`, over bytes or streaming over a file,
+  from R 4.5 (D13).
 - **No R6, no S7, no bit64, no tibble, no cli.** The handle is an environment (D2);
   `integer64` is recognised by class and formatted through its own methods when present;
   data frames are plain; `rlang::abort()` formats bullets on its own.
@@ -1485,8 +1485,8 @@ stash_tree(): one leaf per file-backed live entry, every symlink resolves
 
 **Golden vectors** in `tests/testthat/golden/key-vectors.csv` freeze the encoding of §5.2.
 **Grep guards** over `R/` fail on `serialize(` outside the RDS codec and the meta record
-(§7.3), on any `digest(` call lacking `serialize = FALSE`, and on `mdbx_` outside
-`R/engine.R`. **A portability assertion** checks `KEY_MAX` and `TAG_MAX` against
+(§7.3), on `sha256sum(` outside `R/hash.R`, on any use of `digest`, on `mdbx_` outside
+`R/engine.R`, and on a bare `stop(`. **A portability assertion** checks `KEY_MAX` and `TAG_MAX` against
 `mdbx_limits(4096)` as well as the running machine.
 
 **Cross-process**, with `callr` spawning real R sessions — the only tests that can catch
@@ -1569,9 +1569,16 @@ is the whole cost of skipping it. Raw keys would make `stash_keys()` unprintable
 typed layer may impose precision and normalisation; the cache does not. Reverses the
 first draft, which rejected doubles, normalised strings and accepted raw keys.
 
-**D13 — `digest` stays; R ≥ 4.1.** Open. R 4.5's `tools::sha256sum(bytes =)` would remove
-the dependency at the cost of excluding R 4.1–4.4 installs, which are common where this
-package is aimed. Revisit at release.
+**D13 — SHA-256 from `tools::sha256sum()`; R ≥ 4.5.** Decided 2026-09-29, over `digest`.
+Benchmarked on an Intel i5-8500B: 4 µs for a short key against `digest`'s 12 µs, 215 MB/s
+in memory against 168 MB/s, a 512 MB file in 2.6 s against 3.3 s, streamed without
+reading it into memory — and one dependency fewer. The price is the floor: R 4.1–4.4
+cannot install the package. A pure-R SHA-256 was measured too and is about 25,000× slower
+than C, so "our own hash" only means C code. `zucrypt` (first-party, not yet on CRAN) is
+the candidate for that: 262 MB/s in memory, but no file input yet, and its hex conversion
+costs more than its hash. Hashing lives in `R/hash.R` alone, so switching backends is one
+file; the output cannot change, since stored keys and blob names are made of it, and the
+golden vectors prove any backend agrees.
 
 **D14 — `mdbx` is the engine, first-party, and all of it is in one file.** No driver
 contract and no fallback engine: every ordering decision is an mdbx decision, the binding
