@@ -104,7 +104,9 @@ Load-bearing, and expensive to repair after a store exists.
   from [`tools::sha256sum()`](https://rdrr.io/r/tools/sha256sum.html),
   called only in `R/hash.R` (D13); `digest` is not a dependency. Guards
   fail on `serialize(` outside the RDS codec and the meta record, and on
-  `sha256sum(` outside `R/hash.R`. `stash_memoise()` does not use
+  `sha256sum(` outside `R/hash.R`.
+  [`stash_memoise()`](https://pedrobtz.github.io/dastash/reference/stash_memoise.md)
+  does not use
   [`rlang::hash()`](https://rlang.r-lib.org/reference/hash.html) for the
   same reason.
 - **Keys are text.** A string is its UTF-8 bytes, unnormalised; anything

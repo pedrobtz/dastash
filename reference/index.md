@@ -2,6 +2,8 @@
 
 ## All functions
 
+- [`as_cachem()`](https://pedrobtz.github.io/dastash/reference/as_cachem.md)
+  : Use a stash through the cachem interface
 - [`codec()`](https://pedrobtz.github.io/dastash/reference/codec.md)
   [`codec_auto()`](https://pedrobtz.github.io/dastash/reference/codec.md)
   [`codec_rds()`](https://pedrobtz.github.io/dastash/reference/codec.md)
@@ -10,6 +12,11 @@
   : Codecs
 - [`dastash-conditions`](https://pedrobtz.github.io/dastash/reference/dastash-conditions.md)
   : Conditions raised by dastash
+- [`length(`*`<dastash_stash>`*`)`](https://pedrobtz.github.io/dastash/reference/stash-generics.md)
+  [`` `[[`( ``*`<dastash_stash>`*`)`](https://pedrobtz.github.io/dastash/reference/stash-generics.md)
+  [`` `[[<-`( ``*`<dastash_stash>`*`)`](https://pedrobtz.github.io/dastash/reference/stash-generics.md)
+  [`as.list(`*`<dastash_stash>`*`)`](https://pedrobtz.github.io/dastash/reference/stash-generics.md)
+  : Base generics for a stash
 - [`stash()`](https://pedrobtz.github.io/dastash/reference/stash.md)
   [`stash_close()`](https://pedrobtz.github.io/dastash/reference/stash.md)
   [`stash_is_open()`](https://pedrobtz.github.io/dastash/reference/stash.md)
@@ -41,12 +48,19 @@
   : Read from a stash
 - [`stash_key()`](https://pedrobtz.github.io/dastash/reference/stash_key.md)
   [`stash_key_chr()`](https://pedrobtz.github.io/dastash/reference/stash_key.md)
+  [`stash_key_text()`](https://pedrobtz.github.io/dastash/reference/stash_key.md)
   [`stash_key_hash()`](https://pedrobtz.github.io/dastash/reference/stash_key.md)
   : Keys
 - [`stash_keys()`](https://pedrobtz.github.io/dastash/reference/stash_keys.md)
   [`stash_count()`](https://pedrobtz.github.io/dastash/reference/stash_keys.md)
   [`stash_volume()`](https://pedrobtz.github.io/dastash/reference/stash_keys.md)
   : List and count a stash's entries
+- [`stash_memoise()`](https://pedrobtz.github.io/dastash/reference/stash_memoise.md)
+  [`stash_memoise_key()`](https://pedrobtz.github.io/dastash/reference/stash_memoise.md)
+  [`stash_forget()`](https://pedrobtz.github.io/dastash/reference/stash_memoise.md)
+  [`stash_forget_all()`](https://pedrobtz.github.io/dastash/reference/stash_memoise.md)
+  [`is_stash_memoised()`](https://pedrobtz.github.io/dastash/reference/stash_memoise.md)
+  : Memoise a function in a stash
 - [`stash_path()`](https://pedrobtz.github.io/dastash/reference/stash_path.md)
   : The file behind an entry
 - [`stash_set()`](https://pedrobtz.github.io/dastash/reference/stash_set.md)

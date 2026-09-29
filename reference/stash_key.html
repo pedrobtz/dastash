@@ -11,7 +11,11 @@ of its identity. A string that begins like an encoded value ({, (, ~,
 #, D{, or a type tag such as s:) is escaped so the two can never
 collide.
 Functions, environments, connections, S4 objects and external pointers have
-no encoding and raise dastash_key_invalid."><meta property="og:description" content="Every function that takes a key accepts a string, a dastash_key, or any
+no encoding and raise dastash_key_invalid.
+stash_keys() lists keys as their text. A plain string key's text is the
+string itself and can be passed back as it is, but a structured key's text,
+such as &quot;{n=i:1}&quot;, would be taken as a string. stash_key_text() turns a
+listed text back into the key it lists."><meta property="og:description" content="Every function that takes a key accepts a string, a dastash_key, or any
 value the canonical encoding covers. stash_key() builds a key from values;
 stash_key_chr() returns the canonical text a key is stored under, and
 stash_key_hash() its SHA-256.
@@ -23,7 +27,11 @@ of its identity. A string that begins like an encoded value ({, (, ~,
 #, D{, or a type tag such as s:) is escaped so the two can never
 collide.
 Functions, environments, connections, S4 objects and external pointers have
-no encoding and raise dastash_key_invalid."></head><body>
+no encoding and raise dastash_key_invalid.
+stash_keys() lists keys as their text. A plain string key's text is the
+string itself and can be passed back as it is, but a structured key's text,
+such as &quot;{n=i:1}&quot;, would be taken as a string. stash_key_text() turns a
+listed text back into the key it lists."></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
 
@@ -71,6 +79,10 @@ of its identity. A string that begins like an encoded value (<code>{</code>, <co
 collide.</p>
 <p>Functions, environments, connections, S4 objects and external pointers have
 no encoding and raise <code>dastash_key_invalid</code>.</p>
+<p><code><a href="stash_keys.html">stash_keys()</a></code> lists keys as their text. A plain string key's text is the
+string itself and can be passed back as it is, but a structured key's text,
+such as <code>"{n=i:1}"</code>, would be taken as a string. <code>stash_key_text()</code> turns a
+listed text back into the key it lists.</p>
     </div>
 
     <div class="section level2">
@@ -78,6 +90,8 @@ no encoding and raise <code>dastash_key_invalid</code>.</p>
     <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">stash_key</span><span class="op">(</span><span class="va">...</span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu">stash_key_chr</span><span class="op">(</span><span class="va">key</span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu">stash_key_text</span><span class="op">(</span><span class="va">text</span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu">stash_key_hash</span><span class="op">(</span><span class="va">key</span><span class="op">)</span></span></code></pre></div>
     </div>
@@ -95,12 +109,17 @@ so their order does not matter. Supports <code>!!!</code> to splice a list.</p><
 <dt id="arg-key">key<a class="anchor" aria-label="anchor" href="#arg-key"></a></dt>
 <dd><p>A string, a <code>dastash_key</code>, or a value the encoding covers.</p></dd>
 
+
+<dt id="arg-text">text<a class="anchor" aria-label="anchor" href="#arg-text"></a></dt>
+<dd><p>One key's text, as <code><a href="stash_keys.html">stash_keys()</a></code> or <code>stash_key_chr()</code> gives it.</p></dd>
+
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p><code>stash_key()</code> returns a <code>dastash_key</code>. <code>stash_key_chr()</code> returns the
-canonical text as a string, and <code>stash_key_hash()</code> the SHA-256 of that text
-as 64 lower-case hex characters.</p>
+    <p><code>stash_key()</code> and <code>stash_key_text()</code> return a <code>dastash_key</code>.
+<code>stash_key_chr()</code> returns the canonical text as a string, and
+<code>stash_key_hash()</code> the SHA-256 of that text as 64 lower-case hex
+characters.</p>
     </div>
 
     <div class="section level2">
@@ -118,6 +137,17 @@ as 64 lower-case hex characters.</p>
 <span class="r-out co"><span class="r-pr">#&gt;</span> [1] "{n=i:1,p=f:0x1.999999999999ap-4}"</span>
 <span class="r-in"><span><span class="fu">stash_key_hash</span><span class="op">(</span><span class="st">"XSWX/2026-08-29"</span><span class="op">)</span></span></span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> [1] "71700ef4036aa32ab0243e79eb67d400c264b1ea37e3c8cbdfc3ad129261e1cb"</span>
+<span class="r-in"><span></span></span>
+<span class="r-in"><span><span class="co"># A listed structured key, used again.</span></span></span>
+<span class="r-in"><span><span class="va">s</span> <span class="op">&lt;-</span> <span class="fu"><a href="stash.html">local_stash</a></span><span class="op">(</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="fu"><a href="stash_set.html">stash_set</a></span><span class="op">(</span><span class="va">s</span>, <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n <span class="op">=</span> <span class="fl">1</span><span class="op">)</span>, <span class="st">"one"</span><span class="op">)</span></span></span>
+<span class="r-err co"><span class="r-pr">#&gt;</span> <span class="error">Error in stash_set(s, list(n = 1), "one"):</span> This stash has been closed.</span>
+<span class="r-in"><span><span class="va">listed</span> <span class="op">&lt;-</span> <span class="fu"><a href="stash_keys.html">stash_keys</a></span><span class="op">(</span><span class="va">s</span><span class="op">)</span></span></span>
+<span class="r-err co"><span class="r-pr">#&gt;</span> <span class="error">Error in stash_keys(s):</span> This stash has been closed.</span>
+<span class="r-in"><span><span class="va">listed</span></span></span>
+<span class="r-err co"><span class="r-pr">#&gt;</span> <span class="error">Error:</span> object 'listed' not found</span>
+<span class="r-in"><span><span class="fu"><a href="stash_get.html">stash_get</a></span><span class="op">(</span><span class="va">s</span>, <span class="fu">stash_key_text</span><span class="op">(</span><span class="va">listed</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-err co"><span class="r-pr">#&gt;</span> <span class="error">Error in stash_get(s, stash_key_text(listed)):</span> This stash has been closed.</span>
 </code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

@@ -16,12 +16,20 @@ like an encoded value (`{`, `(`, `~`, `#`, `D{`, or a type tag such as
 Functions, environments, connections, S4 objects and external pointers
 have no encoding and raise `dastash_key_invalid`.
 
+[`stash_keys()`](https://pedrobtz.github.io/dastash/reference/stash_keys.md)
+lists keys as their text. A plain string key's text is the string itself
+and can be passed back as it is, but a structured key's text, such as
+`"{n=i:1}"`, would be taken as a string. `stash_key_text()` turns a
+listed text back into the key it lists.
+
 ## Usage
 
 ``` r
 stash_key(...)
 
 stash_key_chr(key)
+
+stash_key_text(text)
 
 stash_key_hash(key)
 ```
@@ -38,11 +46,18 @@ stash_key_hash(key)
 
   A string, a `dastash_key`, or a value the encoding covers.
 
+- text:
+
+  One key's text, as
+  [`stash_keys()`](https://pedrobtz.github.io/dastash/reference/stash_keys.md)
+  or `stash_key_chr()` gives it.
+
 ## Value
 
-`stash_key()` returns a `dastash_key`. `stash_key_chr()` returns the
-canonical text as a string, and `stash_key_hash()` the SHA-256 of that
-text as 64 lower-case hex characters.
+`stash_key()` and `stash_key_text()` return a `dastash_key`.
+`stash_key_chr()` returns the canonical text as a string, and
+`stash_key_hash()` the SHA-256 of that text as 64 lower-case hex
+characters.
 
 ## Examples
 
@@ -60,4 +75,15 @@ stash_key_chr(list(n = 1L, p = 0.1))
 #> [1] "{n=i:1,p=f:0x1.999999999999ap-4}"
 stash_key_hash("XSWX/2026-08-29")
 #> [1] "71700ef4036aa32ab0243e79eb67d400c264b1ea37e3c8cbdfc3ad129261e1cb"
+
+# A listed structured key, used again.
+s <- local_stash()
+stash_set(s, list(n = 1), "one")
+#> Error in stash_set(s, list(n = 1), "one"): This stash has been closed.
+listed <- stash_keys(s)
+#> Error in stash_keys(s): This stash has been closed.
+listed
+#> Error: object 'listed' not found
+stash_get(s, stash_key_text(listed))
+#> Error in stash_get(s, stash_key_text(listed)): This stash has been closed.
 ```
