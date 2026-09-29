@@ -3,12 +3,15 @@
 \name{stash_key}
 \alias{stash_key}
 \alias{stash_key_chr}
+\alias{stash_key_text}
 \alias{stash_key_hash}
 \title{Keys}
 \usage{
 stash_key(...)
 
 stash_key_chr(key)
+
+stash_key_text(text)
 
 stash_key_hash(key)
 }
@@ -18,11 +21,14 @@ that are either all named or all unnamed. Named values are ordered by name,
 so their order does not matter. Supports \verb{!!!} to splice a list.}
 
 \item{key}{A string, a \code{dastash_key}, or a value the encoding covers.}
+
+\item{text}{One key's text, as \code{\link[=stash_keys]{stash_keys()}} or \code{stash_key_chr()} gives it.}
 }
 \value{
-\code{stash_key()} returns a \code{dastash_key}. \code{stash_key_chr()} returns the
-canonical text as a string, and \code{stash_key_hash()} the SHA-256 of that text
-as 64 lower-case hex characters.
+\code{stash_key()} and \code{stash_key_text()} return a \code{dastash_key}.
+\code{stash_key_chr()} returns the canonical text as a string, and
+\code{stash_key_hash()} the SHA-256 of that text as 64 lower-case hex
+characters.
 }
 \description{
 Every function that takes a \code{key} accepts a string, a \code{dastash_key}, or any
@@ -40,6 +46,11 @@ collide.
 
 Functions, environments, connections, S4 objects and external pointers have
 no encoding and raise \code{dastash_key_invalid}.
+
+\code{\link[=stash_keys]{stash_keys()}} lists keys as their text. A plain string key's text is the
+string itself and can be passed back as it is, but a structured key's text,
+such as \code{"{n=i:1}"}, would be taken as a string. \code{stash_key_text()} turns a
+listed text back into the key it lists.
 }
 \examples{
 stash_key("XSWX/2026-08-29")
@@ -50,4 +61,11 @@ identical(k, stash_key(date = as.Date("2026-08-29"), exchange = "XSWX"))
 
 stash_key_chr(list(n = 1L, p = 0.1))
 stash_key_hash("XSWX/2026-08-29")
+
+# A listed structured key, used again.
+s <- local_stash()
+stash_set(s, list(n = 1), "one")
+listed <- stash_keys(s)
+listed
+stash_get(s, stash_key_text(listed))
 }

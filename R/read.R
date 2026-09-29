@@ -102,7 +102,8 @@ stash_has <- function(stash, keys) {
 #'
 #' @description
 #' `stash_keys()` returns keys in key order: the text of each key, as
-#' [stash_key_chr()] gives it. Use `prefix` for keys that begin with a string,
+#' [stash_key_chr()] gives it. A structured key's text is not itself that key;
+#' pass it through [stash_key_text()] to use it again. Use `prefix` for keys that begin with a string,
 #' and `start` with `n` to page through a large stash: `start` is inclusive, so
 #' drop the first key of every page after the first.
 #'

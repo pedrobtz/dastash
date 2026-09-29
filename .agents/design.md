@@ -264,6 +264,7 @@ print(s)
 ```r
 stash_key(...)                       # named or unnamed values -> <dastash_key>
 stash_key_chr(key)                   # -> character(1): the canonical text
+stash_key_text(text)                 # a listed text -> <dastash_key>
 stash_key_hash(key)                  # -> character(1): sha256 hex of the canonical text
 ```
 
@@ -284,6 +285,13 @@ identical(k, stash_key(date = as.Date("2026-08-29"), exchange = "XSWX"))
 
 Keys are values: comparable, printable, storable in a variable, computable without a
 store. `stash_keys()` returns them as the character vector of their canonical text.
+
+A structured key's text is not itself that key: `"{n=i:1}"` passed as a key is a string
+that starts with an opener, and is escaped (§5.2). `stash_key_text(text)` turns a listed
+text back into its key, and round-trips everything `stash_keys()` returns — structured
+keys, escaped strings, and the `#<hash>` form of keys too long to keep (decided in S9,
+over parsing encodings in strings, which would make a literal string like `"e:level"`
+collide with a value). A plain string key needs nothing: its text is itself.
 
 ## 3.3 Reading
 
@@ -492,9 +500,14 @@ function and returns one that consults the stash first. The differences are the 
 — a string key, so it prefix-scans, evicts by prefix and browses in the tree. Arguments
 are matched to the formals with defaults filled in, so `f(1)` and `f(1, verbose = FALSE)`
 are one entry when `FALSE` is the default, and `f(1, x = 2)` and `f(x = 2, 1)` are the
-same call. `omit` drops named arguments from identity — `diskcache`'s `ignore=`,
-`memoise`'s `omit_args`. `key` replaces the default entirely with a function of the
-matched-argument list, which is `polars-diskcache`'s `cache_key=`:
+same call. A default is evaluated as the function would evaluate it; one that cannot be
+evaluated before the body runs depends on the other arguments, which are keyed already,
+and is left out. `...` is keyed by position, each element with its name. Arguments are
+evaluated once and passed to `f` as values. `omit` drops named arguments from identity —
+`diskcache`'s `ignore=`, `memoise`'s `omit_args`. `key` replaces how the arguments are
+keyed with a function of the matched-argument list, which is `polars-diskcache`'s
+`cache_key=`; the `<name>/v<version>/` prefix stays, so `stash_forget_all()` and the tree
+still find the entries:
 
 ```r
 fit <- stash_memoise(fit, s, key = function(args) stash_key(!!!args[c("data_id", "model")]))
@@ -559,7 +572,7 @@ Returns a list with `get(key, missing)`, `set(key, value)`, `exists(key)`,
 stash()  stash_close()  stash_is_open()  stash_dir()  local_stash()  with_stash()
 
 # keys and codecs (pure)
-stash_key()  stash_key_chr()  stash_key_hash()
+stash_key()  stash_key_chr()  stash_key_text()  stash_key_hash()
 codec()  codec_auto()  codec_rds()  codec_raw()  codec_file()  codec_qs2()  codec_parquet()
 
 # read
@@ -587,7 +600,7 @@ as_cachem()
 length()  [[  [[<-  print()  format()  as.list()
 ```
 
-Forty-nine names, one prefix, no flag that changes a return type.
+Fifty names, one prefix, no flag that changes a return type.
 
 ## 3.12 Correspondence
 
