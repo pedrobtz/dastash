@@ -31,10 +31,10 @@ record_counters <- function() {
 
 # The meta record of one entry. `enc` is what codec_encode_value() returned;
 # `key` what key_storage() did.
-record_entry <- function(enc, key, now, inline) {
+record_entry <- function(enc, key, now, inline, expire = Inf) {
   record <- list(
     stored = now,
-    expire = Inf,
+    expire = expire,
     accessed = now,
     hits = 0,
     bytes = as.double(enc$size),

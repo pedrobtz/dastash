@@ -344,8 +344,8 @@ stash_decr(stash, key, ..., by = 1, default = 0)                             # -
 
 **`expire`** is `NULL` or `Inf` for never; a number of seconds from now (zero or negative
 means already expired, which tests use); a `difftime`; or a `POSIXct` for an absolute
-deadline. `lubridate` users write `expire = hours(6)`, which is a `difftime`. `NaN` and
-`NA` are `dastash_type_error`.
+deadline, so six hours is `expire = as.difftime(6, units = "hours")`. `NaN` and `NA` are
+`dastash_type_error`. (`lubridate::hours(6)` is a Period, an S4 object, not a `difftime`.)
 
 **`tags`** is a character vector, at most 16 tags of at most `TAG_MAX` bytes each.
 `stash_evict(s, tag = )` deletes every entry carrying the tag. One entry, many tags: an

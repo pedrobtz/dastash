@@ -4,10 +4,10 @@
 # Settings every process on a store must agree on (design.md §12).
 store_level_settings <- c("size_limit", "eviction", "inline_max", "codec")
 
-# The named databases this configuration uses. Later stages add the expiry,
-# eviction, tag and blob indexes.
+# The named databases this configuration uses. Later stages add the eviction,
+# tag and blob indexes.
 store_databases <- function(config) {
-  c("meta", "values")
+  c("meta", "values", "expiry")
 }
 
 store_create_layout <- function(dir) {
@@ -102,15 +102,54 @@ store_get_record <- function(s, txn, stored) {
 
 # Write one entry (its record and its inline value) in the open transaction,
 # replacing whatever the key held.
-store_put_entry <- function(s, txn, key, enc, now) {
+store_put_entry <- function(s, txn, key, enc, now, expire = Inf) {
   e <- s$engine
   old <- store_get_record(s, txn, key$stored)
-  record <- record_entry(enc, key, now, inline = TRUE)
+  if (!is.null(old)) {
+    store_unindex(s, txn, key$stored, old)
+  }
+  record <- record_entry(enc, key, now, inline = TRUE, expire = expire)
   engine_put(txn, engine_db(e, "meta"), key$stored, record_encode(record))
   engine_put(txn, engine_db(e, "values"), key$stored, enc$bytes)
+  store_index(s, txn, key$stored, record)
   delta <- record$bytes - if (!is.null(old) && isTRUE(old$inline)) old$bytes else 0
   store_counters_add(txn, list(bytes_inline = delta))
   invisible(record)
+}
+
+# Rewrite an entry's record, keeping its value, and its index rows with it.
+store_update_record <- function(s, txn, stored, old, record) {
+  store_unindex(s, txn, stored, old)
+  engine_put(txn, engine_db(s$engine, "meta"), stored, record_encode(record))
+  store_index(s, txn, stored, record)
+  invisible(record)
+}
+
+# The index rows of one entry. Every index is a projection of the record, so
+# these two are the only places that know which rows a record implies
+# (design.md §7.2, §7.5). A never-expiring entry has no expiry row (D7).
+store_index <- function(s, txn, stored, record) {
+  if (is.finite(record$expire)) {
+    engine_put(txn, engine_db(s$engine, "expiry"), index_key(record$expire, stored), raw())
+  }
+}
+
+store_unindex <- function(s, txn, stored, record) {
+  if (is.finite(record$expire)) {
+    engine_del(txn, engine_db(s$engine, "expiry"), index_key(record$expire, stored))
+  }
+}
+
+# An ordered index key: eight bytes of order, then the stored key, so rows are
+# unique and a walk learns what to delete without a second lookup.
+index_key <- function(value, stored) {
+  c(enc_f64(value), charToRaw(stored))
+}
+
+index_key_parts <- function(bytes) {
+  stored <- rawToChar(bytes[-(1:8)])
+  Encoding(stored) <- "UTF-8"
+  list(value = dec_f64(bytes[1:8]), stored = stored)
 }
 
 # Remove one entry in the open transaction. Returns whether it existed.
@@ -122,6 +161,7 @@ store_delete_entry <- function(s, txn, stored) {
   }
   engine_del(txn, engine_db(e, "meta"), stored)
   engine_del(txn, engine_db(e, "values"), stored)
+  store_unindex(s, txn, stored, old)
   if (isTRUE(old$inline)) {
     store_counters_add(txn, list(bytes_inline = -old$bytes))
   }

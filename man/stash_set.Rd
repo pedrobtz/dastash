@@ -21,7 +21,10 @@ stash_delete(stash, keys)
 
 \item{...}{Must be empty.}
 
-\item{expire}{Not yet supported: leave as \code{NULL}.}
+\item{expire}{When the entry expires: \code{NULL} or \code{Inf} for never; a number of
+seconds from now (zero or less means already expired); a \link{difftime} from
+now; or a \link{POSIXct} for an absolute time. An expired entry is absent to
+every read at once, and \code{\link[=stash_expire]{stash_expire()}} reclaims its space.}
 
 \item{tags}{Not yet supported: leave as \code{NULL}.}
 
