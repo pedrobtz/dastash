@@ -116,9 +116,9 @@ Load-bearing, and expensive to repair after a store exists.
   positive epoch times.
 - **Decode dispatches on the codec recorded in the meta record**, never
   the stash’s current codec. No read verb takes a `codec` argument.
-- **`codec_auto()` never selects a lossy codec and never selects a
-  `Suggests` codec.** Parquet and qs2 are opted into, per call or per
-  stash.
+- **[`codec_auto()`](https://pedrobtz.github.io/dastash/reference/codec.md)
+  never selects a lossy codec and never selects a `Suggests` codec.**
+  Parquet and qs2 are opted into, per call or per stash.
 - **Laziness is a recorded `shape`.** A lazy arrow or polars frame
   written to the cache comes back as a scan over the blob, from
   `stash_get()` and from memoised functions.

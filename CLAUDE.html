@@ -88,7 +88,7 @@
 <li>
 <strong>Decode dispatches on the codec recorded in the meta record</strong>, never the stash’s current codec. No read verb takes a <code>codec</code> argument.</li>
 <li>
-<strong><code>codec_auto()</code> never selects a lossy codec and never selects a <code>Suggests</code> codec.</strong> Parquet and qs2 are opted into, per call or per stash.</li>
+<strong><code><a href="reference/codec.html">codec_auto()</a></code> never selects a lossy codec and never selects a <code>Suggests</code> codec.</strong> Parquet and qs2 are opted into, per call or per stash.</li>
 <li>
 <strong>Laziness is a recorded <code>shape</code>.</strong> A lazy arrow or polars frame written to the cache comes back as a scan over the blob, from <code>stash_get()</code> and from memoised functions.</li>
 <li>
