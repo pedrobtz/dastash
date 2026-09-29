@@ -211,29 +211,54 @@ store_decode_entry <- function(s, hit, key, call = rlang::caller_env()) {
   if (isTRUE(record$inline)) {
     return(list(codec_decode_bytes(codec, hit$bytes, record$codec_meta, stage = function() stage_path(s), call = call)))
   }
-  if (!store_blob_intact(s, hit, key, call)) {
-    return(NULL)
+  # A read transaction has ended by now, so another process may delete or
+  # replace the entry, and unlink its file, at any moment: before the size is
+  # checked, or between the check and the decoder opening the file. Either way
+  # the entry is gone, which a cache may always answer as a miss (design.md
+  # §4). Only a record that still names a file that stays missing is damage.
+  for (attempt in 1:3) {
+    if (!store_blob_ready(s, hit, key, call)) {
+      return(NULL)
+    }
+    value <- tryCatch(
+      withCallingHandlers(
+        list(codec_decode(codec, hit$path, record$codec_meta, call = call)),
+        # A decoder's "cannot open file" warning, when the file just went.
+        warning = function(cnd) if (!file.exists(hit$path)) invokeRestart("muffleWarning")
+      ),
+      dastash_codec_error = function(cnd) {
+        if (file.exists(hit$path)) rlang::cnd_signal(cnd)
+        NULL
+      }
+    )
+    if (!is.null(value)) {
+      return(value)
+    }
   }
-  list(codec_decode(codec, hit$path, record$codec_meta, call = call))
+  NULL
 }
 
-# Whether a blob's file can be read: FALSE if it went because another process
-# deleted or replaced the entry after this read (a miss, which a cache may
-# always answer); an error if the record still points at a file that is gone
-# or the wrong size. The size is what a crash before the data reached the disk
-# would leave wrong; stash_check(hash = TRUE) verifies the bytes themselves.
-store_blob_intact <- function(s, hit, key, call) {
+# TRUE when the blob's file is there at the size its record holds; FALSE when
+# the entry has since been deleted or now names another file (a miss); an
+# error when the record still names a file that is missing or the wrong size.
+# The size is what a crash before the data reached the disk would leave wrong;
+# stash_check(hash = TRUE) verifies the bytes themselves.
+store_blob_ready <- function(s, hit, key, call) {
   record <- hit$record
   size <- file.size(hit$path)
   if (is.na(size)) {
-    now <- engine_read(s$engine, function(txn) store_live_record(s, txn, key))
-    if (is.null(now) || !identical(record_blob_name(now), record_blob_name(record))) {
+    current <- engine_read(s$engine, function(txn) store_live_record(s, txn, key))
+    if (is.null(current) || !identical(record_blob_name(current), record_blob_name(record))) {
       return(FALSE)
     }
-    abort_blob_corrupt(
-      sprintf("The file behind key %s is missing.", display_key(key$text)),
-      key = key$text, path = hit$path, call = call
-    )
+    # The same bytes may have been stored again after we looked.
+    size <- file.size(hit$path)
+    if (is.na(size)) {
+      abort_blob_corrupt(
+        sprintf("The file behind key %s is missing.", display_key(key$text)),
+        key = key$text, path = hit$path, call = call
+      )
+    }
   }
   if (size != record$bytes) {
     abort_blob_corrupt(

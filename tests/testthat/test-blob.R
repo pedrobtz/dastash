@@ -119,6 +119,24 @@ test_that("a file removed with its entry by another writer reads as a miss", {
   expect_null(store_decode_entry(s, hit, key))
 })
 
+test_that("a file that vanishes as the decoder opens it reads as a miss", {
+  s <- local_stash(inline_max = 100)
+  stash_set(s, "k", runif(100))
+  key <- store_key("k")
+  hit <- engine_read(s$engine, function(txn) store_read_entry(s, txn, key))
+  vanishing <- codec(
+    "vanishing",
+    encode = function(value, path) NULL,
+    decode = function(path, meta) {
+      stash_delete(s, "k")
+      readRDS(path)
+    }
+  )
+  hit$record$codec <- "vanishing"
+  s$codecs <- codec_registry(list(vanishing))
+  expect_null(store_decode_entry(s, hit, key))
+})
+
 test_that("an unreferenced file is reaped only while it is still unreferenced", {
   s <- local_stash(inline_max = 100)
   x <- runif(100)
@@ -212,7 +230,7 @@ test_that("eight processes writing the same and different keys keep every invari
   })
   for (job in jobs) {
     job$wait(timeout = 120000)
-    expect_identical(job$get_exit_status(), 0L)
+    expect_no_error(job$get_result())
   }
   expect_identical(store_violations(s), character())
   expect_identical(stash_get(s, "same"), shared)
@@ -253,11 +271,12 @@ test_that("readers never see a dangling file while writers replace and delete", 
       seen
     }, args = list(dir = dir, values = values))
   })
+  # get_result() re-raises a child's error, so a failure says what it was.
   writer$wait(timeout = 120000)
-  expect_identical(writer$get_exit_status(), 0L)
+  expect_no_error(writer$get_result())
   for (r in readers) {
     r$wait(timeout = 120000)
-    expect_identical(r$get_exit_status(), 0L)
+    expect_no_error(r$get_result())
   }
   expect_identical(store_violations(s), character())
 })
