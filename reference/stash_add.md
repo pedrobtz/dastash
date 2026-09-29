@@ -71,7 +71,11 @@ stash_touch(stash, key, expire)
 
 - tags:
 
-  Not yet supported: leave as `NULL`.
+  A character vector of up to 16 tags, each at most 256 bytes, to group
+  entries for
+  [`stash_evict()`](https://pedrobtz.github.io/dastash/reference/stash_cull.md)
+  and
+  [`stash_entries()`](https://pedrobtz.github.io/dastash/reference/stash_entries.md).
 
 - codec:
 

@@ -23,6 +23,16 @@
   [`stash_pop()`](https://pedrobtz.github.io/dastash/reference/stash_add.md)
   [`stash_touch()`](https://pedrobtz.github.io/dastash/reference/stash_add.md)
   : Atomic writes
+- [`stash_check()`](https://pedrobtz.github.io/dastash/reference/stash_check.md)
+  : Check a stash, and repair it
+- [`stash_cull()`](https://pedrobtz.github.io/dastash/reference/stash_cull.md)
+  [`stash_evict()`](https://pedrobtz.github.io/dastash/reference/stash_cull.md)
+  [`stash_clear()`](https://pedrobtz.github.io/dastash/reference/stash_cull.md)
+  : Keep a stash under its size limit
+- [`stash_entries()`](https://pedrobtz.github.io/dastash/reference/stash_entries.md)
+  [`stash_info()`](https://pedrobtz.github.io/dastash/reference/stash_entries.md)
+  [`stash_stats()`](https://pedrobtz.github.io/dastash/reference/stash_entries.md)
+  : The catalogue of a stash
 - [`stash_expire()`](https://pedrobtz.github.io/dastash/reference/stash_expire.md)
   : Reclaim expired entries
 - [`stash_get()`](https://pedrobtz.github.io/dastash/reference/stash_get.md)
