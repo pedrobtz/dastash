@@ -20,7 +20,9 @@ Imports:
     rlang (>= 1.1.0)
 Suggests:
     bit64,
+    cachem,
     callr,
+    memoise,
     testthat (>= 3.0.0),
     withr
 Config/testthat/edition: 3

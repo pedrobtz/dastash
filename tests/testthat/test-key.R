@@ -219,3 +219,18 @@ test_that("limits fit the smallest page size", {
   expect_lte(8L + KEY_MAX, 2022L)
   expect_lte(TAG_MAX + 1L + KEY_MAX, 2022L)
 })
+
+test_that("stash_key_text() turns every listed key back into its key", {
+  s <- local_stash()
+  keys <- list(
+    "plain", "{literal", list(n = 1), 1L, as.Date("2026-08-29"),
+    strrep("x", 1000), strrep("y", 5000)
+  )
+  for (i in seq_along(keys)) stash_set(s, keys[[i]], i)
+  listed <- stash_keys(s)
+  expect_length(listed, length(keys))
+  values <- vapply(listed, function(k) stash_get(s, stash_key_text(k)), numeric(1))
+  expect_setequal(values, seq_along(keys))
+  expect_error(stash_key_text(NA_character_), class = "dastash_key_invalid")
+  expect_error(stash_key_text(c("a", "b")), class = "dastash_key_invalid")
+})

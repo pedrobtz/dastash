@@ -33,14 +33,21 @@ KEY_PREVIEW_MAX <- 256L
 #' Functions, environments, connections, S4 objects and external pointers have
 #' no encoding and raise `dastash_key_invalid`.
 #'
+#' [stash_keys()] lists keys as their text. A plain string key's text is the
+#' string itself and can be passed back as it is, but a structured key's text,
+#' such as `"{n=i:1}"`, would be taken as a string. `stash_key_text()` turns a
+#' listed text back into the key it lists.
+#'
+#' @param text One key's text, as [stash_keys()] or `stash_key_chr()` gives it.
 #' @param ... Values that make up the key: one unnamed value, or several values
 #'   that are either all named or all unnamed. Named values are ordered by name,
 #'   so their order does not matter. Supports `!!!` to splice a list.
 #' @param key A string, a `dastash_key`, or a value the encoding covers.
 #'
-#' @return `stash_key()` returns a `dastash_key`. `stash_key_chr()` returns the
-#'   canonical text as a string, and `stash_key_hash()` the SHA-256 of that text
-#'   as 64 lower-case hex characters.
+#' @return `stash_key()` and `stash_key_text()` return a `dastash_key`.
+#'   `stash_key_chr()` returns the canonical text as a string, and
+#'   `stash_key_hash()` the SHA-256 of that text as 64 lower-case hex
+#'   characters.
 #'
 #' @examples
 #' stash_key("XSWX/2026-08-29")
@@ -51,6 +58,13 @@ KEY_PREVIEW_MAX <- 256L
 #'
 #' stash_key_chr(list(n = 1L, p = 0.1))
 #' stash_key_hash("XSWX/2026-08-29")
+#'
+#' # A listed structured key, used again.
+#' s <- local_stash()
+#' stash_set(s, list(n = 1), "one")
+#' listed <- stash_keys(s)
+#' listed
+#' stash_get(s, stash_key_text(listed))
 #' @export
 stash_key <- function(...) {
   values <- rlang::list2(...)
@@ -68,6 +82,15 @@ stash_key <- function(...) {
 #' @export
 stash_key_chr <- function(key) {
   key_canon(key)
+}
+
+#' @rdname stash_key
+#' @export
+stash_key_text <- function(text) {
+  if (!is.character(text) || length(text) != 1L || is.na(text)) {
+    abort_key_invalid("`text` must be one key's text, a single string.")
+  }
+  new_dastash_key(utf8_text(text))
 }
 
 #' @rdname stash_key
