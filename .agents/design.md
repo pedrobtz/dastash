@@ -792,10 +792,13 @@ codec(name, encode, decode, ..., ext = NULL, version = 1L, supports = NULL)   # 
 ```
 
 A codec is a plain classed list with `name`, `version`, `ext`, `encode(value, path)`,
-`decode(path)`, and `supports(value)`, a predicate for what it round-trips losslessly.
-`encode()` writes to a path (the staging file of §8); for values that will be inline the
-same path is read back into the record. Codecs never see the store, and never run inside
-a transaction (§10).
+`decode(path, meta)`, and `supports(value)`, a predicate for what it round-trips
+losslessly. `encode()` writes to a path (the staging file of §8); for values that will be
+inline the same path is read back into the record. It may return a small named list of
+decode parameters, which the record keeps as `codec_meta` and passes back to `decode()`:
+whether `codec_raw()` stored a string or a raw vector, the extension of the file
+`codec_file()` copied, the class of an eager Parquet frame (§6.4). Codecs never see the
+store, and never run inside a transaction (§10).
 
 **The record stores the codec name and version, and decode dispatches on it** — never
 on the stash's current default. Changing a default codec cannot orphan what is stored.
@@ -988,7 +991,7 @@ blob          string     content hash; absent when inline
 ext           string     blob extension; absent when inline or none
 tags          character  possibly empty
 shape         string     "value" | "file" | "lazy"
-class         character  the class of what was written, for eager Parquet (§6.4)
+codec_meta    list       what encode() returned for decode(), when anything (§6.2)
 key_text      string     the canonical text, only when the key was digested and fits
 key_preview   string     first 256 bytes, only when it did not fit
 key_bytes     double     length of the canonical text, only when digested
