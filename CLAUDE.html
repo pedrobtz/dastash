@@ -98,7 +98,7 @@
 <li>
 <strong>Reads stay read transactions.</strong> Expiry is lazy and access times are journalled (<code>design.md</code> §9.3), so an ordinary <code><a href="reference/stash_get.html">stash_get()</a></code> writes nothing.</li>
 <li>
-<strong>One environment per process and directory; one transaction per environment.</strong> <code><a href="reference/stash.html">stash()</a></code> shares one environment between handles on the same normalised path, and the registry entry — not the handle — owns the current transaction, so every handle inside <code>stash_transact()</code> joins it (<code>design.md</code> §3.1, §10, D21). No user code runs inside a transaction except the body of <code>stash_transact()</code>: codecs encode before the write and decode after the read.</li>
+<strong>One environment per process and directory; one transaction per environment.</strong> <code><a href="reference/stash.html">stash()</a></code> shares one environment between handles on the same normalised path, and the registry entry — not the handle — owns the current transaction, so every handle inside <code><a href="reference/stash_transact.html">stash_transact()</a></code> joins it (<code>design.md</code> §3.1, §10, D21). No user code runs inside a transaction except the body of <code><a href="reference/stash_transact.html">stash_transact()</a></code>: codecs encode before the write and decode after the read.</li>
 <li>
 <strong>Every named database the configuration implies is created in one write transaction at open.</strong> Read-only handles read <code>mdbx_dbi_list()</code> once and treat a missing index database as empty.</li>
 <li>

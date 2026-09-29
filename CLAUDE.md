@@ -142,10 +142,12 @@ Load-bearing, and expensive to repair after a store exists.
   [`stash()`](https://pedrobtz.github.io/dastash/reference/stash.md)
   shares one environment between handles on the same normalised path,
   and the registry entry — not the handle — owns the current
-  transaction, so every handle inside `stash_transact()` joins it
-  (`design.md` §3.1, §10, D21). No user code runs inside a transaction
-  except the body of `stash_transact()`: codecs encode before the write
-  and decode after the read.
+  transaction, so every handle inside
+  [`stash_transact()`](https://pedrobtz.github.io/dastash/reference/stash_transact.md)
+  joins it (`design.md` §3.1, §10, D21). No user code runs inside a
+  transaction except the body of
+  [`stash_transact()`](https://pedrobtz.github.io/dastash/reference/stash_transact.md):
+  codecs encode before the write and decode after the read.
 - **Every named database the configuration implies is created in one
   write transaction at open.** Read-only handles read `mdbx_dbi_list()`
   once and treat a missing index database as empty.

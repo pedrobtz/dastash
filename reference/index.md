@@ -53,3 +53,5 @@
   [`stash_mset()`](https://pedrobtz.github.io/dastash/reference/stash_set.md)
   [`stash_delete()`](https://pedrobtz.github.io/dastash/reference/stash_set.md)
   : Write to a stash
+- [`stash_transact()`](https://pedrobtz.github.io/dastash/reference/stash_transact.md)
+  : Run several writes as one transaction
