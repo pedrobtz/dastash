@@ -222,8 +222,8 @@ stash_close(stash)                   # -> stash, invisibly. Idempotent
 stash_is_open(stash)                 # -> logical(1)
 stash_dir(stash)                     # -> character(1), the normalised root
 
-local_stash(dir = tempfile("stash-"), ..., .local_envir = parent.frame())
-with_stash(dir, code, ...)
+local_stash(dir = NULL, ..., .local_envir = parent.frame())
+with_stash(dir, fn, ...)
 ```
 
 `stash()` opens a directory or creates it. §12 says which settings are persisted in the
@@ -244,7 +244,10 @@ Handles record the PID that opened them and raise `dastash_forked` when used fro
 forked child (§10).
 
 `local_stash()` is the `withr` idiom: it creates a stash, registers `stash_close()` on the
-calling frame, and returns it. `with_stash()` is the expression form.
+calling frame, and returns it; with no `dir` it uses a new temporary directory and deletes
+it afterwards. `with_stash()` opens a stash, passes it to `fn`, and closes it — a
+function rather than an expression, because there is no ambient stash for an expression
+to find (§2, rule 2).
 
 The handle is an **environment with S3 class `dastash_stash`**. It has identity and
 mutable state and nothing else; no R6, no S7 (D2).

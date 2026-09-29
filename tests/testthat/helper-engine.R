@@ -11,3 +11,14 @@ engine_fill <- function(e, pairs, db = NULL) {
     for (k in names(pairs)) engine_put(txn, engine_db(e, db), k, pairs[[k]])
   })
 }
+
+# A child process loads dastash from the library, not from the sources under
+# test. R CMD check installs the copy it checks; devtools::test() does not, so
+# there the child tests run only when DASTASH_TEST_CHILDREN=true says the
+# installed copy is current (after R CMD INSTALL .).
+skip_unless_children_see_this_build <- function() {
+  skip_if_not_installed("callr")
+  if (!testthat::is_checking() && !isTRUE(as.logical(Sys.getenv("DASTASH_TEST_CHILDREN")))) {
+    skip("child processes would load an installed dastash, not this build")
+  }
+}

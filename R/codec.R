@@ -67,7 +67,8 @@ codec <- function(name, encode, decode, ..., ext = NULL, version = 1L, supports 
 }
 
 new_codec <- function(name, encode, decode, ext = NULL, version = 1L, supports = NULL,
-                      always_file = FALSE, call = rlang::caller_env()) {
+                      always_file = FALSE, encode_bytes = NULL, decode_bytes = NULL,
+                      call = rlang::caller_env()) {
   if (!is.function(encode) || length(formals(encode)) < 2L) {
     abort_codec_error("A codec's `encode` must be a function of `value` and `path`.", codec = name, call = call)
   }
@@ -90,7 +91,10 @@ new_codec <- function(name, encode, decode, ext = NULL, version = 1L, supports =
     list(
       name = name, version = as.integer(version), ext = ext,
       encode = encode, decode = decode, supports = supports,
-      always_file = always_file
+      always_file = always_file,
+      # Optional in-memory paths, for the built-ins only: a small value is
+      # encoded to bytes and decoded from them without a file in between.
+      encode_bytes = encode_bytes, decode_bytes = decode_bytes
     ),
     class = "dastash_codec"
   )
@@ -115,7 +119,18 @@ codec_rds <- function(compress = FALSE) {
       NULL
     },
     decode = function(path, meta) readRDS(path),
-    ext = "rds"
+    ext = "rds",
+    # Uncompressed saveRDS() output is exactly serialize()'s, so an inline
+    # value's bytes are what the file would have held.
+    encode_bytes = if (!compress) function(value) list(bytes = serialize(value, NULL, version = 3L)),
+    decode_bytes = function(bytes, meta) {
+      if (length(bytes) >= 2L && bytes[[1L]] == as.raw(0x1f) && bytes[[2L]] == as.raw(0x8b)) {
+        con <- gzcon(rawConnection(bytes))
+        on.exit(close(con))
+        return(readRDS(con))
+      }
+      unserialize(bytes)
+    }
   )
 }
 
@@ -141,7 +156,21 @@ codec_raw <- function() {
       Encoding(text) <- "UTF-8"
       text
     },
-    supports = function(value) is_bare_raw(value) || is_bare_string(value)
+    supports = function(value) is_bare_raw(value) || is_bare_string(value),
+    encode_bytes = function(value) {
+      if (is.raw(value)) {
+        return(list(bytes = as.vector(value), meta = list(text = FALSE)))
+      }
+      list(bytes = charToRaw(enc2utf8(value)), meta = list(text = TRUE))
+    },
+    decode_bytes = function(bytes, meta) {
+      if (!isTRUE(meta$text)) {
+        return(bytes)
+      }
+      text <- rawToChar(bytes)
+      Encoding(text) <- "UTF-8"
+      text
+    }
   )
 }
 
@@ -292,3 +321,52 @@ codec_decode <- function(codec, path, meta, call = rlang::caller_env()) {
   )
 }
 
+
+# Encode `value` for storage: in memory when the codec can, otherwise into the
+# staging file `stage()` names. Returns the bytes or the file, its size, and
+# what the record keeps about the encoding.
+codec_encode_value <- function(codec, value, stage, call = rlang::caller_env()) {
+  if (!isTRUE(codec$supports(value))) {
+    abort_type_error(
+      sprintf("The codec %s cannot store this value without loss.", encodeString(codec$name, quote = "\"")),
+      codec = codec$name, call = call
+    )
+  }
+  if (!is.null(codec$encode_bytes) && !isTRUE(codec$always_file)) {
+    out <- codec_guard(codec, "encode", call, codec$encode_bytes(value))
+    return(list(
+      bytes = out$bytes, path = NULL, size = length(out$bytes),
+      codec = codec$name, version = codec$version, meta = out$meta,
+      ext = out$meta$ext %||% codec$ext
+    ))
+  }
+  path <- stage()
+  info <- codec_encode(codec, value, path, call = call)
+  c(list(bytes = NULL, path = path, size = file.size(path)), info)
+}
+
+# Decode an inline value from its bytes, through a file only for codecs that
+# cannot read bytes directly.
+codec_decode_bytes <- function(codec, bytes, meta, stage, call = rlang::caller_env()) {
+  if (!is.null(codec$decode_bytes)) {
+    return(codec_guard(codec, "decode", call, codec$decode_bytes(bytes, meta)))
+  }
+  path <- stage()
+  on.exit(unlink(path))
+  writeBin(bytes, path)
+  codec_decode(codec, path, meta, call = call)
+}
+
+# Evaluate a codec's own code, turning its failures into dastash_codec_error.
+codec_guard <- function(codec, what, call, expr) {
+  tryCatch(
+    expr,
+    dastash_error = function(cnd) rlang::cnd_signal(cnd),
+    error = function(cnd) {
+      abort_codec_error(
+        sprintf("The codec %s failed to %s the value.", encodeString(codec$name, quote = "\""), what),
+        codec = codec$name, parent = cnd, call = call
+      )
+    }
+  )
+}
