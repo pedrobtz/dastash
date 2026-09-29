@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">dastash</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9000</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -15,7 +15,9 @@
     </button>
 
     <div id="navbar" class="collapse navbar-collapse ms-3">
-      <ul class="navbar-nav me-auto"><li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
+      <ul class="navbar-nav me-auto"><li class="nav-item"><a class="nav-link" href="../articles/dastash.html">Get started</a></li>
+<li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
+<li class="nav-item"><a class="nav-link" href="../articles/index.html">Articles</a></li>
 <li class="active nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
  <input class="form-control" type="search" name="search-input" id="search-input" autocomplete="off" aria-label="Search site" placeholder="Search for" data-search-index="../search.json"></form></li>
@@ -33,8 +35,15 @@
     </div>
 
     <div class="section level2">
-<h2 class="pkg-version" data-toc-text="0.0.0.9000" id="dastash-0009000">dastash 0.0.0.9000<a class="anchor" aria-label="anchor" href="#dastash-0009000"></a></h2>
-<ul><li>Initial CRAN submission.</li>
+<h2 class="pkg-version" data-toc-text="0.1.0" id="dastash-010">dastash 0.1.0<a class="anchor" aria-label="anchor" href="#dastash-010"></a></h2>
+<ul><li><p>Initial CRAN submission.</p></li>
+<li><p>A persistent cache shared by every R process on a machine: <code><a href="../reference/stash.html">stash()</a></code> opens a directory; <code><a href="../reference/stash_get.html">stash_get()</a></code>, <code><a href="../reference/stash_set.html">stash_set()</a></code>, <code><a href="../reference/stash_get.html">stash_has()</a></code>, <code><a href="../reference/stash_set.html">stash_delete()</a></code>, <code><a href="../reference/stash_get.html">stash_mget()</a></code> and <code><a href="../reference/stash_set.html">stash_mset()</a></code> read and write it; <code><a href="../reference/stash_keys.html">stash_keys()</a></code>, <code><a href="../reference/stash_entries.html">stash_entries()</a></code>, <code><a href="../reference/stash_keys.html">stash_count()</a></code>, <code><a href="../reference/stash_keys.html">stash_volume()</a></code> and <code><a href="../reference/stash_entries.html">stash_stats()</a></code> describe it.</p></li>
+<li><p>Keys are text, or any R value the specified key encoding covers (<code><a href="../reference/stash_key.html">stash_key()</a></code>), so a cache keyed on function arguments survives R upgrades.</p></li>
+<li><p>Small values live in a transactional ‘libmdbx’ database through ‘mdbx’; values of <code>inline_max</code> bytes or more become read-only, content-addressed files, stored once however many keys hold them (<code><a href="../reference/stash_path.html">stash_path()</a></code>).</p></li>
+<li><p>Entries expire (<code>expire =</code>, <code><a href="../reference/stash_expire.html">stash_expire()</a></code>), carry tags (<code>stash_evict(tag =)</code>), and are evicted least-recently-stored first when the cache holds more than <code>size_limit</code> (<code><a href="../reference/stash_cull.html">stash_cull()</a></code>).</p></li>
+<li><p>Atomic operations across processes: <code><a href="../reference/stash_add.html">stash_add()</a></code>, <code><a href="../reference/stash_add.html">stash_pop()</a></code>, <code><a href="../reference/stash_add.html">stash_touch()</a></code>, <code><a href="../reference/stash_add.html">stash_incr()</a></code>, <code><a href="../reference/stash_add.html">stash_decr()</a></code> and <code><a href="../reference/stash_transact.html">stash_transact()</a></code>.</p></li>
+<li><p><code><a href="../reference/stash_memoise.html">stash_memoise()</a></code> caches a function’s results across sessions and processes; <code><a href="../reference/as_cachem.html">as_cachem()</a></code> lets ‘memoise’ and ‘shiny’ use a stash.</p></li>
+<li><p><code><a href="../reference/stash_check.html">stash_check()</a></code> finds and repairs damage, and reclaims what a crash leaves.</p></li>
 </ul></div>
   </main></div>
 

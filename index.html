@@ -5,14 +5,14 @@
 <meta charset="utf-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-<title>A Persistent Disk Cache Shared Between Processes • dastash</title>
+<title>Persistent Disk Cache Shared Between Processes • dastash</title>
 <script src="deps/jquery-3.6.0/jquery-3.6.0.min.js"></script><meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 <link href="deps/bootstrap-5.3.8/bootstrap.min.css" rel="stylesheet">
 <script src="deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
-<script src="deps/headroom-0.11.0/headroom.min.js"></script><script src="deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="deps/search-1.0.0/fuse.min.js"></script><script src="deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="pkgdown.js"></script><meta property="og:title" content="A Persistent Disk Cache Shared Between Processes">
-<meta name="description" content="A persistent, size-bounded cache that several R processes on one machine can share, in the style of the Python diskcache library. Keys map to values that outlive the session, expire on a clock, carry tags for bulk invalidation, and are culled when the cache grows past a limit. Metadata and small values live in a transactional libmdbx database through the mdbx package; larger values are stored as content-addressed files.">
-<meta property="og:description" content="A persistent, size-bounded cache that several R processes on one machine can share, in the style of the Python diskcache library. Keys map to values that outlive the session, expire on a clock, carry tags for bulk invalidation, and are culled when the cache grows past a limit. Metadata and small values live in a transactional libmdbx database through the mdbx package; larger values are stored as content-addressed files.">
+<script src="deps/headroom-0.11.0/headroom.min.js"></script><script src="deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="deps/search-1.0.0/fuse.min.js"></script><script src="deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="pkgdown.js"></script><meta property="og:title" content="Persistent Disk Cache Shared Between Processes">
+<meta name="description" content="A persistent, size-bounded cache that several R processes on one machine can share, in the style of the Python library diskcache. Keys map to values that outlive the session, expire on a clock, carry tags for bulk invalidation, and are evicted when the cache grows past a limit. Metadata and small values live in a transactional libmdbx database through the mdbx package, and larger values are stored as content-addressed files. Functions can be memoised across sessions and processes, and the cache can be used through the cachem interface.">
+<meta property="og:description" content="A persistent, size-bounded cache that several R processes on one machine can share, in the style of the Python library diskcache. Keys map to values that outlive the session, expire on a clock, carry tags for bulk invalidation, and are evicted when the cache grows past a limit. Metadata and small values live in a transactional libmdbx database through the mdbx package, and larger values are stored as content-addressed files. Functions can be memoised across sessions and processes, and the cache can be used through the cachem interface.">
 </head>
 <body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -22,7 +22,7 @@
 
     <a class="navbar-brand me-2" href="index.html">dastash</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9000</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -31,7 +31,9 @@
 
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto">
+<li class="nav-item"><a class="nav-link" href="articles/dastash.html">Get started</a></li>
 <li class="nav-item"><a class="nav-link" href="reference/index.html">Reference</a></li>
+<li class="nav-item"><a class="nav-link" href="articles/index.html">Articles</a></li>
 <li class="nav-item"><a class="nav-link" href="news/index.html">Changelog</a></li>
       </ul>
 <ul class="navbar-nav">
@@ -51,15 +53,73 @@
 </h1></div>
 <!-- badges: start -->
 
-<p>dastash is a persistent disk cache that several R processes on one machine can share, in the style of Python’s <a href="https://github.com/grantjenks/python-diskcache" class="external-link">diskcache</a>. Keys map to values that outlive the session, expire on a clock, carry tags for bulk invalidation, and are culled when the cache grows past a size limit. Metadata and small values live in a transactional <a href="https://libmdbx.dqdkfa.ru/" class="external-link">libmdbx</a> database through the <a href="https://github.com/pedrobtz/mdbx" class="external-link">mdbx</a> package; larger values are content-addressed files.</p>
-<p><strong>Status:</strong> under construction, heading for a first CRAN release (0.1.0). Nothing is usable yet.</p>
+<p>dastash is a persistent disk cache that every R process on a machine can share, in the style of Python’s <a href="https://github.com/grantjenks/python-diskcache" class="external-link">diskcache</a>. Keys map to values that outlive the session, expire on a clock, carry tags for bulk invalidation, and are evicted when the cache grows past a size limit. Small values live in a transactional <a href="https://libmdbx.dqdkfa.ru/" class="external-link">libmdbx</a> database, through the <a href="https://github.com/pedrobtz/mdbx" class="external-link">mdbx</a> package; larger ones become read-only files named by their content, stored once however many keys hold them.</p>
 <div class="section level2">
 <h2 id="installation">Installation<a class="anchor" aria-label="anchor" href="#installation"></a>
 </h2>
-<p>You can install the development version of dastash from <a href="https://github.com/pedrobtz/dastash" class="external-link">GitHub</a> with:</p>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"dastash"</span><span class="op">)</span></span></code></pre></div>
+<p>The development version is on GitHub:</p>
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># install.packages("pak")</span></span>
 <span><span class="fu">pak</span><span class="fu">::</span><span class="fu"><a href="https://pak.r-lib.org/reference/pak.html" class="external-link">pak</a></span><span class="op">(</span><span class="st">"pedrobtz/dastash"</span><span class="op">)</span></span></code></pre></div>
+</div>
+<div class="section level2">
+<h2 id="a-tour">A tour<a class="anchor" aria-label="anchor" href="#a-tour"></a>
+</h2>
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://pedrobtz.github.io/dastash/">dastash</a></span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">s</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/stash.html">stash</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir</a></span><span class="op">(</span><span class="op">)</span>, <span class="st">"prices"</span><span class="op">)</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># Keys map to values, with expiry and tags.</span></span>
+<span><span class="va">s</span> <span class="op">|&gt;</span> <span class="fu"><a href="reference/stash_set.html">stash_set</a></span><span class="op">(</span><span class="st">"XSWX/2026-08-29"</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">101.2</span>, <span class="fl">101.9</span><span class="op">)</span>, expire <span class="op">=</span> <span class="fl">3600</span>, tags <span class="op">=</span> <span class="st">"XSWX"</span><span class="op">)</span></span>
+<span><span class="fu"><a href="reference/stash_get.html">stash_get</a></span><span class="op">(</span><span class="va">s</span>, <span class="st">"XSWX/2026-08-29"</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] 101.2 101.9</span></span>
+<span><span class="fu"><a href="reference/stash_get.html">stash_get</a></span><span class="op">(</span><span class="va">s</span>, <span class="st">"missing"</span>, default <span class="op">=</span> <span class="cn">NULL</span><span class="op">)</span></span>
+<span><span class="co">#&gt; NULL</span></span>
+<span></span>
+<span><span class="co"># A key can be any combination of values; field order does not matter.</span></span>
+<span><span class="fu"><a href="reference/stash_set.html">stash_set</a></span><span class="op">(</span><span class="va">s</span>, <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>exchange <span class="op">=</span> <span class="st">"XSWX"</span>, date <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/as.Date.html" class="external-link">as.Date</a></span><span class="op">(</span><span class="st">"2026-08-29"</span><span class="op">)</span><span class="op">)</span>, <span class="st">"quotes"</span><span class="op">)</span></span>
+<span><span class="fu"><a href="reference/stash_get.html">stash_get</a></span><span class="op">(</span><span class="va">s</span>, <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>date <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/as.Date.html" class="external-link">as.Date</a></span><span class="op">(</span><span class="st">"2026-08-29"</span><span class="op">)</span>, exchange <span class="op">=</span> <span class="st">"XSWX"</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] "quotes"</span></span>
+<span></span>
+<span><span class="co"># A function, cached across sessions and processes.</span></span>
+<span><span class="va">slow_square</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/Sys.sleep.html" class="external-link">Sys.sleep</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
+<span>  <span class="va">x</span><span class="op">^</span><span class="fl">2</span></span>
+<span><span class="op">}</span></span>
+<span><span class="va">square</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/stash_memoise.html">stash_memoise</a></span><span class="op">(</span><span class="va">slow_square</span>, <span class="va">s</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/system.time.html" class="external-link">system.time</a></span><span class="op">(</span><span class="fu">square</span><span class="op">(</span><span class="fl">12</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt;    user  system elapsed </span></span>
+<span><span class="co">#&gt;   0.003   0.000   1.034</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/system.time.html" class="external-link">system.time</a></span><span class="op">(</span><span class="fu">square</span><span class="op">(</span><span class="fl">12</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt;    user  system elapsed </span></span>
+<span><span class="co">#&gt;   0.000   0.000   0.001</span></span>
+<span></span>
+<span><span class="co"># The catalogue is a data frame.</span></span>
+<span><span class="fu"><a href="reference/stash_entries.html">stash_entries</a></span><span class="op">(</span><span class="va">s</span><span class="op">)</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"key"</span>, <span class="st">"bytes"</span>, <span class="st">"codec"</span>, <span class="st">"expires"</span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="co">#&gt;                                   key bytes codec             expires</span></span>
+<span><span class="co">#&gt; 1                     XSWX/2026-08-29    47   rds 2026-09-29 19:59:14</span></span>
+<span><span class="co">#&gt; 2             slow_square/v1/{x=i:12}    39   rds                &lt;NA&gt;</span></span>
+<span><span class="co">#&gt; 3 {date=d:2026-08-29,exchange=s:XSWX}     6   raw                &lt;NA&gt;</span></span>
+<span></span>
+<span><span class="fu"><a href="reference/stash.html">stash_close</a></span><span class="op">(</span><span class="va">s</span><span class="op">)</span></span></code></pre></div>
+</div>
+<div class="section level2">
+<h2 id="where-it-works">Where it works<a class="anchor" aria-label="anchor" href="#where-it-works"></a>
+</h2>
+<p>Many R processes on <strong>one machine</strong>, over a <strong>local filesystem</strong>: interactive sessions, scheduled jobs and parallel workers can use one stash at once. Reads never wait; writes take turns. A stash on a network filesystem (NFS, SMB, cloud file shares) is not supported, because its locks cannot be relied on.</p>
+<p>A stash cannot be carried into a forked child such as a <code><a href="https://rdrr.io/r/parallel/mclapply.html" class="external-link">parallel::mclapply()</a></code> worker: open it inside the worker.</p>
+</div>
+<div class="section level2">
+<h2 id="learn-more">Learn more<a class="anchor" aria-label="anchor" href="#learn-more"></a>
+</h2>
+<ul>
+<li><a href="https://pedrobtz.github.io/dastash/articles/dastash.html">Getting started</a></li>
+<li><a href="https://pedrobtz.github.io/dastash/articles/shared-stash.html">Operating a shared stash</a></li>
+<li><a href="https://pedrobtz.github.io/dastash/reference/">Reference</a></li>
+</ul>
 </div>
 </div>
   </main><aside class="col-md-3"><div class="links">

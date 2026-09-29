@@ -1,0 +1,157 @@
+# Operating a shared stash
+
+A stash is meant to be shared: by interactive sessions, scheduled jobs
+and parallel workers on one machine, all at once. This article covers
+what that asks of you, and what dastash guarantees in return.
+
+``` r
+
+library(dastash)
+dir <- file.path(tempdir(), "shared")
+s <- stash(dir, size_limit = 1024^2)
+```
+
+## Where a stash can live
+
+On a **local filesystem** of the machine whose processes use it. The
+engine underneath, ‘libmdbx’, memory-maps the database and coordinates
+writers through a lock file, and both need a local filesystem. A stash
+on a network filesystem (NFS, SMB, a cloud file share) is not supported.
+
+## Many processes
+
+Any number of processes can read at once, and never wait: a read sees
+the last committed state. Writes take turns. A write that waits longer
+than `timeout` seconds (60 by default) for another process’s write
+raises `dastash_busy`, not a hang.
+
+Each process opens the stash itself. A handle cannot be carried into a
+forked child, such as a
+[`parallel::mclapply()`](https://rdrr.io/r/parallel/mclapply.html)
+worker. Using it there raises `dastash_forked`, so open the stash inside
+the worker:
+
+``` r
+
+parallel::mclapply(keys, function(k) {
+  s <- stash(dir)
+  on.exit(stash_close(s))
+  stash_get(s, k, default = NULL)
+})
+```
+
+Workers started as fresh processes (‘callr’, ‘mirai’, ‘future’ with
+multisession) have nothing to inherit, and open the stash like any other
+process.
+
+Every single operation is atomic across processes. Eight processes
+calling
+[`stash_incr()`](https://pedrobtz.github.io/dastash/reference/stash_add.md)
+on one key count eight.
+[`stash_add()`](https://pedrobtz.github.io/dastash/reference/stash_add.md)
+writes only if there is no entry.
+[`stash_pop()`](https://pedrobtz.github.io/dastash/reference/stash_add.md)
+reads and deletes in one step.
+
+``` r
+
+stash_incr(s, "jobs-run")
+#> [1] 1
+stash_add(s, "lock/nightly", Sys.getpid(), expire = 3600)
+#> [1] TRUE
+stash_add(s, "lock/nightly", Sys.getpid())
+#> [1] FALSE
+```
+
+## Transactions
+
+[`stash_transact()`](https://pedrobtz.github.io/dastash/reference/stash_transact.md)
+makes a block of writes atomic: all commit, or none do.
+
+``` r
+
+stash_set(s, "balance", 100)
+stash_transact(s, {
+  stash_set(s, "balance", stash_get(s, "balance") - 30)
+  stash_incr(s, "withdrawals")
+})
+#> [1] 1
+stash_get(s, "balance")
+#> [1] 70
+```
+
+It holds the write lock while it runs, so other processes’ writes wait
+for it. Keep it short, and never compute something slow inside it. It is
+also the fastest way to write many entries: making a write durable is
+the expensive part, and a transaction pays it once.
+
+Memoised functions follow the same rule. Two processes that miss the
+same call at the same moment both compute it, and one result is kept.
+That is duplicated work, never a wrong answer.
+
+## Durability
+
+By default (`durability = "safe"`) every write is on disk before it
+returns. `durability = "fast"` skips waiting for the disk: a crash of
+the machine can lose recent writes, but never damages the stash.
+`"unsafe"` can damage it, for stashes you can rebuild. The first process
+to open a stash sets this for every process that opens it while it is
+open;
+[`stash_stats()`](https://pedrobtz.github.io/dastash/reference/stash_entries.md)
+reports what is in force.
+
+``` r
+
+stash_stats(s)$durability
+#> [1] "safe"
+```
+
+## Staying within a size limit
+
+`size_limit` bounds what the entries hold. A write that goes over it
+evicts the least recently stored entries, a few at a time, so the limit
+holds without a background process.
+[`stash_cull()`](https://pedrobtz.github.io/dastash/reference/stash_cull.md)
+finishes the job at once. Expired entries go first.
+
+``` r
+
+for (i in 1:5) stash_set(s, paste0("frame/", i), runif(5e4))
+stash_count(s)
+#> [1] 2
+stash_cull(s)
+stash_count(s)
+#> [1] 2
+```
+
+The database file keeps the pages it frees for reuse rather than
+shrinking, so
+[`stash_volume()`](https://pedrobtz.github.io/dastash/reference/stash_keys.md),
+which reports bytes on disk, can stay above the limit.
+
+## Checking and repairing
+
+A process that dies in the middle of a write can leave, at most, a file
+that nothing refers to.
+[`stash_check()`](https://pedrobtz.github.io/dastash/reference/stash_check.md)
+finds that, and any other damage. `repair = TRUE` fixes it, and
+`hash = TRUE` also verifies every stored file’s content.
+
+``` r
+
+stash_check(s)
+#> [1] kind     key      path     detail   repaired
+#> <0 rows> (or 0-length row.names)
+stash_check(s, repair = TRUE)
+#> [1] kind     key      path     detail   repaired
+#> <0 rows> (or 0-length row.names)
+```
+
+Run it now and then from a maintenance job, as you would
+[`stash_cull()`](https://pedrobtz.github.io/dastash/reference/stash_cull.md).
+
+``` r
+
+stash_close(s)
+unlink(dir, recursive = TRUE)
+```
