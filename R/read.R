@@ -216,26 +216,42 @@ store_decode_entry <- function(s, hit, key, call = rlang::caller_env()) {
   # checked, or between the check and the decoder opening the file. Either way
   # the entry is gone, which a cache may always answer as a miss (design.md
   # §4). Only a record that still names a file that stays missing is damage.
-  for (attempt in 1:3) {
+  #
+  # The file may also go and come back between two looks: a blob's name is the
+  # hash of its bytes, so the same bytes stored again land under the same name.
+  # A failed decode is therefore retried after re-checking, and only one that
+  # fails every time — damaged bytes, which never change — is an error.
+  attempts <- 5L
+  for (attempt in seq_len(attempts)) {
     if (!store_blob_ready(s, hit, key, call)) {
       return(NULL)
     }
+    failure <- NULL
+    warnings <- list()
     value <- tryCatch(
       withCallingHandlers(
         list(codec_decode(codec, hit$path, record$codec_meta, call = call)),
-        # A decoder's "cannot open file" warning, when the file just went.
-        warning = function(cnd) if (!file.exists(hit$path)) invokeRestart("muffleWarning")
+        # Held back: a failed attempt's "cannot open file" is noise, but a
+        # successful decode's warnings are the caller's to see.
+        warning = function(cnd) {
+          warnings[[length(warnings) + 1L]] <<- cnd
+          invokeRestart("muffleWarning")
+        }
       ),
       dastash_codec_error = function(cnd) {
-        if (file.exists(hit$path)) rlang::cnd_signal(cnd)
+        failure <<- cnd
         NULL
       }
     )
     if (!is.null(value)) {
+      for (w in warnings) warning(w)
       return(value)
     }
   }
-  NULL
+  if (!file.exists(hit$path)) {
+    return(NULL)
+  }
+  rlang::cnd_signal(failure)
 }
 
 # TRUE when the blob's file is there at the size its record holds; FALSE when

@@ -137,6 +137,39 @@ test_that("a file that vanishes as the decoder opens it reads as a miss", {
   expect_null(store_decode_entry(s, hit, key))
 })
 
+test_that("a decode that fails while the file moves is retried", {
+  s <- local_stash(inline_max = 100)
+  stash_set(s, "k", runif(100))
+  key <- store_key("k")
+  hit <- engine_read(s$engine, function(txn) store_read_entry(s, txn, key))
+  tries <- 0
+  flaky <- codec("flaky", encode = function(value, path) NULL, decode = function(path, meta) {
+    tries <<- tries + 1
+    if (tries < 3) {
+      warning("cannot open file")
+      stop("cannot open the connection")
+    }
+    warning("a warning worth keeping")
+    readRDS(path)
+  })
+  hit$record$codec <- "flaky"
+  s$codecs <- codec_registry(list(flaky))
+  expect_warning(value <- store_decode_entry(s, hit, key), "worth keeping")
+  expect_identical(tries, 3)
+  expect_identical(value[[1]], stash_get(s, "k"))
+})
+
+test_that("a decode that always fails on a file that is there is an error", {
+  s <- local_stash(inline_max = 100)
+  stash_set(s, "k", runif(100))
+  key <- store_key("k")
+  hit <- engine_read(s$engine, function(txn) store_read_entry(s, txn, key))
+  broken <- codec("broken", encode = function(value, path) NULL, decode = function(path, meta) stop("bad bytes"))
+  hit$record$codec <- "broken"
+  s$codecs <- codec_registry(list(broken))
+  expect_error(store_decode_entry(s, hit, key), class = "dastash_codec_error")
+})
+
 test_that("an unreferenced file is reaped only while it is still unreferenced", {
   s <- local_stash(inline_max = 100)
   x <- runif(100)
