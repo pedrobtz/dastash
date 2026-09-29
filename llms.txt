@@ -43,6 +43,14 @@ pak::pak("pedrobtz/dastash")
   [`local_stash()`](https://pedrobtz.github.io/dastash/reference/stash.md)
   [`with_stash()`](https://pedrobtz.github.io/dastash/reference/stash.md)
   : Open a stash
+- [`stash_incr()`](https://pedrobtz.github.io/dastash/reference/stash_add.md)
+  [`stash_decr()`](https://pedrobtz.github.io/dastash/reference/stash_add.md)
+  [`stash_add()`](https://pedrobtz.github.io/dastash/reference/stash_add.md)
+  [`stash_pop()`](https://pedrobtz.github.io/dastash/reference/stash_add.md)
+  [`stash_touch()`](https://pedrobtz.github.io/dastash/reference/stash_add.md)
+  : Atomic writes
+- [`stash_expire()`](https://pedrobtz.github.io/dastash/reference/stash_expire.md)
+  : Reclaim expired entries
 - [`stash_get()`](https://pedrobtz.github.io/dastash/reference/stash_get.md)
   [`stash_mget()`](https://pedrobtz.github.io/dastash/reference/stash_get.md)
   [`stash_has()`](https://pedrobtz.github.io/dastash/reference/stash_get.md)

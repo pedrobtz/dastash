@@ -151,9 +151,13 @@ Load-bearing, and expensive to repair after a store exists.
   `dastash_stash`; codecs and keys are plain classed lists; memoised
   functions are closures with a class. No R6, no S7.
 - **Effects return the stash invisibly; questions return answers.**
-  Exceptions: `stash_add()` (logical), `stash_pop()` (value),
-  `stash_incr()`/`stash_decr()` (double). A miss is decided by
-  `missing(default)`.
+  Exceptions:
+  [`stash_add()`](https://pedrobtz.github.io/dastash/reference/stash_add.md)
+  (logical),
+  [`stash_pop()`](https://pedrobtz.github.io/dastash/reference/stash_add.md)
+  (value),
+  [`stash_incr()`](https://pedrobtz.github.io/dastash/reference/stash_add.md)/[`stash_decr()`](https://pedrobtz.github.io/dastash/reference/stash_add.md)
+  (double). A miss is decided by `missing(default)`.
 - **`Depends: R (>= 4.5)`; `Imports` is `mdbx (>= 0.1.1)` and `rlang`.**
   Adding a dependency is a decision (`design.md` §14.1, D13).
 

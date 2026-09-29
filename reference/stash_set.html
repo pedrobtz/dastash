@@ -79,7 +79,10 @@ keys with no entry are ignored.</p>
 
 
 <dt id="arg-expire">expire<a class="anchor" aria-label="anchor" href="#arg-expire"></a></dt>
-<dd><p>Not yet supported: leave as <code>NULL</code>.</p></dd>
+<dd><p>When the entry expires: <code>NULL</code> or <code>Inf</code> for never; a number of
+seconds from now (zero or less means already expired); a <a href="https://rdrr.io/r/base/difftime.html" class="external-link">difftime</a> from
+now; or a <a href="https://rdrr.io/r/base/DateTimeClasses.html" class="external-link">POSIXct</a> for an absolute time. An expired entry is absent to
+every read at once, and <code><a href="stash_expire.html">stash_expire()</a></code> reclaims its space.</p></dd>
 
 
 <dt id="arg-tags">tags<a class="anchor" aria-label="anchor" href="#arg-tags"></a></dt>

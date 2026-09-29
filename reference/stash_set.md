@@ -38,7 +38,13 @@ stash_delete(stash, keys)
 
 - expire:
 
-  Not yet supported: leave as `NULL`.
+  When the entry expires: `NULL` or `Inf` for never; a number of seconds
+  from now (zero or less means already expired); a
+  [difftime](https://rdrr.io/r/base/difftime.html) from now; or a
+  [POSIXct](https://rdrr.io/r/base/DateTimeClasses.html) for an absolute
+  time. An expired entry is absent to every read at once, and
+  [`stash_expire()`](https://pedrobtz.github.io/dastash/reference/stash_expire.md)
+  reclaims its space.
 
 - tags:
 
