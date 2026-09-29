@@ -72,9 +72,11 @@
 <h2 id="invariants">Invariants<a class="anchor" aria-label="anchor" href="#invariants"></a></h2>
 <p>Load-bearing, and expensive to repair after a store exists.</p>
 <ul><li>
-<strong>Publish the blob first, commit the transaction second.</strong> A crash between them leaves an unreferenced blob (invisible, reclaimable); the reverse commits a record pointing at nothing. <code>design.md</code> §8.</li>
+<strong>Publish the blob first, commit the transaction second.</strong> A crash between them leaves an unreferenced blob (invisible, reclaimable); the reverse commits a record pointing at nothing. <code>design.md</code> §8. The rename into <code>blobs/</code> happens <strong>inside</strong> the writing transaction, under the lock; staging and hashing happen before it.</li>
 <li>
-<strong>Delete in the transaction, <code><a href="https://rdrr.io/r/base/unlink.html" class="external-link">unlink()</a></code> after it commits.</strong> Collect paths during the transaction and remove them only once <code>mdbx_txn_commit()</code> returns. Unlinking inside the transaction is how <code>mdbx</code>’s cache article deliberately gets it wrong.</li>
+<strong>Delete in the transaction, <code><a href="https://rdrr.io/r/base/unlink.html" class="external-link">unlink()</a></code> after it commits</strong> — in a follow-up write transaction that re-checks the blob is still unreferenced (<code>blob_reap()</code>). Unlinking without the lock races with a writer re-referencing the same bytes; unlinking inside the deleting transaction is how <code>mdbx</code>’s cache article deliberately gets it wrong. A <code>blobs</code> row exists exactly while its file does.</li>
+<li>
+<strong>No <code>fsync</code> in base R.</strong> A read compares a blob’s size with its record and raises <code>dastash_blob_corrupt</code> on a mismatch; <code>stash_check(hash = TRUE)</code> checks the bytes.</li>
 <li>
 <strong>Stage via <code>&lt;root&gt;/tmp/</code>, never <code><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir()</a></code>.</strong> A cross-device rename is a copy.</li>
 <li>

@@ -6,7 +6,11 @@ gives it. Use `prefix` for keys that begin with a string, and `start`
 with `n` to page through a large stash: `start` is inclusive, so drop
 the first key of every page after the first.
 
-`stash_count()` returns the number of entries.
+`stash_count()` returns the number of entries, including expired ones
+that
+[`stash_expire()`](https://pedrobtz.github.io/dastash/reference/stash_expire.md)
+has not reclaimed yet. `stash_volume()` returns the bytes the stash
+occupies on disk: its database file and every stored file.
 
 ## Usage
 
@@ -14,6 +18,8 @@ the first key of every page after the first.
 stash_keys(stash, ..., prefix = NULL, start = NULL, n = Inf)
 
 stash_count(stash)
+
+stash_volume(stash)
 ```
 
 ## Arguments
@@ -41,7 +47,8 @@ stash_count(stash)
 
 ## Value
 
-`stash_keys()` returns a character vector; `stash_count()` an integer.
+`stash_keys()` returns a character vector, `stash_count()` an integer,
+and `stash_volume()` a number of bytes.
 
 ## Examples
 

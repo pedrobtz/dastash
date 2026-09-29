@@ -3,11 +3,15 @@
 stash_key_chr() gives it. Use prefix for keys that begin with a string,
 and start with n to page through a large stash: start is inclusive, so
 drop the first key of every page after the first.
-stash_count() returns the number of entries."><meta property="og:description" content="stash_keys() returns keys in key order: the text of each key, as
+stash_count() returns the number of entries, including expired ones that
+stash_expire() has not reclaimed yet. stash_volume() returns the bytes
+the stash occupies on disk: its database file and every stored file."><meta property="og:description" content="stash_keys() returns keys in key order: the text of each key, as
 stash_key_chr() gives it. Use prefix for keys that begin with a string,
 and start with n to page through a large stash: start is inclusive, so
 drop the first key of every page after the first.
-stash_count() returns the number of entries."></head><body>
+stash_count() returns the number of entries, including expired ones that
+stash_expire() has not reclaimed yet. stash_volume() returns the bytes
+the stash occupies on disk: its database file and every stored file."></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
 
@@ -46,14 +50,18 @@ stash_count() returns the number of entries."></head><body>
 <code><a href="stash_key.html">stash_key_chr()</a></code> gives it. Use <code>prefix</code> for keys that begin with a string,
 and <code>start</code> with <code>n</code> to page through a large stash: <code>start</code> is inclusive, so
 drop the first key of every page after the first.</p>
-<p><code>stash_count()</code> returns the number of entries.</p>
+<p><code>stash_count()</code> returns the number of entries, including expired ones that
+<code><a href="stash_expire.html">stash_expire()</a></code> has not reclaimed yet. <code>stash_volume()</code> returns the bytes
+the stash occupies on disk: its database file and every stored file.</p>
     </div>
 
     <div class="section level2">
     <h2 id="ref-usage">Usage<a class="anchor" aria-label="anchor" href="#ref-usage"></a></h2>
     <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">stash_keys</span><span class="op">(</span><span class="va">stash</span>, <span class="va">...</span>, prefix <span class="op">=</span> <span class="cn">NULL</span>, start <span class="op">=</span> <span class="cn">NULL</span>, n <span class="op">=</span> <span class="cn">Inf</span><span class="op">)</span></span>
 <span></span>
-<span><span class="fu">stash_count</span><span class="op">(</span><span class="va">stash</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu">stash_count</span><span class="op">(</span><span class="va">stash</span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu">stash_volume</span><span class="op">(</span><span class="va">stash</span><span class="op">)</span></span></code></pre></div>
     </div>
 
     <div class="section level2">
@@ -82,7 +90,8 @@ drop the first key of every page after the first.</p>
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p><code>stash_keys()</code> returns a character vector; <code>stash_count()</code> an integer.</p>
+    <p><code>stash_keys()</code> returns a character vector, <code>stash_count()</code> an integer,
+and <code>stash_volume()</code> a number of bytes.</p>
     </div>
 
     <div class="section level2">

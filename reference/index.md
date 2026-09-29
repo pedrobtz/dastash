@@ -35,7 +35,10 @@
   : Keys
 - [`stash_keys()`](https://pedrobtz.github.io/dastash/reference/stash_keys.md)
   [`stash_count()`](https://pedrobtz.github.io/dastash/reference/stash_keys.md)
+  [`stash_volume()`](https://pedrobtz.github.io/dastash/reference/stash_keys.md)
   : List and count a stash's entries
+- [`stash_path()`](https://pedrobtz.github.io/dastash/reference/stash_path.md)
+  : The file behind an entry
 - [`stash_set()`](https://pedrobtz.github.io/dastash/reference/stash_set.md)
   [`stash_mset()`](https://pedrobtz.github.io/dastash/reference/stash_set.md)
   [`stash_delete()`](https://pedrobtz.github.io/dastash/reference/stash_set.md)

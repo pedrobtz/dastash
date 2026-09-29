@@ -81,12 +81,19 @@ Load-bearing, and expensive to repair after a store exists.
 
 - **Publish the blob first, commit the transaction second.** A crash
   between them leaves an unreferenced blob (invisible, reclaimable); the
-  reverse commits a record pointing at nothing. `design.md` §8.
+  reverse commits a record pointing at nothing. `design.md` §8. The
+  rename into `blobs/` happens **inside** the writing transaction, under
+  the lock; staging and hashing happen before it.
 - **Delete in the transaction,
-  [`unlink()`](https://rdrr.io/r/base/unlink.html) after it commits.**
-  Collect paths during the transaction and remove them only once
-  `mdbx_txn_commit()` returns. Unlinking inside the transaction is how
-  `mdbx`’s cache article deliberately gets it wrong.
+  [`unlink()`](https://rdrr.io/r/base/unlink.html) after it commits** —
+  in a follow-up write transaction that re-checks the blob is still
+  unreferenced (`blob_reap()`). Unlinking without the lock races with a
+  writer re-referencing the same bytes; unlinking inside the deleting
+  transaction is how `mdbx`’s cache article deliberately gets it wrong.
+  A `blobs` row exists exactly while its file does.
+- **No `fsync` in base R.** A read compares a blob’s size with its
+  record and raises `dastash_blob_corrupt` on a mismatch;
+  `stash_check(hash = TRUE)` checks the bytes.
 - **Stage via `<root>/tmp/`, never
   [`tempdir()`](https://rdrr.io/r/base/tempfile.html).** A cross-device
   rename is a copy.
