@@ -188,8 +188,11 @@ test_that("a full map is dastash_store_full, with the engine's condition as pare
 
 test_that("any other engine failure is dastash_engine_error", {
   e <- local_engine()
+  # One byte over libmdbx's key limit, which depends on the page size: 2022
+  # bytes at 4 KiB pages, 8166 at 16 KiB (macOS arm64).
+  too_long <- strrep("k", mdbx::mdbx_limits(engine_info(e)$pagesize)$keysize_max + 1L)
   cnd <- expect_error(
-    engine_write(e, function(txn) engine_put(txn, NULL, strrep("k", 5000), "v")),
+    engine_write(e, function(txn) engine_put(txn, NULL, too_long, "v")),
     class = "dastash_engine_error"
   )
   expect_s3_class(cnd$parent, "mdbx_error")
