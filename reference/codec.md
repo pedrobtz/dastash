@@ -20,7 +20,9 @@ default never makes stored entries unreadable.
   file-backed.
 
 - `codec()` defines your own. Every process that reads its entries must
-  pass it to `stash()` in `codecs`.
+  pass it to
+  [`stash()`](https://pedrobtz.github.io/dastash/reference/stash.md) in
+  `codecs`.
 
 ## Usage
 

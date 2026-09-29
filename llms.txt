@@ -36,8 +36,26 @@ pak::pak("pedrobtz/dastash")
   : Codecs
 - [`dastash-conditions`](https://pedrobtz.github.io/dastash/reference/dastash-conditions.md)
   : Conditions raised by dastash
+- [`stash()`](https://pedrobtz.github.io/dastash/reference/stash.md)
+  [`stash_close()`](https://pedrobtz.github.io/dastash/reference/stash.md)
+  [`stash_is_open()`](https://pedrobtz.github.io/dastash/reference/stash.md)
+  [`stash_dir()`](https://pedrobtz.github.io/dastash/reference/stash.md)
+  [`local_stash()`](https://pedrobtz.github.io/dastash/reference/stash.md)
+  [`with_stash()`](https://pedrobtz.github.io/dastash/reference/stash.md)
+  : Open a stash
+- [`stash_get()`](https://pedrobtz.github.io/dastash/reference/stash_get.md)
+  [`stash_mget()`](https://pedrobtz.github.io/dastash/reference/stash_get.md)
+  [`stash_has()`](https://pedrobtz.github.io/dastash/reference/stash_get.md)
+  : Read from a stash
 - [`stash_key()`](https://pedrobtz.github.io/dastash/reference/stash_key.md)
   [`stash_key_chr()`](https://pedrobtz.github.io/dastash/reference/stash_key.md)
   [`stash_key_hash()`](https://pedrobtz.github.io/dastash/reference/stash_key.md)
   : Keys
+- [`stash_keys()`](https://pedrobtz.github.io/dastash/reference/stash_keys.md)
+  [`stash_count()`](https://pedrobtz.github.io/dastash/reference/stash_keys.md)
+  : List and count a stash's entries
+- [`stash_set()`](https://pedrobtz.github.io/dastash/reference/stash_set.md)
+  [`stash_mset()`](https://pedrobtz.github.io/dastash/reference/stash_set.md)
+  [`stash_delete()`](https://pedrobtz.github.io/dastash/reference/stash_set.md)
+  : Write to a stash
 

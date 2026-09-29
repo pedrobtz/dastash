@@ -8,7 +8,7 @@ tell "compute it again" apart from "the store is broken":
 |----|----|
 | Class | Raised when |
 | `dastash_key_invalid` | An object the key encoding does not cover; a partially named vector; an anonymous memoised function without `name` |
-| `dastash_not_found` | A read of an absent or expired key without `default`; `stash()` with `create = FALSE` on a missing directory |
+| `dastash_not_found` | A read of an absent or expired key without `default`; [`stash()`](https://pedrobtz.github.io/dastash/reference/stash.md) with `create = FALSE` on a missing directory |
 | `dastash_type_error` | A counter operation on a non-counter or past 2^53; a path or lazy read of an entry of the wrong shape; a value a codec cannot store; an `expire` that is `NA` or `NaN` |
 | `dastash_codec_error` | Encoding or decoding failed; a codec's package is not installed; a record names a codec the handle does not know |
 | `dastash_blob_corrupt` | A read finds the file behind a record missing |

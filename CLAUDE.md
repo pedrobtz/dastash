@@ -121,20 +121,24 @@ Load-bearing, and expensive to repair after a store exists.
   Parquet and qs2 are opted into, per call or per stash.
 - **Laziness is a recorded `shape`.** A lazy arrow or polars frame
   written to the cache comes back as a scan over the blob, from
-  `stash_get()` and from memoised functions.
+  [`stash_get()`](https://pedrobtz.github.io/dastash/reference/stash_get.md)
+  and from memoised functions.
 - **A write transaction is never held across a producer call.**
   Single-flight (v1.x) is a lease record claimed in a short transaction,
   not the transaction itself.
 - **Reads stay read transactions.** Expiry is lazy and access times are
-  journalled (`design.md` §9.3), so an ordinary `stash_get()` writes
-  nothing.
+  journalled (`design.md` §9.3), so an ordinary
+  [`stash_get()`](https://pedrobtz.github.io/dastash/reference/stash_get.md)
+  writes nothing.
 - **One environment per process and directory; one transaction per
-  environment.** `stash()` shares one environment between handles on the
-  same normalised path, and the registry entry — not the handle — owns
-  the current transaction, so every handle inside `stash_transact()`
-  joins it (`design.md` §3.1, §10, D21). No user code runs inside a
-  transaction except the body of `stash_transact()`: codecs encode
-  before the write and decode after the read.
+  environment.**
+  [`stash()`](https://pedrobtz.github.io/dastash/reference/stash.md)
+  shares one environment between handles on the same normalised path,
+  and the registry entry — not the handle — owns the current
+  transaction, so every handle inside `stash_transact()` joins it
+  (`design.md` §3.1, §10, D21). No user code runs inside a transaction
+  except the body of `stash_transact()`: codecs encode before the write
+  and decode after the read.
 - **Every named database the configuration implies is created in one
   write transaction at open.** Read-only handles read `mdbx_dbi_list()`
   once and treat a missing index database as empty.
