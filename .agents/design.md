@@ -34,6 +34,7 @@ surface is one `stash_` prefix away from tab completion.
 | **`design.md`** (this) | The contract: semantics, API, storage, concurrency, engine |
 | `cache-model.md` | The formal model — axioms, `forget_P`, why the orderings of §8 are forced. §4 here is its summary |
 | `prior-art-diskcache.md` | What `diskcache` and `polars-diskcache` do and why people use them |
+| `roadmap.md` | The build order, stage by stage, and the releases the contract ships in, from 0.1.0 on CRAN to 1.0.0 |
 | `typed-layer.md` | The deferred typed dataset layer that sits above this cache (§20) |
 
 Earlier drafts — the first contract behind an R6 method API, its review, the argument for
@@ -696,7 +697,7 @@ tag      := s | i | f | l | r | d | t | u | e     character, integer-valued, dou
                                                   factor
 payload  := "!"                                   NA of the tagged type
           | escaped                               percent-escaped UTF-8
-opener   := "~" | "{" | "(" | "D{" | tag ":" | tag "[" | tag "{"
+opener   := "~" | "#" | "{" | "(" | "D{" | tag ":" | tag "[" | tag "{"
 ```
 
 Escaping: `%`, every structural byte `, = [ ] { } ( ) : ! ~`, and every byte below
@@ -752,7 +753,9 @@ A key whose text exceeds `KEY_MAX` is stored as `"#" ‖ sha256hex(text)` — 65
 Its text is kept in the meta record when it is at most `CANON_KEEP_MAX`, so
 `stash_keys()` and `stash_entries()` still report the real key; beyond that the record
 keeps a 256-byte preview and the length, and `stash_keys()` reports the digest form.
-Digesting is a storage detail: equality is still decided by the canonical text. A
+`#` is an opener (§5.2), so a string key that starts with `#` is stored as `s:#…` and can
+never be mistaken for a digest. Digesting is a storage detail: equality is still decided
+by the canonical text. A
 memoised function called with a large vector gets a working, if unprintable, key, and
 `key =` is how to give it a better one.
 
@@ -1327,7 +1330,7 @@ from "your store is broken".
 | `dastash_version_unsupported` | The store's format or key encoding is newer than the package |
 | `dastash_forked` | A handle used in a process that did not open it |
 | `dastash_closed` | A verb on a closed handle |
-| `dastash_unsupported` | The platform cannot do it: symlinks for `stash_tree()` |
+| `dastash_unsupported` | The platform or this release cannot do it: symlinks for `stash_tree()`; an eviction policy or value size a release before 1.0.0 does not yet support (`roadmap.md` §0) |
 | `dastash_engine_error` | Any other `mdbx` failure, with the original condition as `parent` |
 
 **Translating engine errors.** `mdbx` signals every libmdbx failure as a condition of
@@ -1607,25 +1610,11 @@ transaction instead.
 
 # 18. Build order
 
-Stages are ordered by what cannot change after data exists. Each stage ends with its
-tests green and `R CMD check` clean.
-
-| Stage | Delivers | Freezes |
-|---|---|---|
-| 0 | `DESCRIPTION` with the dependencies of §14.1, `R/conditions.R` with every class in §13, `nosuggests: true` on the shared R-CMD-check workflow, `^\.agents$` in `.Rbuildignore`, the grep guards | the error vocabulary |
-| 1 | `R/key.R`: the grammar of §5.2, `stash_key()`, golden vectors, `inst/spec/key-encoding-v1.md` | **the key encoding** |
-| 2 | `R/encode.R` (`enc_f64`, `enc_u64`), `R/engine.R` over `mdbx` with the error translation of §13 and the `TRY` loop (§14.2), `R/store.R` layout and `format`/`config` records | on-disk layout, `format_version` |
-| 3 | `R/codec.R`: `codec()`, `codec_rds()`, `codec_raw()`, `codec_file()`, `codec_auto()`, the round-trip matrix | codec names and the record's `codec` field |
-| 4 | `stash()`, `stash_set()`, `stash_get()`, `stash_delete()`, `stash_has()`, blobs with refcounts, the two orderings of §8, crash injection | the meta record |
-| 5 | Indexes, `expire`, `cull`, `evict`, `touch`, `add`, `pop`, counters, the read journal, `counters` | index shapes |
-| 6 | `stash_keys()`, `stash_entries()`, `stash_stats()`, `stash_check(repair =)`, `stash_transact()`, `stash_mget()`/`stash_mset()`, print | — |
-| 7 | `codec_qs2()`, `codec_parquet()` with `shape`, `stash_path()`, `stash_lazy()`, `stash_memoise()` and companions, `stash_tree()`, `as_cachem()` | — |
-| 8 | The `callr` suite of §16, vignettes (getting started; frames and Parquet; operating a shared store), README with the deployment envelope, performance numbers at 10⁴ and 10⁶ entries, release | — |
-
-Already in place: the `usethis` skeleton, testthat 3rd edition, and the R-CMD-check,
-coverage and pkgdown workflows from `pedrobtz/r-actions`. Stage 1 comes before anything
-that touches disk because the encoding cannot be revised once a store exists. Stages 1,
-2 and 3 are independent after stage 0.
+`roadmap.md` is the build order: eleven stages, ordered by what cannot change after data
+exists, grouped into releases from 0.1.0 on CRAN to 1.0.0, which is this document's v1.
+Two rules from it bind the design. The key encoding (§5) is frozen before anything touches
+disk. And every release writes the final on-disk format, adding only meta-record fields and
+derived indexes, so a store written by 0.1.0 opens under every later version.
 
 ---
 

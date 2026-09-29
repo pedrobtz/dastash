@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 `dastash` is an R package at **design stage, pre-implementation**. The `usethis` skeleton,
 testthat 3e, and the R-CMD-check, coverage and pkgdown workflows (from
 `pedrobtz/r-actions`) exist; `R/` holds only `dastash-package.R` and `DESCRIPTION` is
-still a placeholder. The design lives in `.agents/`, four documents:
+still a placeholder. The design lives in `.agents/`, five documents:
 
 - **`.agents/design.md`** — **the contract**: semantics, API, storage, concurrency, and the
   engine as verified against `mdbx` 0.1.1. Section references `§N` and decisions `Dn`
@@ -15,6 +15,10 @@ still a placeholder. The design lives in `.agents/`, four documents:
 - **`.agents/cache-model.md`** — the formal model. `design.md` §4 is its summary; read it
   before arguing about expiry, eviction or the publish ordering.
 - **`.agents/prior-art-diskcache.md`** — what `diskcache` and `polars-diskcache` do.
+- **`.agents/roadmap.md`** — the build order: stages S0–S10 to **0.1.0 on CRAN**, then
+  0.2.0 (frames), 0.3.0 (access-aware eviction) and 1.0.0 (`design.md` v1 complete).
+  Work happens in its stage order; each stage ends with tests green and `R CMD check`
+  clean.
 - **`.agents/typed-layer.md`** — the typed dataset layer (schemas, producers,
   identifiers). **Deferred**; it sits above the cache and is built after it.
 
@@ -186,9 +190,10 @@ Rscript -e 'devtools::check()'                         # R CMD check
 R CMD build . && R CMD check --as-cran dastash_*.tar.gz
 ```
 
-Build order is `design.md` §18: conditions, then the key encoding and golden vectors,
-then the engine file and ordered encodings, then codecs, then the core with crash
-injection. Cross-process behaviour is tested by spawning real R sessions with `callr`, and
+Build order is `.agents/roadmap.md`: conditions, then the key encoding and golden
+vectors, then the engine file and ordered encodings, then codecs, then the core, blobs
+with crash injection, and the rest of 0.1.0. A release before 1.0.0 implements a subset of
+`design.md` §3 but always writes the final on-disk format. Cross-process behaviour is tested by spawning real R sessions with `callr`, and
 the crash-window tests in `design.md` §16 are the only ones that can catch the ordering
 claims above. Run the full suite — not just a filtered file — before concluding a storage
 change is sound.
