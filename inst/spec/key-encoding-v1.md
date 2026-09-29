@@ -68,6 +68,14 @@ decimal, with `+` for zero and above. This is C99's `%a`, computed from the IEEE
 bits so that it does not depend on the platform's C library. So `1L`, `1`, `-0` and
 `bit64::as.integer64(1)` are all `i:1`, and `0.1` is `f:0x1.999999999999ap-4`.
 
+The encoding is exact for the double it is given, and says nothing about how that double
+was made. R's parser can turn one decimal literal into different doubles on different
+platforms: on macOS arm64, where R has no extended-precision arithmetic to parse with,
+`1e300` is one unit in the last place away from the correctly rounded value it is
+elsewhere, and so a different key. A hexadecimal literal such as
+`0x1.7e43c8800759cp+996` parses exactly everywhere, which is why the golden vectors use
+one.
+
 ## 4. Escaping
 
 In a payload or a name, each of these bytes is written `%XX` with upper-case hex:
