@@ -16,9 +16,11 @@ BugReports: https://github.com/pedrobtz/dastash/issues
 Depends:
     R (>= 4.5.0)
 Imports:
+    mdbx (>= 0.1.1),
     rlang (>= 1.1.0)
 Suggests:
     bit64,
+    callr,
     testthat (>= 3.0.0),
     withr
 Config/testthat/edition: 3
