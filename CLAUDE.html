@@ -78,7 +78,7 @@
 <li>
 <strong>Stage via <code>&lt;root&gt;/tmp/</code>, never <code><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir()</a></code>.</strong> A cross-device rename is a copy.</li>
 <li>
-<strong>Never hash <code><a href="https://rdrr.io/r/base/serialize.html" class="external-link">serialize()</a></code> output</strong>, and never call <code>digest()</code> without <code>serialize = FALSE</code>. Identity comes from the text encoding in <code>inst/spec/key-encoding-v1.md</code> (<code>design.md</code> §5.2), frozen by golden vectors and versioned (<code>KEY_ENCODING_VERSION</code>). Grep guards fail on <code>serialize(</code> outside the RDS codec and the meta record, and on a <code>digest(</code> lacking <code>serialize = FALSE</code>. <code>stash_memoise()</code> does not use <code><a href="https://rlang.r-lib.org/reference/hash.html" class="external-link">rlang::hash()</a></code> for the same reason.</li>
+<strong>Never hash <code><a href="https://rdrr.io/r/base/serialize.html" class="external-link">serialize()</a></code> output.</strong> Identity comes from the text encoding in <code>inst/spec/key-encoding-v1.md</code> (<code>design.md</code> §5.2), frozen by golden vectors and versioned (<code>KEY_ENCODING_VERSION</code>). Every hash is SHA-256 from <code><a href="https://rdrr.io/r/tools/sha256sum.html" class="external-link">tools::sha256sum()</a></code>, called only in <code>R/hash.R</code> (D13); <code>digest</code> is not a dependency. Guards fail on <code>serialize(</code> outside the RDS codec and the meta record, and on <code>sha256sum(</code> outside <code>R/hash.R</code>. <code>stash_memoise()</code> does not use <code><a href="https://rlang.r-lib.org/reference/hash.html" class="external-link">rlang::hash()</a></code> for the same reason.</li>
 <li>
 <strong>Keys are text.</strong> A string is its UTF-8 bytes, unnormalised; anything else is canonicalised by the grammar in <code>design.md</code> §5.2 or is <code>dastash_key_invalid</code>. No raw keys. Doubles are legal and encoded exactly (<code>sprintf("%a")</code>); a whole double within ±2⁵³ encodes as an integer so <code>1L</code> and <code>1</code> agree. <code>KEY_MAX = 512</code>, <code>TAG_MAX = 256</code>, constants, not page-derived; longer keys are digested with the text kept in the record up to <code>CANON_KEEP_MAX</code>.</li>
 <li>
@@ -106,7 +106,7 @@
 <li>
 <strong>Effects return the stash invisibly; questions return answers.</strong> Exceptions: <code>stash_add()</code> (logical), <code>stash_pop()</code> (value), <code>stash_incr()</code>/<code>stash_decr()</code> (double). A miss is decided by <code>missing(default)</code>.</li>
 <li>
-<strong><code>Imports</code> is <code>mdbx (&gt;= 0.1.1)</code>, <code>rlang</code>, <code>digest</code>.</strong> Adding a dependency is a decision (<code>design.md</code> §14.1, D13).</li>
+<strong><code>Depends: R (&gt;= 4.5)</code>; <code>Imports</code> is <code>mdbx (&gt;= 0.1.1)</code> and <code>rlang</code>.</strong> Adding a dependency is a decision (<code>design.md</code> §14.1, D13).</li>
 </ul></div>
 <div class="section level2">
 <h2 id="working-with-mdbx">Working with mdbx<a class="anchor" aria-label="anchor" href="#working-with-mdbx"></a></h2>
@@ -130,7 +130,7 @@
 </div>
 <div class="section level2">
 <h2 id="dependencies">Dependencies<a class="anchor" aria-label="anchor" href="#dependencies"></a></h2>
-<p><code>Imports</code>: <code>mdbx (&gt;= 0.1.1)</code>, rlang, digest. Optional codecs and engines (<code>qs2</code>, <code>nanoparquet</code>, <code>arrow</code>, <code>duckdb</code>/<code>DBI</code>/<code>dbplyr</code>), <code>bit64</code>, <code>cachem</code>, <code>memoise</code> and <code>utf8</code> live in <code>Suggests</code> and must degrade to a clear <code>dastash_codec_error</code>, verified by the <code>nosuggests</code> job of the shared R-CMD-check workflow. The R <code>polars</code> package is not on CRAN and is used only when found installed.</p>
+<p><code>Depends</code>: R (&gt;= 4.5). <code>Imports</code>: <code>mdbx (&gt;= 0.1.1)</code>, rlang. Optional codecs and engines (<code>qs2</code>, <code>nanoparquet</code>, <code>arrow</code>, <code>duckdb</code>/<code>DBI</code>/<code>dbplyr</code>), <code>bit64</code>, <code>cachem</code>, <code>memoise</code> and <code>utf8</code> live in <code>Suggests</code> and must degrade to a clear <code>dastash_codec_error</code>, verified by the <code>nosuggests</code> job of the shared R-CMD-check workflow. The R <code>polars</code> package is not on CRAN and is used only when found installed.</p>
 </div>
 <div class="section level2">
 <h2 id="commands">Commands<a class="anchor" aria-label="anchor" href="#commands"></a></h2>
