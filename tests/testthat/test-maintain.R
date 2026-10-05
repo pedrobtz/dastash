@@ -242,18 +242,50 @@ test_that("hash = TRUE finds a file whose bytes changed but not its size", {
 
 test_that("stale staging files of dead processes are reported and removed", {
   skip_on_os("windows")
+  skip_if_not_installed("callr")
   s <- local_stash()
-  stale <- file.path(s$dir, "tmp", "999999-1")
+  live <- callr::r_bg(function() Sys.sleep(60))
+  withr::defer(live$kill())
+  old <- file.path(s$dir, "tmp", "999999-1")
   fresh <- file.path(s$dir, "tmp", "999999-2")
-  writeLines("x", stale)
-  writeLines("x", fresh)
-  Sys.setFileTime(stale, Sys.time() - 7200)
+  busy <- file.path(s$dir, "tmp", sprintf("%d-1", live$get_pid()))
+  for (path in c(old, fresh, busy)) writeLines("x", path)
+  Sys.setFileTime(old, Sys.time() - 7200)
+  Sys.setFileTime(busy, Sys.time() - 7200)
+  # A dead process's file is stale however new; a live one's however old.
   f <- stash_check(s)
-  expect_identical(f$kind, "tmp_stale")
-  expect_identical(f$path, stale)
+  expect_setequal(f$kind, "tmp_stale")
+  expect_setequal(f$path, c(old, fresh))
   stash_check(s, repair = TRUE)
-  expect_false(file.exists(stale))
-  expect_true(file.exists(fresh))
+  expect_false(file.exists(old))
+  expect_false(file.exists(fresh))
+  expect_true(file.exists(busy))
+})
+
+test_that("an encoder that fails or is interrupted leaves no staging file", {
+  s <- local_stash(inline_max = 5)
+  tmp <- file.path(s$dir, "tmp")
+  bad <- codec("bad", encode = function(value, path) {
+    writeBin(as.raw(1:10), path)
+    stop("broke")
+  }, decode = function(path, meta) 1)
+  for (i in 1:3) expect_error(stash_set(s, "k", 1, codec = bad), class = "dastash_codec_error")
+  expect_error(stash_mset(s, list(a = 1, b = 2), codec = bad), class = "dastash_codec_error")
+  expect_length(list.files(tmp), 0L)
+  stopped <- codec("stopped", encode = function(value, path) {
+    writeBin(as.raw(1:10), path)
+    rlang::interrupt()
+  }, decode = function(path, meta) 1)
+  interrupted <- tryCatch(stash_set(s, "k", 1, codec = stopped), interrupt = function(cnd) TRUE)
+  expect_true(interrupted)
+  interrupted <- tryCatch(stash_mset(s, list(a = 1, b = 2), codec = stopped), interrupt = function(cnd) TRUE)
+  expect_true(interrupted)
+  expect_length(list.files(tmp), 0L)
+  expect_identical(stash_count(s), 0L)
+  # Interrupted on its own staging file, a file-backed value of bytes.
+  local_mocked_bindings(hash_bytes = function(bytes) rlang::interrupt())
+  tryCatch(stash_set(s, "r", as.raw(1:10)), interrupt = function(cnd) NULL)
+  expect_length(list.files(tmp), 0L)
 })
 
 test_that("a crash's orphan is reclaimed by repair", {

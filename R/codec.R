@@ -342,8 +342,14 @@ codec_encode_value <- function(codec, value, stage, call = rlang::caller_env()) 
     ))
   }
   path <- stage()
+  # Whatever ends the encode early, an error or an interrupt, the staged file
+  # goes with it; nothing else knows its name yet.
+  done <- FALSE
+  on.exit(if (!done) unlink(path))
   info <- codec_encode(codec, value, path, call = call)
-  c(list(bytes = NULL, path = path, size = file.size(path)), info)
+  out <- c(list(bytes = NULL, path = path, size = file.size(path)), info)
+  done <- TRUE
+  out
 }
 
 # Decode an inline value from its bytes, through a file only for codecs that

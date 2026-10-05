@@ -1337,7 +1337,7 @@ Because indexes are derived, most damage is repairable:
 | `blob_orphan` — file with no referring record | delete the file |
 | `refcount_drift` — `blobs.refs` disagrees with the records | recompute from `meta` |
 | `counter_drift` — `counters` disagrees with a full scan | recompute |
-| `tmp_stale` — file in `tmp/` | delete when its PID is not live and it is over an hour old |
+| `tmp_stale` — file in `tmp/` | delete when its PID is known dead; where liveness cannot be asked (Windows), when it is over an hour old |
 | `reader_stale` — reader slot of a dead process | `mdbx_env_reader_check()` |
 | `blob_corrupt` — the file's size differs from its records', or with `hash = TRUE` its bytes do not hash to its name | delete the records and the file |
 

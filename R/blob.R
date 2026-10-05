@@ -35,13 +35,17 @@ record_blob_name <- function(record) {
 blob_stage <- function(s, enc) {
   if (!is.null(enc$bytes)) {
     path <- stage_path(s)
+    done <- FALSE
+    on.exit(if (!done) unlink(path))
     writeBin(enc$bytes, path)
     hash <- hash_bytes(enc$bytes)
   } else {
     path <- enc$path
     hash <- hash_file(path)
   }
-  list(staged = path, hash = hash, ext = enc$ext, name = blob_name(hash, enc$ext), size = as.double(file.size(path)))
+  out <- list(staged = path, hash = hash, ext = enc$ext, name = blob_name(hash, enc$ext), size = as.double(file.size(path)))
+  done <- TRUE
+  out
 }
 
 # In the open transaction: add a reference to a staged blob, publishing its file
