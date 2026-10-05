@@ -17,11 +17,32 @@ eviction_index <- function(eviction) {
   )
 }
 
-store_create_layout <- function(dir) {
+store_create_layout <- function(dir, call = rlang::caller_env()) {
   for (sub in c("blobs", "tmp")) {
-    path <- file.path(dir, sub)
-    if (!dir.exists(path)) dir.create(path, recursive = TRUE, showWarnings = FALSE)
+    store_mkdir(file.path(dir, sub), call)
   }
+}
+
+# Create a directory, or raise dastash_engine_error saying why it could not be.
+store_mkdir <- function(path, call = rlang::caller_env()) {
+  if (dir.exists(path)) {
+    return(invisible(path))
+  }
+  reason <- NULL
+  withCallingHandlers(
+    dir.create(path, recursive = TRUE),
+    warning = function(cnd) {
+      reason <<- conditionMessage(cnd)
+      invokeRestart("muffleWarning")
+    }
+  )
+  if (!dir.exists(path)) {
+    abort_engine_error(
+      c(sprintf("Could not create the directory %s.", encodeString(path, quote = "\"")), x = reason),
+      dir = path, call = call
+    )
+  }
+  invisible(path)
 }
 
 # Write the format, config and counters records of a new store, or check an

@@ -131,11 +131,11 @@ stash <- function(dir,
         dir = dir, call = call
       )
     }
-    dir.create(dir, recursive = TRUE, showWarnings = FALSE)
+    store_mkdir(dir, call)
   }
   dir <- normalizePath(dir, mustWork = TRUE)
   if (!readonly) {
-    store_create_layout(dir)
+    store_create_layout(dir, call)
   }
 
   s <- new.env(parent = emptyenv())
