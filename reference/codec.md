@@ -9,8 +9,13 @@ default never makes stored entries unreadable.
   never picks a codec that loses information or needs a suggested
   package.
 
-- `codec_rds()` stores any R object with
-  [`serialize()`](https://rdrr.io/r/base/serialize.html), losslessly.
+- `codec_rds()` stores an R object with
+  [`serialize()`](https://rdrr.io/r/base/serialize.html), losslessly,
+  with the exceptions
+  [`serialize()`](https://rdrr.io/r/base/serialize.html) has: an
+  external pointer comes back null and a connection as a number that no
+  longer refers to it. It refuses either as the value itself; one inside
+  a list or an environment is stored, dead.
 
 - `codec_raw()` stores a raw vector, or a single string as its UTF-8
   bytes, exactly as they are.

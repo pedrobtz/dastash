@@ -90,7 +90,8 @@ frame tools. <code>stash_info()</code> returns the row for one key, or <code>NUL
     <p><code>stash_entries()</code> and <code>stash_info()</code> return a data frame with columns
 <code>key</code>, <code>bytes</code>, <code>codec</code>, <code>inline</code>, <code>blob</code>, <code>tags</code> (a list of character
 vectors), <code>shape</code>, <code>stored</code>, <code>accessed</code>, <code>hits</code> and <code>expires</code> (<code>NA</code> for
-never). <code>stash_stats()</code> returns a one-row data frame with <code>count</code>,
+never). In this release <code>accessed</code> is always <code>stored</code> and <code>hits</code> always 0:
+reads are not yet recorded. <code>stash_stats()</code> returns a one-row data frame with <code>count</code>,
 <code>bytes_inline</code>, <code>bytes_blob</code>, <code>volume</code>, <code>size_limit</code>, <code>evictions</code>,
 <code>expired</code>, <code>eviction</code>, <code>durability</code>, <code>format_version</code> and
 <code>key_encoding_version</code>.</p>

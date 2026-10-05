@@ -7,6 +7,9 @@ The transaction holds the stash's write lock for as long as code runs, so
 other processes' writes wait: keep it short, and never compute a value
 inside it that takes long to produce. It is also the fastest way to write
 many entries, since the cost of making a write durable is paid once.
+If the process is killed while code runs, nothing it wrote is kept. On
+macOS, and every platform but Linux and Windows, its lock is not released
+either: see &quot;Details&quot; in stash().
 Name the stash inside code as usual: there is no implicit one."><meta property="og:description" content="code runs with one write transaction open on the stash. Every write inside
 it commits together when code finishes, or none does if it raises an error,
 and reads inside it see its own writes. A nested stash_transact() joins the
@@ -15,6 +18,9 @@ The transaction holds the stash's write lock for as long as code runs, so
 other processes' writes wait: keep it short, and never compute a value
 inside it that takes long to produce. It is also the fastest way to write
 many entries, since the cost of making a write durable is paid once.
+If the process is killed while code runs, nothing it wrote is kept. On
+macOS, and every platform but Linux and Windows, its lock is not released
+either: see &quot;Details&quot; in stash().
 Name the stash inside code as usual: there is no implicit one."></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
@@ -60,6 +66,9 @@ outer one.</p>
 other processes' writes wait: keep it short, and never compute a value
 inside it that takes long to produce. It is also the fastest way to write
 many entries, since the cost of making a write durable is paid once.</p>
+<p>If the process is killed while <code>code</code> runs, nothing it wrote is kept. On
+macOS, and every platform but Linux and Windows, its lock is not released
+either: see "Details" in <code><a href="stash.html">stash()</a></code>.</p>
 <p>Name the stash inside <code>code</code> as usual: there is no implicit one.</p>
     </div>
 

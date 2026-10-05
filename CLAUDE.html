@@ -39,7 +39,7 @@
 <p>This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.</p>
 <div class="section level2">
 <h2 id="repository-state">Repository state<a class="anchor" aria-label="anchor" href="#repository-state"></a></h2>
-<p><code>dastash</code> is an R package at <strong>design stage, pre-implementation</strong>. The <code>usethis</code> skeleton, testthat 3e, and the R-CMD-check, coverage and pkgdown workflows (from <code>pedrobtz/r-actions</code>) exist; <code>R/</code> holds only <code>dastash-package.R</code> and <code>DESCRIPTION</code> is still a placeholder. The design lives in <code>.agents/</code>, five documents:</p>
+<p><code>dastash</code> is an R package with <strong>0.1.0 implemented</strong> (roadmap stages S0–S10) and prepared for CRAN: the cache, blobs, expiry, tags, eviction, transactions, memoisation, <code>cachem</code> interop and <code><a href="reference/stash_check.html">stash_check()</a></code>. CI is the R-CMD-check, coverage and pkgdown workflows from <code>pedrobtz/r-actions</code>. Later releases (frames, access-aware eviction, the rest of <code>design.md</code> v1) follow the roadmap. The design lives in <code>.agents/</code>, five documents:</p>
 <ul><li>
 <strong><code>.agents/design.md</code></strong> — <strong>the contract</strong>: semantics, API, storage, concurrency, and the engine as verified against <code>mdbx</code> 0.1.1. Section references <code>§N</code> and decisions <code>Dn</code> point here unless the text says otherwise.</li>
 <li>

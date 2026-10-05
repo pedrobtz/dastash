@@ -49,10 +49,11 @@ stash_stats(stash)
 `stash_entries()` and `stash_info()` return a data frame with columns
 `key`, `bytes`, `codec`, `inline`, `blob`, `tags` (a list of character
 vectors), `shape`, `stored`, `accessed`, `hits` and `expires` (`NA` for
-never). `stash_stats()` returns a one-row data frame with `count`,
-`bytes_inline`, `bytes_blob`, `volume`, `size_limit`, `evictions`,
-`expired`, `eviction`, `durability`, `format_version` and
-`key_encoding_version`.
+never). In this release `accessed` is always `stored` and `hits` always
+0: reads are not yet recorded. `stash_stats()` returns a one-row data
+frame with `count`, `bytes_inline`, `bytes_blob`, `volume`,
+`size_limit`, `evictions`, `expired`, `eviction`, `durability`,
+`format_version` and `key_encoding_version`.
 
 ## Examples
 

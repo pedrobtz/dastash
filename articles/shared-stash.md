@@ -132,7 +132,11 @@ which reports bytes on disk, can stay above the limit.
 ## Checking and repairing
 
 A process that dies in the middle of a write can leave, at most, a file
-that nothing refers to.
+that nothing refers to. On Linux and Windows the write lock it held is
+released at once. On macOS it is not, a limitation of the storage engine
+there: reads carry on, but every write raises `dastash_busy` until every
+process with the stash open has closed it; the next process to open it
+then recovers the lock.
 [`stash_check()`](https://pedrobtz.github.io/dastash/reference/stash_check.md)
 finds that, and any other damage. `repair = TRUE` fixes it, and
 `hash = TRUE` also verifies every stored file’s content.

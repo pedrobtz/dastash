@@ -1,6 +1,7 @@
 # List and count a stash's entries
 
-`stash_keys()` returns keys in key order: the text of each key, as
+`stash_keys()` returns keys in the order they are stored: the text of
+each key, as
 [`stash_key_chr()`](https://pedrobtz.github.io/dastash/reference/stash_key.md)
 gives it. A structured key's text is not itself that key; pass it
 through
@@ -8,6 +9,14 @@ through
 to use it again. Use `prefix` for keys that begin with a string, and
 `start` with `n` to page through a large stash: `start` is inclusive, so
 drop the first key of every page after the first.
+
+A key of up to 512 bytes is stored as itself, so those keys come in byte
+order. A longer key is stored under `#` and a digest of its text, and
+sorts there, among keys beginning with `#`, in no meaningful order.
+`prefix` still matches it by its text, which the stash keeps for keys up
+to 4096 bytes; of a longer key it keeps the first 256 bytes, so a
+`prefix` longer than that does not match it, and it is listed as its
+digest.
 
 `stash_count()` returns the number of entries, including expired ones
 that

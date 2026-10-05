@@ -5,11 +5,14 @@ with code in this repository.
 
 ## Repository state
 
-`dastash` is an R package at **design stage, pre-implementation**. The
-`usethis` skeleton, testthat 3e, and the R-CMD-check, coverage and
-pkgdown workflows (from `pedrobtz/r-actions`) exist; `R/` holds only
-`dastash-package.R` and `DESCRIPTION` is still a placeholder. The design
-lives in `.agents/`, five documents:
+`dastash` is an R package with **0.1.0 implemented** (roadmap stages
+S0–S10) and prepared for CRAN: the cache, blobs, expiry, tags, eviction,
+transactions, memoisation, `cachem` interop and
+[`stash_check()`](https://pedrobtz.github.io/dastash/reference/stash_check.md).
+CI is the R-CMD-check, coverage and pkgdown workflows from
+`pedrobtz/r-actions`. Later releases (frames, access-aware eviction, the
+rest of `design.md` v1) follow the roadmap. The design lives in
+`.agents/`, five documents:
 
 - **`.agents/design.md`** — **the contract**: semantics, API, storage,
   concurrency, and the engine as verified against `mdbx` 0.1.1. Section
