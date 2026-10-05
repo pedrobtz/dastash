@@ -232,7 +232,13 @@ engine_begin_write <- function(e, timeout, call) {
       abort_busy(
         c(
           sprintf("Could not write: another process held the stash's write lock for %s seconds.", format(timeout)),
-          i = "Raise `timeout` in `stash()` to wait longer."
+          i = "Raise `timeout` in `stash()` to wait longer.",
+          i = if (engine_dead_writer_wedges()) {
+            paste(
+              "If a process was killed while writing, this platform never releases its lock:",
+              "close every handle on this stash, in every process, to recover it."
+            )
+          }
         ),
         timeout = timeout, call = call
       )
@@ -240,6 +246,15 @@ engine_begin_write <- function(e, timeout, call) {
     Sys.sleep(min(wait * spread, remaining))
     wait <- min(wait * 2, 0.25)
   }
+}
+
+# Whether a writer that dies holding the lock leaves it held. libmdbx releases
+# it on Linux (robust mutexes) and Windows (file locks); elsewhere, macOS
+# included, the vendored build falls back to POSIX semaphores, which nothing
+# releases until every process has closed the environment
+# (pedrobtz/mdbx#28).
+engine_dead_writer_wedges <- function() {
+  !Sys.info()[["sysname"]] %in% c("Linux", "Windows")
 }
 
 # Run `action()` once the current write transaction commits.

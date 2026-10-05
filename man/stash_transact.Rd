@@ -25,6 +25,10 @@ other processes' writes wait: keep it short, and never compute a value
 inside it that takes long to produce. It is also the fastest way to write
 many entries, since the cost of making a write durable is paid once.
 
+If the process is killed while \code{code} runs, nothing it wrote is kept. On
+macOS, and every platform but Linux and Windows, its lock is not released
+either: see "Details" in \code{\link[=stash]{stash()}}.
+
 Name the stash inside \code{code} as usual: there is no implicit one.
 }
 \examples{

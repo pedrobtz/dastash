@@ -108,6 +108,14 @@ writing: close it first.
 
 A handle cannot be used from a forked child process, such as a
 \code{\link[parallel:mclapply]{parallel::mclapply()}} worker; open the stash inside the worker instead.
+
+Opening a stash that exists only reads it, so it never waits for another
+process's write. Writes take the stash's one write lock in turn, waiting up
+to \code{timeout} seconds. On Linux and Windows the lock of a process killed
+while writing is released at once. On macOS and other platforms it is not:
+every later write raises \code{dastash_busy} until every process with the stash
+open has closed it, after which the next to open it recovers the lock.
+Reads are not affected.
 }
 \examples{
 dir <- tempfile("stash-")

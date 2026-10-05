@@ -176,3 +176,31 @@ test_that("a process joining an open stash takes its durability", {
   }, args = list(dir = dir))
   expect_identical(joined, "fast")
 })
+
+test_that("a writer killed inside a transaction frees the lock for processes still open", {
+  skip_unless_children_see_this_build()
+  skip_on_cran()
+  # macOS: libmdbx's POSIX-semaphore lock outlives its holder (issue #15).
+  skip_if(engine_dead_writer_wedges(), "a dead writer's lock is not released on this platform")
+  dir <- withr::local_tempdir()
+  s <- stash(dir, timeout = 10)
+  withr::defer(stash_close(s))
+  stash_set(s, "k", 1)
+  ready <- tempfile()
+  holder <- callr::r_bg(function(dir, ready) {
+    s <- dastash::stash(dir)
+    dastash::stash_transact(s, {
+      dastash::stash_set(s, "k", 2)
+      file.create(ready)
+      Sys.sleep(600)
+    })
+  }, args = list(dir = dir, ready = ready))
+  withr::defer(holder$kill())
+  for (i in 1:200) if (file.exists(ready)) break else Sys.sleep(0.05)
+  expect_true(file.exists(ready))
+  holder$kill()
+  expect_identical(stash_get(s, "k"), 1)
+  stash_set(s, "x", 1)
+  expect_identical(stash_get(s, "x"), 1)
+  expect_no_error(stash_check(s, repair = TRUE))
+})

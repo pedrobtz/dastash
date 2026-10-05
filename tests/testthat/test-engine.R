@@ -283,3 +283,17 @@ test_that("a writer in another process makes the lock busy, then free", {
   # Waiting long enough gets the lock once the other writer commits.
   expect_identical(engine_write(e, function(txn) "written", timeout = 30), "written")
 })
+
+test_that("dastash_busy says how to recover where a dead writer keeps the lock", {
+  e <- local_engine()
+  busy <- function(...) {
+    stop(structure(class = c("mdbx_busy", "mdbx_error", "error", "condition"), list(message = "busy", call = NULL)))
+  }
+  local_mocked_bindings(mdbx_txn_begin = busy, .package = "mdbx")
+  local_mocked_bindings(engine_dead_writer_wedges = function() TRUE)
+  cnd <- expect_error(engine_write(e, function(txn) NULL, timeout = 0), class = "dastash_busy")
+  expect_match(conditionMessage(cnd), "close every handle on this stash, in every process")
+  local_mocked_bindings(engine_dead_writer_wedges = function() FALSE)
+  cnd <- expect_error(engine_write(e, function(txn) NULL, timeout = 0), class = "dastash_busy")
+  expect_no_match(conditionMessage(cnd), "close every handle")
+})

@@ -1237,6 +1237,17 @@ blocking, and retries with exponential backoff up to `timeout` seconds before ra
 `dastash_busy`. A worker that never returns is worse than an error that says the store is
 busy. Both behaviours are verified across processes (§15).
 
+**A writer killed holding the lock.** Whether the lock is released depends on how the
+vendored libmdbx was built (`MDBX_LOCKING`): Linux with glibc gets robust mutexes and
+Windows file locks, both released by the kernel when the holder dies. macOS has no
+robust mutexes, so `mdbx` 0.1.1 falls back to POSIX semaphores, which nothing releases:
+with any other process still open, every later write is `dastash_busy` until all of them
+close, and only then does the next opener re-initialise the lock file (dastash#15,
+mdbx#28). The fix
+belongs in `mdbx` (System V semaphores with `SEM_UNDO`, or dead-writer recovery);
+until then `stash()`, `stash_transact()`, the shared-stash vignette and the
+`dastash_busy` message state the limitation.
+
 **One live transaction per environment.** `mdbx` refuses a second `mdbx_txn_begin()` on
 an environment rather than deadlocking. The registry entry of §3.1 therefore owns the
 current transaction: inside `stash_transact()` every verb, on every handle to that
