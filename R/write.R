@@ -63,8 +63,12 @@ stash_mset <- function(stash, values, ..., expire = NULL, tags = NULL, codec = N
   }
   engine_write(stash$engine, function(txn) {
     now <- unclass(Sys.time())
-    for (entry in entries) store_put_entry(stash, txn, entry$key, entry$enc, now, expire = entry$expire, tags = entry$tags)
-    store_cull_step(stash, txn, protect = vapply(entries, function(x) x$key$stored, character(1)))
+    # One cull step per entry, as a run of stash_set() calls would take, so a
+    # batch larger than the limit cannot leave the stash far over it.
+    for (entry in entries) {
+      store_put_entry(stash, txn, entry$key, entry$enc, now, expire = entry$expire, tags = entry$tags)
+      store_cull_step(stash, txn, protect = entry$key$stored)
+    }
   }, timeout = stash$timeout)
   invisible(stash)
 }

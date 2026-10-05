@@ -17,6 +17,17 @@ test_that("writes keep the stash near its limit, evicting the least recently sto
   expect_identical(store_violations(s), character())
 })
 
+test_that("stash_mset() keeps the stash near its limit however large the batch", {
+  s <- local_stash(size_limit = 1e5, inline_max = 1000)
+  values <- stats::setNames(lapply(1:50, function(i) runif(1000)), sprintf("v%02d", 1:50))
+  stash_mset(s, values)
+  # At most one entry over the limit, as a run of stash_set() calls leaves it.
+  expect_lte(held(s), 1e5 + 8100)
+  expect_true("v50" %in% stash_keys(s))
+  expect_identical(stash_get(s, "v50"), values$v50)
+  expect_identical(store_violations(s), character())
+})
+
 test_that("stash_cull() finishes the job", {
   s <- local_stash(size_limit = Inf, inline_max = 1000)
   for (i in 1:20) stash_set(s, sprintf("k%02d", i), runif(250))
