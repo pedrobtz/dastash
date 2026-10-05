@@ -239,3 +239,81 @@ store_display_key <- function(s, txn, stored) {
   record <- store_get_record(s, txn, stored)
   record$key_text %||% stored
 }
+
+# Prefix scans --------------------------------------------------------------
+
+# Whether a record belongs to a digested key: one longer than KEY_MAX, stored
+# under `#` and the SHA-256 of its text (design.md §5.3).
+record_digested <- function(record) {
+  !is.null(record$key_bytes)
+}
+
+# Whether a digested key's text begins with `prefix`, judged by the text its
+# record kept, or by its preview when the prefix fits inside the preview. A
+# key too long to keep, with a prefix longer than its preview, cannot be told
+# and does not match.
+record_key_starts_with <- function(record, prefix) {
+  if (!is.null(record$key_text)) {
+    return(startsWith(record$key_text, prefix))
+  }
+  preview <- record$key_preview
+  !is.null(preview) && nchar(prefix, type = "bytes") <= nchar(preview, type = "bytes") &&
+    startsWith(preview, prefix)
+}
+
+# Whether each stored key in `x` sorts at or after `start`, in byte order.
+stored_at_or_after <- function(x, start) {
+  vapply(x, function(k) order(c(start, k), method = "radix")[[1L]] == 1L, logical(1), USE.NAMES = FALSE)
+}
+
+# The entries whose key *text* begins with `prefix`, at or after the stored key
+# `start`, in stored-key order: at most `n` of them, and only live ones when
+# `now` is given. Returns a list of `stored` keys and their `records`.
+#
+# A key up to KEY_MAX bytes is stored as itself, so the prefix is a range of
+# `meta`, scanned in order. A longer key is stored by digest under `#`, where
+# its prefix says nothing about where it sorts, so every digested record is
+# read and judged by its text. Digested keys are expected to be few.
+store_scan_prefix <- function(s, txn, prefix, start = NULL, n = Inf, now = NULL) {
+  meta <- engine_db(s$engine, "meta")
+  keep <- function(stored, records) {
+    ok <- if (is.null(now)) rep(TRUE, length(records)) else vapply(records, is_live, logical(1), now = now)
+    if (!is.null(start)) ok <- ok & stored_at_or_after(stored, start)
+    ok
+  }
+
+  # Plain keys: the prefix's range, a chunk at a time until `n` are found.
+  from <- if (!is.null(start) && stored_at_or_after(start, prefix)) start else prefix
+  stored <- character()
+  records <- list()
+  first <- TRUE
+  repeat {
+    remaining <- n - length(stored)
+    ask <- if (is.finite(remaining)) remaining + !first else Inf
+    got <- engine_scan(txn, meta, prefix = prefix, start = from, n = ask, as = "character", values = TRUE)
+    keys <- got$keys
+    recs <- lapply(got$values, record_decode)
+    if (!first && length(keys) > 0L) {
+      keys <- keys[-1L]
+      recs <- recs[-1L]
+    }
+    ok <- keep(keys, recs) & !vapply(recs, record_digested, logical(1))
+    stored <- c(stored, keys[ok])
+    records <- c(records, recs[ok])
+    if (!is.finite(ask) || length(got$keys) < ask || length(stored) >= n) break
+    from <- got$keys[[length(got$keys)]]
+    first <- FALSE
+  }
+
+  # Digested keys: every one, judged by its text.
+  got <- engine_scan(txn, meta, prefix = "#", as = "character", values = TRUE)
+  recs <- lapply(got$values, record_decode)
+  ok <- vapply(recs, function(r) record_digested(r) && record_key_starts_with(r, prefix), logical(1))
+  ok <- ok & keep(got$keys, recs)
+  stored <- c(stored, got$keys[ok])
+  records <- c(records, recs[ok])
+
+  o <- order(stored, method = "radix")
+  o <- o[seq_len(min(length(o), n))]
+  list(stored = stored[o], records = records[o])
+}

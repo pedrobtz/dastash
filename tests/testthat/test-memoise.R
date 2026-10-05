@@ -216,3 +216,29 @@ test_that("eight processes calling one memoised function agree", {
   expect_lte(computed, 8)
   expect_identical(stash_count(s), 1L)
 })
+
+test_that("stash_forget_all() forgets results whose keys are too long to store as text", {
+  s <- local_stash()
+  c <- counted()
+  f <- c$f
+  mf <- stash_memoise(f, s)
+  mf(1:3)
+  mf(as.double(1:300)) # canonicalises to a key over KEY_MAX bytes, stored digested
+  mf(as.double(1:3000)) # over CANON_KEEP_MAX: only a preview of its text is kept
+  expect_identical(c$n, 3)
+  expect_gt(
+    nchar(stash_memoise_key(mf, as.double(1:300)), type = "bytes"),
+    KEY_MAX
+  )
+  expect_gt(
+    nchar(stash_memoise_key(mf, as.double(1:3000)), type = "bytes"),
+    CANON_KEEP_MAX
+  )
+  expect_length(stash_keys(s, prefix = "f/"), 3L)
+  expect_identical(nrow(stash_entries(s, prefix = "f/")), 3L)
+  stash_forget_all(mf)
+  expect_identical(stash_count(s), 0L)
+  mf(as.double(1:300))
+  mf(as.double(1:3000))
+  expect_identical(c$n, 5)
+})

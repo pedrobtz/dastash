@@ -273,3 +273,53 @@ test_that("a crash's orphan is reclaimed by repair", {
   expect_false(file.exists(path))
   expect_identical(store_violations(s), character())
 })
+
+test_that("prefix selects digested keys by their text", {
+  s <- local_stash()
+  long <- paste0("p/", strrep("x", 600))
+  longer <- paste0("p/", strrep("y", 5000))
+  other <- paste0("q/", strrep("z", 600))
+  # A string beginning with `#` is escaped, so it never sorts among digests.
+  hash_like <- "#not-a-digest"
+  for (k in c("p/a", long, longer, other, hash_like, "p/b")) {
+    stash_set(s, k, 1)
+  }
+  expect_setequal(
+    stash_keys(s, prefix = "p/"),
+    c("p/a", "p/b", long, stash_keys(s, prefix = "p/y"))
+  )
+  expect_length(stash_keys(s, prefix = "p/"), 4L)
+  expect_identical(
+    stash_keys(s, prefix = "p/", n = 2),
+    stash_keys(s, prefix = "p/")[1:2]
+  )
+  expect_identical(stash_keys(s, prefix = "q/"), other)
+  expect_identical(stash_keys(s, prefix = "s:#"), stash_key_chr(hash_like))
+  expect_length(stash_keys(s, prefix = ""), 6L)
+  # A prefix longer than the kept preview cannot be told for an unkept key.
+  expect_length(stash_keys(s, prefix = paste0("p/", strrep("y", 300))), 0L)
+  expect_identical(nrow(stash_entries(s, prefix = "p/")), 4L)
+  stash_set(s, long, 2, tags = "t")
+  stash_set(s, "q/plain", 2, tags = "t")
+  expect_identical(stash_entries(s, prefix = "p/", tag = "t")$key, long)
+  stash_evict(s, prefix = "p/")
+  expect_identical(
+    sort(stash_keys(s), method = "radix"),
+    sort(c(other, stash_key_chr(hash_like), "q/plain"), method = "radix")
+  )
+  expect_identical(store_violations(s), character())
+})
+
+test_that("start pages through a prefix that holds digested keys", {
+  s <- local_stash()
+  keys <- c(paste0("p/", 1:5), paste0("p/", strrep("x", 600), 1:3))
+  for (k in keys) {
+    stash_set(s, k, 1)
+  }
+  all <- stash_keys(s, prefix = "p/")
+  expect_setequal(all, keys)
+  page1 <- stash_keys(s, prefix = "p/", n = 4)
+  last <- page1[[4]]
+  page2 <- stash_keys(s, prefix = "p/", start = last, n = 10)
+  expect_identical(c(page1, page2[-1L]), all)
+})
