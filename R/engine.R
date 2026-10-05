@@ -199,7 +199,10 @@ engine_write <- function(e, fn, timeout = 60, call = rlang::caller_env()) {
       e$txn <- NULL
       e$write <- FALSE
       e$after_commit <- list()
-      mdbx::mdbx_txn_abort(txn)
+      # Reached by an error, in `fn` or in the commit. libmdbx has already
+      # ended a transaction whose commit failed, and whatever aborting it again
+      # says must not replace the error that brought us here.
+      try(mdbx::mdbx_txn_abort(txn), silent = TRUE)
     }
   })
   result <- withVisible(fn(txn))

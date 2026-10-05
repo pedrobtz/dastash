@@ -297,3 +297,23 @@ test_that("dastash_busy says how to recover where a dead writer keeps the lock",
   cnd <- expect_error(engine_write(e, function(txn) NULL, timeout = 0), class = "dastash_busy")
   expect_no_match(conditionMessage(cnd), "close every handle")
 })
+
+test_that("a failed commit raises its own error, and the engine stays usable", {
+  e <- local_engine()
+  real_commit <- mdbx::mdbx_txn_commit
+  real_abort <- mdbx::mdbx_txn_abort
+  failing <- function(txn) {
+    # libmdbx ends a transaction whose commit fails.
+    real_abort(txn)
+    stop(structure(class = c("mdbx_map_full", "mdbx_error", "error", "condition"), list(message = "full", call = NULL)))
+  }
+  local({
+    local_mocked_bindings(mdbx_txn_commit = failing, .package = "mdbx")
+    local_mocked_bindings(mdbx_txn_abort = function(txn) stop("abort of a finished transaction"), .package = "mdbx")
+    expect_error(engine_fill(e, list(a = "1")), class = "dastash_store_full")
+  })
+  expect_null(e$txn)
+  engine_fill(e, list(b = "2"))
+  expect_identical(engine_read(e, function(txn) engine_get(txn, NULL, "b", as = "character")), "2")
+  expect_null(engine_read(e, function(txn) engine_get(txn, NULL, "a")))
+})
