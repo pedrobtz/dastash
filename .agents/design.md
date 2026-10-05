@@ -1,7 +1,8 @@
 # dastash — a disk cache for R
 
-**Status:** design, pre-implementation. The package skeleton, CI and pkgdown site exist;
-`R/` holds only the package documentation. Revised 2026-09-28 for `mdbx` 0.1.1 on CRAN.
+**Status:** 0.1.0 implemented (`.agents/roadmap.md` stages S0–S10), the subset of §3 that
+release covers, writing the final on-disk format. Revised 2026-09-28 for `mdbx` 0.1.1 on
+CRAN; the 0.1.0 soundness review (issue #15) is folded in.
 **Engine:** [`mdbx`](https://github.com/pedrobtz/mdbx) (≥ 0.1.1), first-party R bindings to
 libmdbx, on CRAN. §15 records what it provides, verified by running 0.1.1, and what
 dastash asks of its next release.
