@@ -241,6 +241,32 @@ test_that("a writer killed between commit and unlink leaves at most an orphan", 
   expect_identical(store_violations(s), character())
 })
 
+test_that("a writer killed replacing a file its transaction released leaves the file", {
+  skip_unless_children_see_this_build()
+  skip_on_cran()
+  skip_on_os("windows")
+  dir <- withr::local_tempdir()
+  s <- stash(dir, inline_max = 100)
+  x <- runif(100)
+  stash_set(s, "a", x)
+  stash_close(s)
+  # Deleting "a" drops the file's last reference inside the transaction, so
+  # storing the same bytes under "b" publishes over the existing file; the
+  # transaction never commits, and "a" needs its file afterwards.
+  expect_error(crash_writer(dir, "replace", function(s) {
+    dastash::stash_transact(s, {
+      v <- dastash::stash_get(s, "a")
+      dastash::stash_delete(s, "a")
+      dastash::stash_set(s, "b", v)
+    })
+  }))
+  s <- stash(dir)
+  withr::defer(stash_close(s))
+  expect_identical(stash_get(s, "a"), x)
+  expect_false(stash_has(s, "b"))
+  expect_identical(store_violations(s), character())
+})
+
 test_that("eight processes writing the same and different keys keep every invariant", {
   skip_unless_children_see_this_build()
   skip_on_cran()
