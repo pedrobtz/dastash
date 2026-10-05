@@ -112,29 +112,32 @@ engine_check_pid <- function(e, call = rlang::caller_env()) {
   }
 }
 
-# Make sure every named database in `names` is usable: a read-write handle
-# creates the missing ones in one write transaction; a read-only one looks
-# them up and treats the absent ones as empty.
+# Make sure every named database in `names` is usable. The ones that exist are
+# looked up in a read transaction, so opening a store never waits for the
+# write lock; a read-write handle then creates the missing ones in one write
+# transaction, and a read-only one treats them as empty.
 engine_ensure_dbs <- function(e, names, timeout = 60, call = rlang::caller_env()) {
   wanted <- setdiff(names, names(e$dbs))
   if (length(wanted) == 0L) {
     return(invisible(e))
   }
-  if (e$readonly) {
-    found <- engine_read(e, function(txn) {
-      existing <- engine_try(mdbx::mdbx_dbi_list(txn), call)
-      lapply(wanted, function(name) {
-        if (name %in% existing) engine_try(mdbx::mdbx_dbi_open(txn, name), call) else engine_missing_db
-      })
-    }, call = call)
-  } else {
-    found <- engine_write(e, function(txn) {
-      lapply(wanted, function(name) {
+  found <- engine_read(e, function(txn) {
+    existing <- engine_try(mdbx::mdbx_dbi_list(txn), call)
+    out <- lapply(wanted, function(name) {
+      if (name %in% existing) engine_try(mdbx::mdbx_dbi_open(txn, name), call) else engine_missing_db
+    })
+    names(out) <- wanted
+    out
+  }, call = call)
+  absent <- names(found)[vapply(found, inherits, logical(1), "dastash_missing_db")]
+  if (!e$readonly && length(absent) > 0L) {
+    created <- engine_write(e, function(txn) {
+      lapply(absent, function(name) {
         engine_try(mdbx::mdbx_dbi_open(txn, name, create = TRUE), call)
       })
     }, timeout = timeout, call = call)
+    found[absent] <- created
   }
-  names(found) <- wanted
   # Only now: a handle from a transaction that aborted refers to nothing.
   e$dbs[names(found)] <- found
   invisible(e)

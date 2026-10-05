@@ -32,12 +32,14 @@ store_init <- function(s, config, explicit, call) {
   read_records <- function(txn) {
     list(format = engine_get(txn, NULL, "format"), config = engine_get(txn, NULL, "config"))
   }
-  if (e$readonly) {
-    found <- engine_read(e, read_records, call = call)
-    if (is.null(found$format)) {
-      abort_not_found(sprintf("%s is not a dastash stash.", encodeString(s$dir, quote = "\"")), dir = s$dir, call = call)
-    }
+  # An existing store is only read, so opening it never waits for the write
+  # lock; only a new one takes it, to write its records.
+  found <- engine_read(e, read_records, call = call)
+  if (!is.null(found$format)) {
     return(store_check(found, config, explicit, s$dir, call))
+  }
+  if (e$readonly) {
+    abort_not_found(sprintf("%s is not a dastash stash.", encodeString(s$dir, quote = "\"")), dir = s$dir, call = call)
   }
   engine_write(e, function(txn) {
     found <- read_records(txn)
