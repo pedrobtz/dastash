@@ -2,6 +2,17 @@
 
 This is the first submission of dastash.
 
+## Test environments
+
+* local: macOS (aarch64), R 4.6.1
+* GitHub Actions, macos-latest: R release
+* GitHub Actions, windows-latest: R release
+* GitHub Actions, ubuntu-latest: R release and R oldrel-1 (4.5)
+* GitHub Actions, R-hub containers: R-devel on Debian/Ubuntu with clang and gcc
+  (`clang23`, `ubuntu-clang`, `ubuntu-gcc16`)
+* GitHub Actions, ubuntu-latest: R release with no Suggests installed
+  (CRAN's noSuggests flavor)
+
 ## R CMD check results
 
 0 errors | 0 warnings | 1 note

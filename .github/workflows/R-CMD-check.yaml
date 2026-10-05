@@ -24,13 +24,13 @@ jobs:
       profile: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'full-ci') && 'quick' || 'full' }}
       # CRAN's noSuggests flavor: every Suggests package must be optional.
       nosuggests: true
-      # Depends: R (>= 4.5.0), for tools::sha256sum() (D13), so there is no
-      # oldrel leg: R 4.4 cannot install the package.
+      # Depends: R (>= 4.5.0), for tools::sha256sum() (D13). oldrel-1 is
+      # R 4.5.x, which meets it, so the oldest supported R has a leg.
       runners: >-
         [{"os": "macos-latest", "r": "release"},
          {"os": "windows-latest", "r": "release"},
-         {"os": "ubuntu-latest", "r": "release"}]
-      # dastash has no compiled code, so the compiler containers have
-      # nothing to find; the runners cover the platforms.
-      containers: '[]'
-      quick-containers: '[]'
+         {"os": "ubuntu-latest", "r": "release"},
+         {"os": "ubuntu-latest", "r": "oldrel-1"}]
+      # The `containers` and `quick-containers` defaults are the CRAN-like
+      # R-devel images: dastash has no compiled code, but they are the only
+      # R-devel legs, and R-devel is where CRAN checks first.
