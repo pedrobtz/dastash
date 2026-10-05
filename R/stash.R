@@ -29,6 +29,14 @@ dastash_state$stage <- 0L
 #' A handle cannot be used from a forked child process, such as a
 #' [parallel::mclapply()] worker; open the stash inside the worker instead.
 #'
+#' Opening a stash that exists only reads it, so it never waits for another
+#' process's write. Writes take the stash's one write lock in turn, waiting up
+#' to `timeout` seconds. On Linux and Windows the lock of a process killed
+#' while writing is released at once. On macOS and other platforms it is not:
+#' every later write raises `dastash_busy` until every process with the stash
+#' open has closed it, after which the next to open it recovers the lock.
+#' Reads are not affected.
+#'
 #' @param dir The stash's directory.
 #' @param ... Must be empty.
 #' @param size_limit The size, in bytes, the stash is kept under. `Inf` for no
@@ -123,11 +131,11 @@ stash <- function(dir,
         dir = dir, call = call
       )
     }
-    dir.create(dir, recursive = TRUE, showWarnings = FALSE)
+    store_mkdir(dir, call)
   }
   dir <- normalizePath(dir, mustWork = TRUE)
   if (!readonly) {
-    store_create_layout(dir)
+    store_create_layout(dir, call)
   }
 
   s <- new.env(parent = emptyenv())

@@ -35,13 +35,17 @@ record_blob_name <- function(record) {
 blob_stage <- function(s, enc) {
   if (!is.null(enc$bytes)) {
     path <- stage_path(s)
+    done <- FALSE
+    on.exit(if (!done) unlink(path))
     writeBin(enc$bytes, path)
     hash <- hash_bytes(enc$bytes)
   } else {
     path <- enc$path
     hash <- hash_file(path)
   }
-  list(staged = path, hash = hash, ext = enc$ext, name = blob_name(hash, enc$ext), size = as.double(file.size(path)))
+  out <- list(staged = path, hash = hash, ext = enc$ext, name = blob_name(hash, enc$ext), size = as.double(file.size(path)))
+  done <- TRUE
+  out
 }
 
 # In the open transaction: add a reference to a staged blob, publishing its file
@@ -65,11 +69,20 @@ store_ref_blob <- function(s, txn, blob) {
 
 # Move the staged file into place, replacing any orphan of the same name: the
 # staged bytes were just hashed, while an orphan may be what a crash left.
+#
+# The rename replaces the old file in one step, never unlinking it first:
+# inside stash_transact() the "orphan" can be the file of an entry this
+# transaction deleted, and if the process dies before the commit that entry
+# comes back and needs its file. Windows will not replace a read-only file,
+# hence the chmod.
 blob_publish <- function(s, blob) {
   target <- blob_path(s, blob$name)
   dir <- dirname(target)
   if (!dir.exists(dir)) dir.create(dir, recursive = TRUE, showWarnings = FALSE)
-  if (file.exists(target)) blob_unlink(target)
+  if (file.exists(target)) {
+    Sys.chmod(target, "0644", use_umask = FALSE)
+    crash_point("replace")
+  }
   Sys.chmod(blob$staged, "0444", use_umask = FALSE)
   if (!file.rename(blob$staged, target)) {
     abort_engine_error(
@@ -130,6 +143,10 @@ blob_unlink <- function(path) {
 
 # Crash injection for the tests of design.md §16: DASTASH_CRASH names a point,
 # and the process dies there without cleaning up, exactly as a crash would.
+# Only the crash-window tests set DASTASH_CRASH, in a child process they
+# spawn; nothing else does, so in ordinary use this is one Sys.getenv() and
+# never ends the session. quit() is the fallback where SIGKILL is unavailable
+# (Windows), with runLast = FALSE so no cleanup runs, as in a real crash.
 crash_point <- function(name) {
   if (identical(Sys.getenv("DASTASH_CRASH"), name)) {
     if (.Platform$OS.type == "unix") {

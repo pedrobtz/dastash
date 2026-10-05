@@ -16,7 +16,8 @@
 #' @return `stash_entries()` and `stash_info()` return a data frame with columns
 #'   `key`, `bytes`, `codec`, `inline`, `blob`, `tags` (a list of character
 #'   vectors), `shape`, `stored`, `accessed`, `hits` and `expires` (`NA` for
-#'   never). `stash_stats()` returns a one-row data frame with `count`,
+#'   never). In this release `accessed` is always `stored` and `hits` always 0:
+#'   reads are not yet recorded. `stash_stats()` returns a one-row data frame with `count`,
 #'   `bytes_inline`, `bytes_blob`, `volume`, `size_limit`, `evictions`,
 #'   `expired`, `eviction`, `durability`, `format_version` and
 #'   `key_encoding_version`.
@@ -42,10 +43,19 @@ stash_entries <- function(stash, ..., prefix = NULL, tag = NULL, n = Inf) {
     if (!is.null(tag)) {
       rows <- engine_scan(txn, engine_db(e, "tags"), prefix = c(charToRaw(utf8_text(tag)), as.raw(0L)))
       stored <- vapply(rows, tag_key_stored, character(1))
-      if (!is.null(prefix)) stored <- stored[startsWith(stored, prefix)]
       records <- lapply(stored, function(k) store_get_record(stash, txn, k))
+      if (!is.null(prefix)) {
+        matches <- vapply(seq_along(stored), function(i) {
+          r <- records[[i]]
+          if (!is.null(r) && record_digested(r)) record_key_starts_with(r, prefix) else startsWith(stored[[i]], prefix)
+        }, logical(1))
+        stored <- stored[matches]
+        records <- records[matches]
+      }
+    } else if (!is.null(prefix)) {
+      return(store_scan_prefix(stash, txn, prefix, now = now))
     } else {
-      got <- engine_scan(txn, engine_db(e, "meta"), prefix = prefix, as = "character", values = TRUE)
+      got <- engine_scan(txn, engine_db(e, "meta"), as = "character", values = TRUE)
       stored <- got$keys
       records <- lapply(got$values, record_decode)
     }
@@ -103,9 +113,7 @@ entries_frame <- function(stored, records) {
     vapply(records, function(r) r[[name]] %||% NA, type)
   }
   as_time <- function(x) structure(x, class = c("POSIXct", "POSIXt"))
-  keys <- vapply(seq_along(stored), function(i) {
-    if (startsWith(stored[[i]], "#")) records[[i]]$key_text %||% stored[[i]] else stored[[i]]
-  }, character(1))
+  keys <- store_shown_keys(stored, records)
   expire <- field("expire", numeric(1))
   expire[!is.finite(expire)] <- NA
   inline <- field("inline", logical(1))

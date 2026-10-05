@@ -16,7 +16,10 @@ reserved_codec_names <- c("auto", "rds", "raw", "file", "qs2", "parquet", "count
 #' * `codec_auto()`, the default, stores a raw vector or a single string as its
 #'   bytes (`codec_raw()`) and everything else with `codec_rds()`. It never picks
 #'   a codec that loses information or needs a suggested package.
-#' * `codec_rds()` stores any R object with [serialize()], losslessly.
+#' * `codec_rds()` stores an R object with [serialize()], losslessly, with
+#'   the exceptions [serialize()] has: an external pointer comes back null and
+#'   a connection as a number that no longer refers to it. It refuses either
+#'   as the value itself; one inside a list or an environment is stored, dead.
 #' * `codec_raw()` stores a raw vector, or a single string as its UTF-8 bytes,
 #'   exactly as they are.
 #' * `codec_file()` stores a copy of an existing file; reading the entry back
@@ -120,6 +123,7 @@ codec_rds <- function(compress = FALSE) {
     },
     decode = function(path, meta) readRDS(path),
     ext = "rds",
+    supports = function(value) !(typeof(value) == "externalptr" || inherits(value, "connection")),
     # Uncompressed saveRDS() output is exactly serialize()'s, so an inline
     # value's bytes are what the file would have held.
     encode_bytes = if (!compress) function(value) list(bytes = serialize(value, NULL, version = 3L)),
@@ -342,8 +346,14 @@ codec_encode_value <- function(codec, value, stage, call = rlang::caller_env()) 
     ))
   }
   path <- stage()
+  # Whatever ends the encode early, an error or an interrupt, the staged file
+  # goes with it; nothing else knows its name yet.
+  done <- FALSE
+  on.exit(if (!done) unlink(path))
   info <- codec_encode(codec, value, path, call = call)
-  c(list(bytes = NULL, path = path, size = file.size(path)), info)
+  out <- c(list(bytes = NULL, path = path, size = file.size(path)), info)
+  done <- TRUE
+  out
 }
 
 # Decode an inline value from its bytes, through a file only for codecs that

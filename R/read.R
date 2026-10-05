@@ -101,11 +101,19 @@ stash_has <- function(stash, keys) {
 #' List and count a stash's entries
 #'
 #' @description
-#' `stash_keys()` returns keys in key order: the text of each key, as
-#' [stash_key_chr()] gives it. A structured key's text is not itself that key;
-#' pass it through [stash_key_text()] to use it again. Use `prefix` for keys that begin with a string,
-#' and `start` with `n` to page through a large stash: `start` is inclusive, so
-#' drop the first key of every page after the first.
+#' `stash_keys()` returns keys in the order they are stored: the text of each
+#' key, as [stash_key_chr()] gives it. A structured key's text is not itself
+#' that key; pass it through [stash_key_text()] to use it again. Use `prefix`
+#' for keys that begin with a string, and `start` with `n` to page through a
+#' large stash: `start` is inclusive, so drop the first key of every page after
+#' the first.
+#'
+#' A key of up to 512 bytes is stored as itself, so those keys come in byte
+#' order. A longer key is stored under `#` and a digest of its text, and sorts
+#' there, among keys beginning with `#`, in no meaningful order. `prefix` still
+#' matches it by its text, which the stash keeps for keys up to 4096 bytes; of
+#' a longer key it keeps the first 256 bytes, so a `prefix` longer than that
+#' does not match it, and it is listed as its digest.
 #'
 #' `stash_count()` returns the number of entries, including expired ones that
 #' [stash_expire()] has not reclaimed yet. `stash_volume()` returns the bytes
@@ -137,6 +145,10 @@ stash_keys <- function(stash, ..., prefix = NULL, start = NULL, n = Inf) {
   e <- stash$engine
   now <- unclass(Sys.time())
   engine_read(e, function(txn) {
+    if (!is.null(prefix)) {
+      got <- store_scan_prefix(stash, txn, prefix, start = from, n = n, now = now)
+      return(store_shown_keys(got$stored, got$records))
+    }
     out <- character()
     first <- TRUE
     # Expired entries are skipped, so filling a page of `n` can take more than
@@ -144,10 +156,7 @@ stash_keys <- function(stash, ..., prefix = NULL, start = NULL, n = Inf) {
     repeat {
       remaining <- n - length(out)
       ask <- if (is.finite(remaining)) remaining + !first else Inf
-      got <- engine_scan(
-        txn, engine_db(e, "meta"),
-        prefix = prefix, start = from, n = ask, as = "character", values = TRUE
-      )
+      got <- engine_scan(txn, engine_db(e, "meta"), start = from, n = ask, as = "character", values = TRUE)
       keys <- got$keys
       records <- lapply(got$values, record_decode)
       if (!first && length(keys) > 0L) {
@@ -155,10 +164,7 @@ stash_keys <- function(stash, ..., prefix = NULL, start = NULL, n = Inf) {
         records <- records[-1L]
       }
       live <- vapply(records, is_live, logical(1), now = now)
-      shown <- vapply(seq_along(keys), function(i) {
-        if (startsWith(keys[[i]], "#")) records[[i]]$key_text %||% keys[[i]] else keys[[i]]
-      }, character(1))
-      out <- c(out, shown[live])
+      out <- c(out, store_shown_keys(keys, records)[live])
       if (!is.finite(ask) || length(got$keys) < ask || length(out) >= n) break
       from <- got$keys[[length(got$keys)]]
       first <- FALSE
@@ -176,6 +182,14 @@ stash_count <- function(stash) {
 }
 
 # Helpers --------------------------------------------------------------------
+
+# The key text to show for stored keys: itself, or for a digested key the text
+# its record kept, or the digest form when the text was too long to keep.
+store_shown_keys <- function(stored, records) {
+  vapply(seq_along(stored), function(i) {
+    if (record_digested(records[[i]])) records[[i]]$key_text %||% stored[[i]] else stored[[i]]
+  }, character(1))
+}
 
 # The record and inline bytes of a live entry, or NULL.
 store_read_entry <- function(s, txn, key) {

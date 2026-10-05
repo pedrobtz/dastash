@@ -211,7 +211,9 @@ check_repair <- function(s, txn, snap, findings) {
   reap
 }
 
-# Staging files left by processes that are gone: dead, or at least an hour old.
+# Staging files left by processes that are gone. A file whose process is known
+# to be dead is stale at once; where liveness cannot be asked (Windows), a file
+# is stale once it is an hour old.
 check_tmp <- function(s, repair) {
   dir <- file.path(s$dir, "tmp")
   files <- list.files(dir, full.names = TRUE)
@@ -219,11 +221,17 @@ check_tmp <- function(s, repair) {
   for (path in files) {
     pid <- suppressWarnings(as.integer(sub("-.*$", "", basename(path))))
     age <- as.double(difftime(Sys.time(), file.mtime(path), units = "secs"))
-    if (is.na(pid) || pid == Sys.getpid() || is.na(age) || age < 3600 || pid_alive(pid)) next
+    if (is.na(pid) || pid == Sys.getpid() || is.na(age)) next
+    if (!pid_known_dead(pid) && (age < 3600 || pid_alive(pid))) next
     if (repair) blob_unlink(path)
     out[[length(out) + 1L]] <- finding("tmp_stale", path = path, detail = sprintf("process %d, %.0f seconds old", pid, age), repaired = repair)
   }
   if (length(out) == 0L) finding() else do.call(rbind, out)
+}
+
+# Whether a process is certainly not running: only where signal 0 can ask.
+pid_known_dead <- function(pid) {
+  .Platform$OS.type == "unix" && !pid_alive(pid)
 }
 
 # Whether a process is running. On Windows there is no signal 0 to ask with,

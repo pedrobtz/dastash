@@ -29,7 +29,8 @@ stash_stats(stash)
 \code{stash_entries()} and \code{stash_info()} return a data frame with columns
 \code{key}, \code{bytes}, \code{codec}, \code{inline}, \code{blob}, \code{tags} (a list of character
 vectors), \code{shape}, \code{stored}, \code{accessed}, \code{hits} and \code{expires} (\code{NA} for
-never). \code{stash_stats()} returns a one-row data frame with \code{count},
+never). In this release \code{accessed} is always \code{stored} and \code{hits} always 0:
+reads are not yet recorded. \code{stash_stats()} returns a one-row data frame with \code{count},
 \code{bytes_inline}, \code{bytes_blob}, \code{volume}, \code{size_limit}, \code{evictions},
 \code{expired}, \code{eviction}, \code{durability}, \code{format_version} and
 \code{key_encoding_version}.

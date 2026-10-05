@@ -282,7 +282,7 @@ memoised function get identical results with at least one computation;
 
 - `R CMD check --as-cran` gives 0 errors, 0 warnings and only the new-submission NOTE,
   locally and on the full CI profile (Linux, macOS, Windows, the `nosuggests` job).
-- win-builder (release and devel) and mac-builder pass.
+- The full `pedrobtz/r-actions` `r-cmd-check.yml` profile passes, including an R-devel leg.
 - The package is submitted, and accepted.
 
 ---

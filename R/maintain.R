@@ -131,7 +131,7 @@ stash_evict <- function(stash, ..., tag = NULL, prefix = NULL) {
         rows <- engine_scan(txn, engine_db(e, "tags"), prefix = c(charToRaw(tag), as.raw(0L)), n = chunk)
         vapply(rows, tag_key_stored, character(1))
       } else {
-        engine_scan(txn, engine_db(e, "meta"), prefix = prefix, n = chunk, as = "character")
+        store_scan_prefix(stash, txn, prefix, n = chunk)$stored
       }
       for (k in stored) store_delete_entry(stash, txn, k)
       length(stored)

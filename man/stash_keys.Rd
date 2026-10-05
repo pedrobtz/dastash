@@ -28,11 +28,19 @@ stash_volume(stash)
 and \code{stash_volume()} a number of bytes.
 }
 \description{
-\code{stash_keys()} returns keys in key order: the text of each key, as
-\code{\link[=stash_key_chr]{stash_key_chr()}} gives it. A structured key's text is not itself that key;
-pass it through \code{\link[=stash_key_text]{stash_key_text()}} to use it again. Use \code{prefix} for keys that begin with a string,
-and \code{start} with \code{n} to page through a large stash: \code{start} is inclusive, so
-drop the first key of every page after the first.
+\code{stash_keys()} returns keys in the order they are stored: the text of each
+key, as \code{\link[=stash_key_chr]{stash_key_chr()}} gives it. A structured key's text is not itself
+that key; pass it through \code{\link[=stash_key_text]{stash_key_text()}} to use it again. Use \code{prefix}
+for keys that begin with a string, and \code{start} with \code{n} to page through a
+large stash: \code{start} is inclusive, so drop the first key of every page after
+the first.
+
+A key of up to 512 bytes is stored as itself, so those keys come in byte
+order. A longer key is stored under \verb{#} and a digest of its text, and sorts
+there, among keys beginning with \verb{#}, in no meaningful order. \code{prefix} still
+matches it by its text, which the stash keeps for keys up to 4096 bytes; of
+a longer key it keeps the first 256 bytes, so a \code{prefix} longer than that
+does not match it, and it is listed as its digest.
 
 \code{stash_count()} returns the number of entries, including expired ones that
 \code{\link[=stash_expire]{stash_expire()}} has not reclaimed yet. \code{stash_volume()} returns the bytes

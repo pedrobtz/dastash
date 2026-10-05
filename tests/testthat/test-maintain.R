@@ -17,6 +17,17 @@ test_that("writes keep the stash near its limit, evicting the least recently sto
   expect_identical(store_violations(s), character())
 })
 
+test_that("stash_mset() keeps the stash near its limit however large the batch", {
+  s <- local_stash(size_limit = 1e5, inline_max = 1000)
+  values <- stats::setNames(lapply(1:50, function(i) runif(1000)), sprintf("v%02d", 1:50))
+  stash_mset(s, values)
+  # At most one entry over the limit, as a run of stash_set() calls leaves it.
+  expect_lte(held(s), 1e5 + 8100)
+  expect_true("v50" %in% stash_keys(s))
+  expect_identical(stash_get(s, "v50"), values$v50)
+  expect_identical(store_violations(s), character())
+})
+
 test_that("stash_cull() finishes the job", {
   s <- local_stash(size_limit = Inf, inline_max = 1000)
   for (i in 1:20) stash_set(s, sprintf("k%02d", i), runif(250))
@@ -242,18 +253,50 @@ test_that("hash = TRUE finds a file whose bytes changed but not its size", {
 
 test_that("stale staging files of dead processes are reported and removed", {
   skip_on_os("windows")
+  skip_if_not_installed("callr")
   s <- local_stash()
-  stale <- file.path(s$dir, "tmp", "999999-1")
+  live <- callr::r_bg(function() Sys.sleep(60))
+  withr::defer(live$kill())
+  old <- file.path(s$dir, "tmp", "999999-1")
   fresh <- file.path(s$dir, "tmp", "999999-2")
-  writeLines("x", stale)
-  writeLines("x", fresh)
-  Sys.setFileTime(stale, Sys.time() - 7200)
+  busy <- file.path(s$dir, "tmp", sprintf("%d-1", live$get_pid()))
+  for (path in c(old, fresh, busy)) writeLines("x", path)
+  Sys.setFileTime(old, Sys.time() - 7200)
+  Sys.setFileTime(busy, Sys.time() - 7200)
+  # A dead process's file is stale however new; a live one's however old.
   f <- stash_check(s)
-  expect_identical(f$kind, "tmp_stale")
-  expect_identical(f$path, stale)
+  expect_setequal(f$kind, "tmp_stale")
+  expect_setequal(f$path, c(old, fresh))
   stash_check(s, repair = TRUE)
-  expect_false(file.exists(stale))
-  expect_true(file.exists(fresh))
+  expect_false(file.exists(old))
+  expect_false(file.exists(fresh))
+  expect_true(file.exists(busy))
+})
+
+test_that("an encoder that fails or is interrupted leaves no staging file", {
+  s <- local_stash(inline_max = 5)
+  tmp <- file.path(s$dir, "tmp")
+  bad <- codec("bad", encode = function(value, path) {
+    writeBin(as.raw(1:10), path)
+    stop("broke")
+  }, decode = function(path, meta) 1)
+  for (i in 1:3) expect_error(stash_set(s, "k", 1, codec = bad), class = "dastash_codec_error")
+  expect_error(stash_mset(s, list(a = 1, b = 2), codec = bad), class = "dastash_codec_error")
+  expect_length(list.files(tmp), 0L)
+  stopped <- codec("stopped", encode = function(value, path) {
+    writeBin(as.raw(1:10), path)
+    rlang::interrupt()
+  }, decode = function(path, meta) 1)
+  interrupted <- tryCatch(stash_set(s, "k", 1, codec = stopped), interrupt = function(cnd) TRUE)
+  expect_true(interrupted)
+  interrupted <- tryCatch(stash_mset(s, list(a = 1, b = 2), codec = stopped), interrupt = function(cnd) TRUE)
+  expect_true(interrupted)
+  expect_length(list.files(tmp), 0L)
+  expect_identical(stash_count(s), 0L)
+  # Interrupted on its own staging file, a file-backed value of bytes.
+  local_mocked_bindings(hash_bytes = function(bytes) rlang::interrupt())
+  tryCatch(stash_set(s, "r", as.raw(1:10)), interrupt = function(cnd) NULL)
+  expect_length(list.files(tmp), 0L)
 })
 
 test_that("a crash's orphan is reclaimed by repair", {
@@ -272,4 +315,54 @@ test_that("a crash's orphan is reclaimed by repair", {
   expect_true("blob_orphan" %in% f$kind)
   expect_false(file.exists(path))
   expect_identical(store_violations(s), character())
+})
+
+test_that("prefix selects digested keys by their text", {
+  s <- local_stash()
+  long <- paste0("p/", strrep("x", 600))
+  longer <- paste0("p/", strrep("y", 5000))
+  other <- paste0("q/", strrep("z", 600))
+  # A string beginning with `#` is escaped, so it never sorts among digests.
+  hash_like <- "#not-a-digest"
+  for (k in c("p/a", long, longer, other, hash_like, "p/b")) {
+    stash_set(s, k, 1)
+  }
+  expect_setequal(
+    stash_keys(s, prefix = "p/"),
+    c("p/a", "p/b", long, stash_keys(s, prefix = "p/y"))
+  )
+  expect_length(stash_keys(s, prefix = "p/"), 4L)
+  expect_identical(
+    stash_keys(s, prefix = "p/", n = 2),
+    stash_keys(s, prefix = "p/")[1:2]
+  )
+  expect_identical(stash_keys(s, prefix = "q/"), other)
+  expect_identical(stash_keys(s, prefix = "s:#"), stash_key_chr(hash_like))
+  expect_length(stash_keys(s, prefix = ""), 6L)
+  # A prefix longer than the kept preview cannot be told for an unkept key.
+  expect_length(stash_keys(s, prefix = paste0("p/", strrep("y", 300))), 0L)
+  expect_identical(nrow(stash_entries(s, prefix = "p/")), 4L)
+  stash_set(s, long, 2, tags = "t")
+  stash_set(s, "q/plain", 2, tags = "t")
+  expect_identical(stash_entries(s, prefix = "p/", tag = "t")$key, long)
+  stash_evict(s, prefix = "p/")
+  expect_identical(
+    sort(stash_keys(s), method = "radix"),
+    sort(c(other, stash_key_chr(hash_like), "q/plain"), method = "radix")
+  )
+  expect_identical(store_violations(s), character())
+})
+
+test_that("start pages through a prefix that holds digested keys", {
+  s <- local_stash()
+  keys <- c(paste0("p/", 1:5), paste0("p/", strrep("x", 600), 1:3))
+  for (k in keys) {
+    stash_set(s, k, 1)
+  }
+  all <- stash_keys(s, prefix = "p/")
+  expect_setequal(all, keys)
+  page1 <- stash_keys(s, prefix = "p/", n = 4)
+  last <- page1[[4]]
+  page2 <- stash_keys(s, prefix = "p/", start = last, n = 10)
+  expect_identical(c(page1, page2[-1L]), all)
 })

@@ -18,6 +18,24 @@ test_that("a missing stash is not found when it must not be created", {
   expect_false(dir.exists(dir))
 })
 
+test_that("a directory that cannot be created is a classed error", {
+  parent <- withr::local_tempdir()
+  # Under a regular file, on every platform and whoever runs the tests.
+  file <- file.path(parent, "file")
+  writeLines("x", file)
+  cnd <- expect_error(stash(file.path(file, "sub")), class = "dastash_engine_error")
+  expect_identical(cnd$dir, file.path(file, "sub"))
+  expect_error(stash(file), class = "dastash_engine_error")
+  # Under a directory without write permission.
+  skip_on_os("windows")
+  skip_if(identical(unname(Sys.info()[["effective_user"]]), "root"), "root can write anywhere")
+  locked <- file.path(parent, "locked")
+  dir.create(locked)
+  Sys.chmod(locked, "0555")
+  withr::defer(Sys.chmod(locked, "0755"))
+  expect_error(stash(file.path(locked, "sub")), class = "dastash_engine_error")
+})
+
 test_that("closing is idempotent, and a closed stash refuses verbs", {
   s <- stash(withr::local_tempdir())
   expect_invisible(stash_close(s))

@@ -131,3 +131,18 @@ test_that("codecs print what they are", {
   expect_output(print(codec_file()), "always a file", fixed = TRUE)
   expect_output(print(codec_auto()), "auto")
 })
+
+test_that("codec_rds() refuses a value serialize() cannot keep alive", {
+  s <- local_stash()
+  path <- withr::local_tempfile()
+  con <- file(path, "w")
+  withr::defer(close(con))
+  expect_false(codec_rds()$supports(con))
+  expect_error(stash_set(s, "con", con), class = "dastash_type_error")
+  expect_error(stash_set(s, "con", con, codec = codec_rds()), class = "dastash_type_error")
+  ptr <- methods::new("externalptr")
+  expect_false(codec_rds()$supports(ptr))
+  expect_error(stash_set(s, "ptr", ptr), class = "dastash_type_error")
+  expect_false(stash_has(s, "con") || stash_has(s, "ptr"))
+  expect_true(codec_rds()$supports(list(1, "a")))
+})

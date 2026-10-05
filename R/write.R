@@ -63,8 +63,12 @@ stash_mset <- function(stash, values, ..., expire = NULL, tags = NULL, codec = N
   }
   engine_write(stash$engine, function(txn) {
     now <- unclass(Sys.time())
-    for (entry in entries) store_put_entry(stash, txn, entry$key, entry$enc, now, expire = entry$expire, tags = entry$tags)
-    store_cull_step(stash, txn, protect = vapply(entries, function(x) x$key$stored, character(1)))
+    # One cull step per entry, as a run of stash_set() calls would take, so a
+    # batch larger than the limit cannot leave the stash far over it.
+    for (entry in entries) {
+      store_put_entry(stash, txn, entry$key, entry$enc, now, expire = entry$expire, tags = entry$tags)
+      store_cull_step(stash, txn, protect = entry$key$stored)
+    }
   }, timeout = stash$timeout)
   invisible(stash)
 }
@@ -101,6 +105,9 @@ stash_prepare <- function(s, key, value, expire, tags, codec, call = rlang::call
   }
   codec <- codec_for_value(codec, value)
   enc <- codec_encode_value(codec, value, stage = function() stage_path(s), call = call)
+  # Until the entry is returned, its staged file is this function's to remove.
+  staged <- enc$path
+  on.exit(if (!is.null(staged)) unlink(staged))
   if (isTRUE(codec$always_file) || enc$size >= s$config$inline_max) {
     # A file: staged in <root>/tmp and hashed now, published in the transaction.
     enc$blob <- blob_stage(s, enc)
@@ -111,7 +118,9 @@ stash_prepare <- function(s, key, value, expire, tags, codec, call = rlang::call
     unlink(enc$path)
     enc$path <- NULL
   }
-  list(key = key, enc = enc, expire = deadline, tags = tags)
+  out <- list(key = key, enc = enc, expire = deadline, tags = tags)
+  staged <- NULL
+  out
 }
 
 # `tags` as a sorted, unique character vector (design.md §3.4).

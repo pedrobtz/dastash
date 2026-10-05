@@ -1,7 +1,8 @@
 # dastash — a disk cache for R
 
-**Status:** design, pre-implementation. The package skeleton, CI and pkgdown site exist;
-`R/` holds only the package documentation. Revised 2026-09-28 for `mdbx` 0.1.1 on CRAN.
+**Status:** 0.1.0 implemented (`.agents/roadmap.md` stages S0–S10), the subset of §3 that
+release covers, writing the final on-disk format. Revised 2026-09-28 for `mdbx` 0.1.1 on
+CRAN; the 0.1.0 soundness review (issue #15) is folded in.
 **Engine:** [`mdbx`](https://github.com/pedrobtz/mdbx) (≥ 0.1.1), first-party R bindings to
 libmdbx, on CRAN. §15 records what it provides, verified by running 0.1.1, and what
 dastash asks of its next release.
@@ -1237,6 +1238,17 @@ blocking, and retries with exponential backoff up to `timeout` seconds before ra
 `dastash_busy`. A worker that never returns is worse than an error that says the store is
 busy. Both behaviours are verified across processes (§15).
 
+**A writer killed holding the lock.** Whether the lock is released depends on how the
+vendored libmdbx was built (`MDBX_LOCKING`): Linux with glibc gets robust mutexes and
+Windows file locks, both released by the kernel when the holder dies. macOS has no
+robust mutexes, so `mdbx` 0.1.1 falls back to POSIX semaphores, which nothing releases:
+with any other process still open, every later write is `dastash_busy` until all of them
+close, and only then does the next opener re-initialise the lock file (dastash#15,
+mdbx#28). The fix
+belongs in `mdbx` (System V semaphores with `SEM_UNDO`, or dead-writer recovery);
+until then `stash()`, `stash_transact()`, the shared-stash vignette and the
+`dastash_busy` message state the limitation.
+
 **One live transaction per environment.** `mdbx` refuses a second `mdbx_txn_begin()` on
 an environment rather than deadlocking. The registry entry of §3.1 therefore owns the
 current transaction: inside `stash_transact()` every verb, on every handle to that
@@ -1326,7 +1338,7 @@ Because indexes are derived, most damage is repairable:
 | `blob_orphan` — file with no referring record | delete the file |
 | `refcount_drift` — `blobs.refs` disagrees with the records | recompute from `meta` |
 | `counter_drift` — `counters` disagrees with a full scan | recompute |
-| `tmp_stale` — file in `tmp/` | delete when its PID is not live and it is over an hour old |
+| `tmp_stale` — file in `tmp/` | delete when its PID is known dead; where liveness cannot be asked (Windows), when it is over an hour old |
 | `reader_stale` — reader slot of a dead process | `mdbx_env_reader_check()` |
 | `blob_corrupt` — the file's size differs from its records', or with `hash = TRUE` its bytes do not hash to its name | delete the records and the file |
 
