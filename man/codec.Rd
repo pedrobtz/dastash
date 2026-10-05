@@ -52,7 +52,10 @@ never makes stored entries unreadable.
 \item \code{codec_auto()}, the default, stores a raw vector or a single string as its
 bytes (\code{codec_raw()}) and everything else with \code{codec_rds()}. It never picks
 a codec that loses information or needs a suggested package.
-\item \code{codec_rds()} stores any R object with \code{\link[=serialize]{serialize()}}, losslessly.
+\item \code{codec_rds()} stores an R object with \code{\link[=serialize]{serialize()}}, losslessly, with
+the exceptions \code{\link[=serialize]{serialize()}} has: an external pointer comes back null and
+a connection as a number that no longer refers to it. It refuses either
+as the value itself; one inside a list or an environment is stored, dead.
 \item \code{codec_raw()} stores a raw vector, or a single string as its UTF-8 bytes,
 exactly as they are.
 \item \code{codec_file()} stores a copy of an existing file; reading the entry back
