@@ -253,16 +253,6 @@ store_record_matches <- function(record, key) {
   !isTRUE(key$digested) || is.null(record$key_text) || identical(record$key_text, key$text)
 }
 
-# The key text to report for a stored key: itself, or for a digested key the
-# text its record kept, or the digest form when the text was too long to keep.
-store_display_key <- function(s, txn, stored) {
-  if (!startsWith(stored, "#")) {
-    return(stored)
-  }
-  record <- store_get_record(s, txn, stored)
-  record$key_text %||% stored
-}
-
 # Prefix scans --------------------------------------------------------------
 
 # Whether a record belongs to a digested key: one longer than KEY_MAX, stored

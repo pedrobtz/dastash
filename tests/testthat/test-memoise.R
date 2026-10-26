@@ -232,3 +232,32 @@ test_that("stash_forget_all() forgets results whose keys are too long to store a
   mf(as.double(1:3000))
   expect_identical(c$n, 5)
 })
+
+test_that("a memoised function with its own codec reads back what it stored", {
+  s <- local_stash()
+  m <- stash_memoise(function(n) rep("x", n), s, codec = lines_codec(), name = "xs")
+  expect_identical(m(3), rep("x", 3))
+  expect_identical(m(3), rep("x", 3))
+})
+
+test_that("a result the stash cannot store is returned, with a warning", {
+  dir <- withr::local_tempdir()
+  stash_close(stash(dir))
+  ro <- local_stash(dir, readonly = TRUE)
+  calls <- 0
+  m <- stash_memoise(function(x) {
+    calls <<- calls + 1
+    x * 2
+  }, ro, name = "double")
+  expect_warning(out <- m(2), class = "dastash_memoise_unstored")
+  expect_identical(out, 4)
+  w <- tryCatch(m(2), dastash_memoise_unstored = function(cnd) cnd)
+  expect_s3_class(w$parent, "dastash_readonly")
+  expect_identical(calls, 2)
+})
+
+test_that("a codec that refuses a result stays an error", {
+  s <- local_stash()
+  m <- stash_memoise(function(x) list(x), s, codec = codec_raw(), name = "listed")
+  expect_error(m(1), class = "dastash_type_error")
+})

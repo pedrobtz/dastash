@@ -204,3 +204,70 @@ test_that("a writer killed inside a transaction frees the lock for processes sti
   expect_identical(stash_get(s, "x"), 1)
   expect_no_error(stash_check(s, repair = TRUE))
 })
+
+test_that("leaving a block with return(), break or next commits it", {
+  s <- local_stash()
+  f <- function() {
+    stash_transact(s, {
+      stash_set(s, "returned", 1)
+      return("early")
+    })
+    "late"
+  }
+  expect_identical(f(), "early")
+  for (i in 1:2) {
+    stash_transact(s, {
+      stash_set(s, paste0("loop", i), i)
+      if (i == 1) next
+      break
+    })
+  }
+  expect_identical(stash_mget(s, c("returned", "loop1", "loop2")), list(returned = 1, loop1 = 1L, loop2 = 2L))
+  expect_null(s$engine$txn)
+  # And a caught error inside the block does not abort it.
+  stash_transact(s, {
+    stash_set(s, "kept", TRUE)
+    try(abort_type_error("handled"), silent = TRUE)
+  })
+  expect_true(stash_get(s, "kept"))
+})
+
+test_that("closing the stash inside a block aborts it with a classed error", {
+  dir <- withr::local_tempdir()
+  s <- stash(dir)
+  expect_error(
+    stash_transact(s, {
+      stash_set(s, "a", 1)
+      stash_close(s)
+    }),
+    class = "dastash_error"
+  )
+  s2 <- local_stash(dir)
+  expect_false(stash_has(s2, "a"))
+  stash_set(s2, "b", 1)
+  expect_true(stash_has(s2, "b"))
+})
+
+test_that("repair inside a block unlinks nothing until the block commits", {
+  s <- local_stash(inline_max = 100)
+  stash_set(s, "big", runif(1000))
+  path <- stash_path(s, "big")
+  expect_error(
+    stash_transact(s, {
+      stash_delete(s, "big")
+      stash_check(s, repair = TRUE)
+      abort_type_error("abort")
+    }),
+    class = "dastash_type_error"
+  )
+  expect_true(file.exists(path))
+  expect_identical(length(stash_get(s, "big")), 1000L)
+  expect_identical(store_violations(s), character())
+
+  stash_transact(s, {
+    stash_delete(s, "big")
+    stash_check(s, repair = TRUE)
+    expect_true(file.exists(path))
+  })
+  expect_false(file.exists(path))
+})

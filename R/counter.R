@@ -49,6 +49,7 @@ u32_value <- function(bytes) {
 #' @rdname stash_add
 #' @export
 stash_incr <- function(stash, key, ..., by = 1, default = 0) {
+  check_supplied("key")
   rlang::check_dots_empty()
   counter_add(stash, key, by, default)
 }
@@ -56,6 +57,7 @@ stash_incr <- function(stash, key, ..., by = 1, default = 0) {
 #' @rdname stash_add
 #' @export
 stash_decr <- function(stash, key, ..., by = 1, default = 0) {
+  check_supplied("key")
   rlang::check_dots_empty()
   counter_add(stash, key, -by, default)
 }

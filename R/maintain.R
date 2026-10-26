@@ -124,17 +124,22 @@ stash_evict <- function(stash, ..., tag = NULL, prefix = NULL) {
     check_string_or_empty(prefix, "prefix")
   }
   e <- stash$engine
-  chunk <- 1000L
+  chunk <- ENGINE_SCAN_CHUNK
   repeat {
     done <- engine_write(e, function(txn) {
-      stored <- if (!is.null(tag)) {
-        rows <- engine_scan(txn, engine_db(e, "tags"), prefix = c(charToRaw(tag), as.raw(0L)), n = chunk)
-        vapply(rows, tag_key_stored, character(1))
-      } else {
-        store_scan_prefix(stash, txn, prefix, n = chunk)$stored
+      if (is.null(tag)) {
+        stored <- store_scan_prefix(stash, txn, prefix, n = chunk)$stored
+        for (k in stored) store_delete_entry(stash, txn, k)
+        return(length(stored))
       }
-      for (k in stored) store_delete_entry(stash, txn, k)
-      length(stored)
+      tags_db <- engine_db(e, "tags")
+      rows <- engine_scan(txn, tags_db, prefix = c(charToRaw(tag), as.raw(0L)), n = chunk)
+      for (row in rows) {
+        # A row whose entry is gone is damage; delete it too, or the walk would
+        # find it at the front of every chunk and never end.
+        if (!store_delete_entry(stash, txn, tag_key_stored(row))) engine_del(txn, tags_db, row)
+      }
+      length(rows)
     }, timeout = stash$timeout)
     if (done < chunk) break
   }
@@ -153,7 +158,7 @@ stash_clear <- function(stash) {
     counters$bytes_inline <- 0
     counters$bytes_blob <- 0
     engine_put(txn, NULL, "counters", record_encode(counters))
-    if (length(names) > 0L) engine_defer(e, function() blob_reap(stash, names))
+    if (length(names) > 0L) blob_defer_reap(stash, names)
   }, timeout = stash$timeout)
   invisible(stash)
 }

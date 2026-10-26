@@ -126,3 +126,64 @@ test_that("codec_rds() refuses a value serialize() cannot keep alive", {
   expect_false(stash_has(s, "con") || stash_has(s, "ptr"))
   expect_true(codec_rds()$supports(list(1, "a")))
 })
+
+test_that("an encode() that returns its value stores no meta", {
+  csv <- codec(
+    "csv",
+    encode = function(value, path) {
+      utils::write.csv(value, path, row.names = FALSE)
+      invisible(value)
+    },
+    decode = function(path, meta) utils::read.csv(path),
+    ext = "csv"
+  )
+  s <- local_stash(codecs = csv)
+  df <- data.frame(x = 1:3, y = c("a", "b", "c"))
+  stash_set(s, "df", df, codec = csv)
+  record <- engine_read(s$engine, function(txn) store_get_record(s, txn, "df"))
+  expect_null(record$codec_meta)
+  expect_equal(stash_get(s, "df"), df)
+})
+
+test_that("meta is limited in size, and its ext must be letters and digits", {
+  big <- codec(
+    "big",
+    encode = function(value, path) {
+      writeLines(value, path)
+      list(padding = strrep("x", 10000))
+    },
+    decode = function(path, meta) readLines(path)
+  )
+  bad_ext <- codec(
+    "badext",
+    encode = function(value, path) {
+      writeLines(value, path)
+      list(ext = "../x")
+    },
+    decode = function(path, meta) readLines(path)
+  )
+  s <- local_stash()
+  expect_error(stash_set(s, "a", "v", codec = big), class = "dastash_codec_error")
+  expect_error(stash_set(s, "a", "v", codec = bad_ext), class = "dastash_codec_error")
+  expect_false(stash_has(s, "a"))
+  expect_length(list.files(file.path(s$dir, "tmp")), 0L)
+})
+
+test_that("a codec that writes no file is a dastash_codec_error", {
+  none <- codec("none", encode = function(value, path) NULL, decode = function(path, meta) NULL)
+  s <- local_stash()
+  expect_error(stash_set(s, "z", 1, codec = none), class = "dastash_codec_error")
+  expect_false(stash_has(s, "z"))
+})
+
+test_that("codec_rds(compress = TRUE) round-trips inline and as a file", {
+  s <- local_stash(inline_max = 1000)
+  gz <- codec_rds(compress = TRUE)
+  stash_set(s, "small", 1:10, codec = gz)
+  large <- runif(2000)
+  stash_set(s, "large", large, codec = gz)
+  expect_true(stash_info(s, "small")$inline)
+  expect_false(stash_info(s, "large")$inline)
+  expect_identical(stash_get(s, "small"), 1:10)
+  expect_identical(stash_get(s, "large"), large)
+})

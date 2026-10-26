@@ -16,9 +16,10 @@ The value of \code{code}.
 }
 \description{
 \code{code} runs with one write transaction open on the stash. Every write inside
-it commits together when \code{code} finishes, or none does if it raises an error,
-and reads inside it see its own writes. A nested \code{stash_transact()} joins the
-outer one.
+it commits together when \code{code} finishes, or none does if it raises an error
+or is interrupted, and reads inside it see its own writes. Leaving \code{code}
+early with \code{return()}, \code{break} or \code{next} is finishing it: the writes commit.
+A nested \code{stash_transact()} joins the outer one.
 
 The transaction holds the stash's write lock for as long as \code{code} runs, so
 other processes' writes wait: keep it short, and never compute a value

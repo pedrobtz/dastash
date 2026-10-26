@@ -442,7 +442,9 @@ stash_transact(stash, code)
 
 `code` is evaluated in the caller's environment with one write transaction held open on
 the stash's environment. Every `stash_set()`, `stash_delete()`, `stash_incr()` inside it
-commits or aborts together, and reads inside it see its own writes. A nested
+commits or aborts together, and reads inside it see its own writes. An error or an
+interrupt aborts; any other way out of the block — finishing, or a `return()`, `break` or
+`next` inside it — commits (D23). A nested
 `stash_transact()` joins the outer transaction, as does any verb on another handle to the
 same directory (§3.1).
 
@@ -1391,7 +1393,7 @@ from "your store is broken".
 | `dastash_not_found` | `stash_get()`, `stash_pop()`, `s[[key]]` on an absent or expired key without `default`; `stash()` with `create = FALSE` on a missing directory |
 | `dastash_type_error` | `stash_incr()` on a non-counter or past ±2⁵³; `stash_path()` or `stash_lazy()` on an entry of the wrong shape; a value a codec's `supports()` rejects; an `expire` that is `NA` or `NaN` |
 | `dastash_codec_error` | Encode or decode failed; a codec package from `Suggests` is not installed; a record names a codec the handle does not know |
-| `dastash_blob_corrupt` | A read finds the record's blob file missing. `stash_check()` reports the same condition as a finding instead of raising |
+| `dastash_blob_corrupt` | A read finds the record's blob file missing, or not the size the record holds. `stash_check()` reports the same condition as a finding instead of raising |
 | `dastash_busy` | Write lock not acquired within `timeout` |
 | `dastash_store_full` | `map_size` exhausted |
 | `dastash_readonly` | A write verb on a read-only handle |
@@ -1401,6 +1403,12 @@ from "your store is broken".
 | `dastash_closed` | A verb on a closed handle |
 | `dastash_unsupported` | The platform or this release cannot do it: symlinks for `stash_tree()`; an eviction policy or value size a release before 1.0.0 does not yet support (`roadmap.md` §0) |
 | `dastash_engine_error` | Any other `mdbx` failure, with the original condition as `parent` |
+
+A missing required argument is a `dastash_type_error`, not R's own "argument is missing".
+
+There is one warning, raised with `rlang::warn()`: `dastash_memoise_unstored`, with
+`dastash_warning` as parent, when a memoised function returns a result it could not store
+because the stash was busy, full or read-only (D22). Its `parent` is the error.
 
 **Translating engine errors.** `mdbx` signals every libmdbx failure as a condition of
 class `mdbx_error`, with a subclass named after the status and `code` and `name` fields
@@ -1680,6 +1688,19 @@ directory share one environment (§3.1), and an environment runs one transaction
 handle owned its own, a verb on a second handle inside `stash_transact()` would hit
 `mdbx`'s unclassed refusal; owning it in the registry entry makes that verb join the open
 transaction instead.
+
+**D22 — A memoised function returns a result it cannot store, with a warning.** Once `f`
+has run, losing its result because the lock stayed busy, the map is full or the handle is
+read-only trades an expensive computation for nothing: a cache may forget (§4). Those three
+become the warning `dastash_memoise_unstored`. A codec that cannot store the value
+(`dastash_codec_error`, `dastash_type_error`) stays an error, since a warning would let a
+misconfigured function silently never cache. (Decided on review, issue #29.)
+
+**D23 — Leaving a transaction's block without an error commits.** The block is a promise
+forced inside the engine's write, so a `return()`, `break` or `next` in it unwinds past the
+commit. Aborting there dropped the writes silently; the block finished, so it commits. Only
+an error or an interrupt aborts. DBI's `dbWithTransaction()` aborts instead and documents
+it; dastash took the reading that matches "commits when `code` finishes". (Issue #18.)
 
 ---
 

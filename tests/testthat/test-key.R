@@ -6,7 +6,8 @@ test_that("every golden vector encodes, hashes and stores as recorded", {
   expect_gt(nrow(g), 100)
   for (i in seq_len(nrow(g))) {
     row <- g[i, ]
-    if (grepl("bit64::", row$expr, fixed = TRUE)) skip_if_not_installed("bit64")
+    # A missing bit64 skips its own rows, not every row after them.
+    if (grepl("bit64::", row$expr, fixed = TRUE) && !requireNamespace("bit64", quietly = TRUE)) next
     value <- eval(parse(text = row$expr, encoding = "UTF-8"))
     text <- stash_key_chr(value)
     if (startsWith(row$canon, "<") && endsWith(row$canon, " bytes>")) {
@@ -151,6 +152,16 @@ test_that("strings that are not UTF-8 are refused", {
   bytes <- "caf\xe9"
   Encoding(bytes) <- "bytes"
   expect_error(stash_key_chr(bytes), class = "dastash_key_invalid")
+  # Unmarked, in a UTF-8 session, the same bytes are invalid native text.
+  skip_if_not(l10n_info()$`UTF-8`)
+  native <- "caf\xe9"
+  expect_identical(Encoding(native), "unknown")
+  expect_error(stash_key_chr(native), class = "dastash_key_invalid")
+})
+
+test_that("an S4 object cannot be a key", {
+  setClass("DastashTestKey", representation(x = "numeric"), where = environment())
+  expect_error(stash_key_chr(methods::new("DastashTestKey", x = 1)), class = "dastash_key_invalid")
 })
 
 test_that("latin1 strings are keyed by their UTF-8 text", {
@@ -198,19 +209,22 @@ test_that("long keys are stored as a digest and keep their text", {
 })
 
 test_that("very long keys keep a preview that does not split a character", {
-  text <- strrep("é", CANON_KEEP_MAX)
+  # One ASCII byte first, so the preview's last byte falls inside an "é".
+  text <- paste0("x", strrep("é", CANON_KEEP_MAX))
   s <- key_storage(text)
   expect_null(s$key_text)
-  expect_lte(nchar(s$key_preview, type = "bytes"), KEY_PREVIEW_MAX)
+  expect_identical(nchar(s$key_preview, type = "bytes"), KEY_PREVIEW_MAX - 1L)
   expect_true(validUTF8(s$key_preview))
-  expect_identical(s$key_preview, strrep("é", KEY_PREVIEW_MAX / 2))
+  expect_identical(s$key_preview, paste0("x", strrep("é", (KEY_PREVIEW_MAX - 2L) / 2L)))
 })
 
 test_that("limits fit the smallest page size", {
   # 8 bytes of an ordered index prefix plus a key, and a tag, NUL and key,
-  # must fit libmdbx's key limit at 4 KiB pages (2022 bytes; design.md §5.3).
-  expect_lte(8L + KEY_MAX, 2022L)
-  expect_lte(TAG_MAX + 1L + KEY_MAX, 2022L)
+  # must fit libmdbx's key limit at 4 KiB pages (design.md §5.3), as this
+  # build of libmdbx reports it.
+  limit <- mdbx::mdbx_limits(4096)$keysize_max
+  expect_lte(8L + KEY_MAX, limit)
+  expect_lte(TAG_MAX + 1L + KEY_MAX, limit)
 })
 
 test_that("stash_key_text() turns every listed key back into its key", {

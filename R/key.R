@@ -81,12 +81,14 @@ stash_key <- function(...) {
 #' @rdname stash_key
 #' @export
 stash_key_chr <- function(key) {
+  check_supplied("key")
   key_canon(key)
 }
 
 #' @rdname stash_key
 #' @export
 stash_key_text <- function(text) {
+  check_supplied("text")
   if (!is.character(text) || length(text) != 1L || is.na(text)) {
     abort_key_invalid("`text` must be one key's text, a single string.")
   }
@@ -96,6 +98,7 @@ stash_key_text <- function(text) {
 #' @rdname stash_key
 #' @export
 stash_key_hash <- function(key) {
+  check_supplied("key")
   hash_text(key_canon(key))
 }
 

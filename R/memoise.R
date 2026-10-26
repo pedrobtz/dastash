@@ -21,6 +21,10 @@
 #' Two processes missing the same call at once both run `f`, and one result
 #' is kept. That is duplicated work, never a wrong result.
 #'
+#' If the stash cannot store a result because its write lock stayed busy, it is
+#' full or it is read-only, the result is returned anyway, with a warning of
+#' class `dastash_memoise_unstored`. A codec that cannot store it is an error.
+#'
 #' `stash_memoise_key()` returns the key a call would use, `stash_forget()`
 #' deletes one call's entry, and `stash_forget_all()` every entry of the
 #' function.
@@ -62,6 +66,7 @@
 stash_memoise <- function(f, stash, ..., expire = NULL, tags = NULL, codec = NULL,
                           key = NULL, omit = NULL, version = 1L, name = NULL) {
   rlang::check_dots_empty()
+  check_supplied(c("f", "stash"))
   call <- rlang::current_env()
   if (!is.function(f)) {
     abort_type_error("`f` must be a function.", call = call)
@@ -96,6 +101,8 @@ stash_memoise <- function(f, stash, ..., expire = NULL, tags = NULL, codec = NUL
   if (!is.null(codec) && !is_codec(codec)) {
     abort_codec_error("`codec` must be NULL or a codec.", call = call)
   }
+  # Every call reads what an earlier one stored with it, in any process.
+  codec_register(stash, codec)
 
   fmls <- formals(args(f))
   info <- list(
@@ -186,7 +193,15 @@ memo_call <- function(frame, mc, info) {
     return(hit)
   }
   result <- withVisible(do.call(info$f, args$call, quote = TRUE))
-  stash_set(info$stash, key, result$value, expire = info$expire, tags = info$tags, codec = info$codec)
+  # The result is computed, and a cache may forget (design.md §4): when the
+  # stash cannot take it for now, return it anyway. A codec that refuses it is
+  # a mistake in the setup, and stays an error.
+  tryCatch(
+    stash_set(info$stash, key, result$value, expire = info$expire, tags = info$tags, codec = info$codec),
+    dastash_busy = function(cnd) memo_unstored(info, cnd),
+    dastash_store_full = function(cnd) memo_unstored(info, cnd),
+    dastash_readonly = function(cnd) memo_unstored(info, cnd)
+  )
   if (result$visible) result$value else invisible(result$value)
 }
 
@@ -227,4 +242,11 @@ memo_collect <- function(frame, mc, info) {
 memo_key_text <- function(info, args, call) {
   body <- if (is.null(info$key)) key_canon(args, call = call) else key_canon(info$key(args), call = call)
   paste0(info$name, "/v", info$version, "/", body)
+}
+
+memo_unstored <- function(info, cnd) {
+  warn_unstored(
+    sprintf("The result of `%s()` was returned but not stored.", info$name),
+    parent = cnd
+  )
 }

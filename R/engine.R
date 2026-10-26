@@ -179,6 +179,11 @@ engine_read <- function(e, fn, call = rlang::caller_env()) {
 # backoff for up to `timeout` seconds, so a busy store is an error rather than
 # a hang. Actions deferred with engine_defer() run after the commit, and are
 # dropped if the transaction aborts.
+#
+# An error or an interrupt in `fn` aborts. Any other way out of `fn` commits:
+# stash_transact()'s block is a promise forced inside `fn`, so a return(),
+# break or next in it leaves `fn` without reaching the commit below, and that
+# is the block finishing, not failing.
 engine_write <- function(e, fn, timeout = 60, call = rlang::caller_env()) {
   engine_check_pid(e, call)
   if (e$readonly) {
@@ -194,24 +199,40 @@ engine_write <- function(e, fn, timeout = 60, call = rlang::caller_env()) {
   e$txn <- txn
   e$write <- TRUE
   e$after_commit <- list()
+  failed <- FALSE
+  committing <- FALSE
+  release <- function() {
+    e$txn <- NULL
+    e$write <- FALSE
+    e$after_commit <- list()
+    # libmdbx has already ended a transaction whose commit failed, and
+    # whatever aborting it again says must not replace the error that brought
+    # us here.
+    try(mdbx::mdbx_txn_abort(txn), silent = TRUE)
+  }
+  commit <- function() {
+    committing <<- TRUE
+    withCallingHandlers(
+      engine_try(mdbx::mdbx_txn_commit(txn), call),
+      error = function(cnd) release()
+    )
+    actions <- e$after_commit
+    e$txn <- NULL
+    e$write <- FALSE
+    e$after_commit <- list()
+    for (action in actions) action()
+  }
   on.exit({
-    if (!is.null(e$txn)) {
-      e$txn <- NULL
-      e$write <- FALSE
-      e$after_commit <- list()
-      # Reached by an error, in `fn` or in the commit. libmdbx has already
-      # ended a transaction whose commit failed, and whatever aborting it again
-      # says must not replace the error that brought us here.
-      try(mdbx::mdbx_txn_abort(txn), silent = TRUE)
+    if (!committing) {
+      if (failed) release() else commit()
     }
   })
-  result <- withVisible(fn(txn))
-  engine_try(mdbx::mdbx_txn_commit(txn), call)
-  actions <- e$after_commit
-  e$txn <- NULL
-  e$write <- FALSE
-  e$after_commit <- list()
-  for (action in actions) action()
+  result <- withVisible(withCallingHandlers(
+    fn(txn),
+    error = function(cnd) failed <<- TRUE,
+    interrupt = function(cnd) failed <<- TRUE
+  ))
+  commit()
   if (result$visible) result$value else invisible(result$value)
 }
 
@@ -260,13 +281,24 @@ engine_dead_writer_wedges <- function() {
   !Sys.info()[["sysname"]] %in% c("Linux", "Windows")
 }
 
-# Run `action()` once the current write transaction commits.
-engine_defer <- function(e, action) {
+# Run `action()` once the current write transaction commits. A `name` lets a
+# later caller in the same transaction find the action with engine_deferred()
+# and add to it instead of deferring another.
+engine_defer <- function(e, action, name = NULL) {
   if (is.null(e$txn) || !e$write) {
     abort_engine_error("Internal error: nothing to defer to outside a write transaction.", call = NULL)
   }
-  e$after_commit[[length(e$after_commit) + 1L]] <- action
+  if (is.null(name)) {
+    e$after_commit[[length(e$after_commit) + 1L]] <- action
+  } else {
+    e$after_commit[[name]] <- action
+  }
   invisible()
+}
+
+# The action deferred under `name` in the current write transaction, or NULL.
+engine_deferred <- function(e, name) {
+  e$after_commit[[name]]
 }
 
 # Records ----------------------------------------------------------------------

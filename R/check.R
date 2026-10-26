@@ -49,15 +49,16 @@ stash_check <- function(stash, ..., repair = FALSE, hash = FALSE) {
     return(rbind(findings, check_tmp(stash, repair = FALSE)))
   }
 
-  reap <- character()
   findings <- engine_write(e, function(txn) {
     snap <- check_snapshot(stash, txn)
     findings <- check_findings(stash, snap, corrupt)
-    reap <<- check_repair(stash, txn, snap, findings)
+    reap <- check_repair(stash, txn, snap, findings)
+    # Unlinked once the deletes are durable: after this commit, or inside
+    # stash_transact() after the outer one, never while they can still abort.
+    if (length(reap) > 0L) blob_defer_reap(stash, reap)
     findings
   }, timeout = stash$timeout)
   findings$repaired <- rep(TRUE, nrow(findings))
-  if (length(reap) > 0L) blob_reap(stash, reap)
   readers <- engine_reader_check(e)
   if (readers > 0) {
     findings <- rbind(findings, finding("reader_stale", detail = sprintf("%d reader slots of dead processes cleared", readers), repaired = TRUE))
@@ -213,14 +214,17 @@ check_repair <- function(s, txn, snap, findings) {
 
 # Staging files left by processes that are gone. A file whose process is known
 # to be dead is stale at once; where liveness cannot be asked (Windows), a file
-# is stale once it is an hour old.
+# is stale once it is an hour old. Its age is from the later of its
+# modification and change times: codec_file() copies a file's modification
+# time with it, so a file staged a moment ago can look a year old.
 check_tmp <- function(s, repair) {
   dir <- file.path(s$dir, "tmp")
   files <- list.files(dir, full.names = TRUE)
   out <- list()
   for (path in files) {
     pid <- suppressWarnings(as.integer(sub("-.*$", "", basename(path))))
-    age <- as.double(difftime(Sys.time(), file.mtime(path), units = "secs"))
+    info <- file.info(path)
+    age <- as.double(difftime(Sys.time(), max(info$mtime, info$ctime), units = "secs"))
     if (is.na(pid) || pid == Sys.getpid() || is.na(age)) next
     if (!pid_known_dead(pid) && (age < 3600 || pid_alive(pid))) next
     if (repair) blob_unlink(path)

@@ -70,6 +70,7 @@ stash_entries <- function(stash, ..., prefix = NULL, tag = NULL, n = Inf) {
 #' @inheritParams stash_get
 #' @export
 stash_info <- function(stash, key) {
+  check_supplied("key")
   check_open(stash)
   key <- store_key(key)
   record <- engine_read(stash$engine, function(txn) store_live_record(stash, txn, key))

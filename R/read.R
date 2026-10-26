@@ -36,6 +36,7 @@
 #' stash_mget(s, c("a", "b"), default = NULL)
 #' @export
 stash_get <- function(stash, key, default) {
+  check_supplied("key")
   check_open(stash)
   key <- store_key(key)
   hit <- engine_read(stash$engine, function(txn) store_read_entry(stash, txn, key))
@@ -58,8 +59,9 @@ stash_get <- function(stash, key, default) {
 #' @rdname stash_get
 #' @export
 stash_mget <- function(stash, keys, default) {
+  check_supplied("keys")
   check_open(stash)
-  infos <- lapply(as_key_list(keys), store_key)
+  infos <- store_keys(keys)
   hits <- engine_read(stash$engine, function(txn) {
     lapply(infos, function(key) store_read_entry(stash, txn, key))
   })
@@ -91,8 +93,9 @@ stash_mget <- function(stash, keys, default) {
 #' @rdname stash_get
 #' @export
 stash_has <- function(stash, keys) {
+  check_supplied("keys")
   check_open(stash)
-  infos <- lapply(as_key_list(keys), store_key)
+  infos <- store_keys(keys)
   engine_read(stash$engine, function(txn) {
     vapply(infos, function(key) !is.null(store_live_record(stash, txn, key)), logical(1))
   })
@@ -122,7 +125,8 @@ stash_has <- function(stash, keys) {
 #' @inheritParams stash_get
 #' @param ... Must be empty.
 #' @param prefix Only keys whose text begins with this string.
-#' @param start Begin at this key, inclusive.
+#' @param start Begin at this key, inclusive: a key's text as `stash_keys()`
+#'   returns it, or a key from [stash_key()].
 #' @param n The most keys to return.
 #'
 #' @return `stash_keys()` returns a character vector, `stash_count()` an integer,
@@ -141,7 +145,7 @@ stash_keys <- function(stash, ..., prefix = NULL, start = NULL, n = Inf) {
   check_open(stash)
   if (!is.null(prefix)) check_string_or_empty(prefix, "prefix")
   check_number(n, "n", rlang::current_env(), min = 0, whole = TRUE, allow_inf = TRUE)
-  from <- if (!is.null(start)) store_key(start)$stored
+  from <- if (!is.null(start)) key_start(start)
   e <- stash$engine
   now <- unclass(Sys.time())
   engine_read(e, function(txn) {
@@ -304,18 +308,27 @@ store_blob_ready <- function(s, hit, key, call) {
 }
 
 # `keys` as a list of keys: a character or other atomic vector is one key per
-# element; a single `dastash_key` is one key.
-as_key_list <- function(keys) {
-  if (is_dastash_key(keys)) {
+# element, and an unnamed list one key per element. A single `dastash_key`, a
+# named list, a data frame or a POSIXlt is one key, as it is to stash_get().
+as_key_list <- function(keys, call = rlang::caller_env()) {
+  if (is_dastash_key(keys) || is.data.frame(keys) || inherits(keys, "POSIXlt")) {
     return(list(keys))
   }
   if (is.atomic(keys)) {
     return(as.list(unname(keys)))
   }
   if (is.list(keys)) {
+    if (!is.null(names(keys)) && any(nzchar(names(keys)))) {
+      return(list(keys))
+    }
     return(unname(keys))
   }
-  abort_type_error("`keys` must be a character vector of keys or a list of keys.", call = rlang::caller_env(2))
+  abort_type_error("`keys` must be a character vector of keys or a list of keys.", call = call)
+}
+
+# Each of `keys` as store_key() gives it, with errors raised as `call`'s.
+store_keys <- function(keys, call = rlang::caller_env()) {
+  lapply(as_key_list(keys, call = call), store_key, call = call)
 }
 
 display_key <- function(text, max = 80L) {
@@ -354,6 +367,7 @@ check_string_or_empty <- function(x, arg, call = rlang::caller_env()) {
 #' identical(readRDS(path), stash_get(s, "numbers"))
 #' @export
 stash_path <- function(stash, key) {
+  check_supplied("key")
   check_open(stash)
   key <- store_key(key)
   record <- engine_read(stash$engine, function(txn) store_live_record(stash, txn, key))
@@ -378,4 +392,16 @@ stash_volume <- function(stash) {
   check_open(stash)
   counters <- engine_read(stash$engine, store_counters)
   as.double(engine_info(stash$engine)$file_size) + counters$bytes_blob
+}
+
+# Where a listing begins, as a stored key. `start` is a position in the
+# listing, so a string is a key's text, as stash_keys() returns it, and is not
+# encoded again: the text of a structured key such as `{n=i:2}` would
+# otherwise be escaped as a string and sort before every structured key.
+key_start <- function(start, call = rlang::caller_env()) {
+  if (is_dastash_key(start)) {
+    return(store_key(start, call = call)$stored)
+  }
+  check_string_or_empty(start, "start", call)
+  key_storage(utf8_text(start, call = call))$stored
 }

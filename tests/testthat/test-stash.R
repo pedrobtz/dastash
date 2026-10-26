@@ -334,3 +334,74 @@ test_that("another process reads what this one wrote", {
   expect_identical(got, list(n = 1:3))
   expect_identical(stash_get(s, "from-child"), "hello")
 })
+
+test_that("a named list, a data frame or a POSIXlt is one key to every verb", {
+  s <- local_stash()
+  keys <- list(list(n = 1), data.frame(x = 1:2), as.POSIXlt("2026-08-29 10:00:00", tz = "UTC"))
+  for (key in keys) {
+    stash_set(s, key, "one")
+    expect_true(stash_has(s, key))
+    expect_identical(unname(stash_mget(s, key)), list("one"))
+    stash_delete(s, key)
+    expect_false(stash_has(s, key))
+  }
+  stash_set(s, 1, "number")
+  expect_identical(stash_has(s, list(1, list(n = 1))), c(TRUE, FALSE))
+})
+
+test_that("start pages forward through structured keys", {
+  s <- local_stash()
+  for (i in 1:5) stash_set(s, list(n = i), i)
+  seen <- character()
+  page <- stash_keys(s, n = 2)
+  repeat {
+    seen <- c(seen, page)
+    if (length(page) < 2L || length(seen) > 10L) break
+    page <- stash_keys(s, start = page[[length(page)]], n = 3)[-1L]
+  }
+  expect_identical(seen, stash_keys(s))
+  expect_identical(stash_keys(s, start = stash_key(n = 4)), stash_keys(s)[4:5])
+})
+
+test_that("reopening a store creates only the indexes its stored settings use", {
+  dir <- withr::local_tempdir()
+  s0 <- stash(dir, eviction = "none")
+  stash_close(s0)
+  local_mocked_bindings(engine_begin_write = function(...) stop("took the write lock"))
+  s <- local_stash(dir)
+  expect_identical(s$config$eviction, "none")
+  dbs <- engine_read(s$engine, function(txn) mdbx::mdbx_dbi_list(txn))
+  expect_false("stored" %in% dbs)
+})
+
+test_that("a handle reads back what its own default codec wrote", {
+  s <- local_stash(codec = lines_codec())
+  stash_set(s, "a", c("x", "y"))
+  expect_identical(stash_get(s, "a"), c("x", "y"))
+  stash_set(s, "b", "z", codec = codec_rds())
+  stash_set(s, "c", c("p", "q"), codec = lines_codec())
+  expect_identical(stash_get(s, "c"), c("p", "q"))
+})
+
+test_that("a missing required argument is a dastash_type_error", {
+  s <- local_stash()
+  expect_error(stash_get(s), class = "dastash_type_error")
+  expect_error(stash_get(), class = "dastash_type_error")
+  expect_error(stash_set(s, "a"), class = "dastash_type_error")
+  expect_error(stash_touch(s, "a"), class = "dastash_type_error")
+  expect_error(stash_has(s), class = "dastash_type_error")
+  expect_error(stash_transact(s), class = "dastash_type_error")
+  expect_error(stash_count(), class = "dastash_type_error")
+  expect_error(stash(), class = "dastash_type_error")
+  expect_error(with_stash(withr::local_tempdir(), 1), class = "dastash_type_error")
+  expect_error(stash_memoise(identity), class = "dastash_type_error")
+})
+
+test_that("a key error names the verb that was called", {
+  s <- local_stash()
+  f <- function() stash_has(s, list(function() 1))
+  err <- tryCatch(f(), dastash_key_invalid = function(cnd) cnd)
+  expect_identical(err$call[[1L]], quote(stash_has))
+  err <- tryCatch(stash_delete(s, environment()), dastash_type_error = function(cnd) cnd)
+  expect_identical(err$call[[1L]], quote(stash_delete))
+})

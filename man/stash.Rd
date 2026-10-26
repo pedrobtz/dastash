@@ -83,7 +83,9 @@ write to finish before raising \code{dastash_busy}.}
 }
 \value{
 \code{stash()} and \code{local_stash()} return a \code{dastash_stash}.
-\code{with_stash()} returns what \code{fn} returns.
+\code{with_stash()} returns what \code{fn} returns. \code{stash_close()} returns the stash,
+invisibly; \code{stash_is_open()} \code{TRUE} or \code{FALSE}; and \code{stash_dir()} the
+stash's directory, normalised.
 }
 \description{
 \code{stash()} opens the cache in directory \code{dir}, creating it if needed, and
@@ -92,8 +94,13 @@ processes on the machine can open the same directory at once; they share it
 safely.
 
 \code{local_stash()} opens a stash that closes when the calling function returns,
-in a new temporary directory unless you give one, which is then deleted.
-\code{with_stash()} opens one, passes it to a function, and closes it afterwards.
+in a new temporary directory unless you give one, which is then deleted. At
+the top level there is no function to return from, so nothing closes it:
+call \code{stash_close()} yourself. \code{with_stash()} opens one, passes it to a
+function, and closes it afterwards.
+
+\code{stash_close()} closes a handle, \code{stash_is_open()} says whether it is open,
+and \code{stash_dir()} returns its directory.
 }
 \details{
 \code{size_limit}, \code{eviction}, \code{inline_max} and \code{codec} belong to the store and are

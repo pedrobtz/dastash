@@ -29,10 +29,21 @@ test_that("an expired entry is absent to every reader before anything deletes it
 
 test_that("an entry expires when its deadline passes", {
   s <- local_stash()
-  stash_set(s, "short", 1, expire = 0.3)
+  # Far enough away that no stall can pass it before the first read.
+  stash_set(s, "short", 1, expire = 600)
   expect_true(stash_has(s, "short"))
-  Sys.sleep(0.4)
+  stash_set(s, "short", 1, expire = Sys.time() - 1)
   expect_false(stash_has(s, "short"))
+})
+
+test_that("expire = -Inf is already expired, and reclaimed", {
+  s <- local_stash()
+  stash_set(s, "gone", 1, expire = -Inf)
+  expect_false(stash_has(s, "gone"))
+  expect_identical(expiry_rows(s), 1)
+  stash_expire(s)
+  expect_identical(stash_count(s), 0L)
+  expect_identical(nrow(stash_check(s)), 0L)
 })
 
 test_that("stash_expire() reclaims what is due and changes no answer", {
@@ -73,6 +84,10 @@ test_that("stash_keys() fills a page past expired entries", {
   expect_identical(stash_keys(s, start = "k11", n = 3), sprintf("k%02d", c(11, 13, 15)))
   expect_identical(stash_keys(s, start = "k12", n = 2), sprintf("k%02d", c(13, 15)))
   expect_identical(stash_keys(s, prefix = "k1"), sprintf("k%02d", c(11, 13, 15, 17, 19)))
+  # A prefix scan that refills its page skips the key it resumed from.
+  expect_identical(stash_keys(s, prefix = "k", n = 5), sprintf("k%02d", c(1, 3, 5, 7, 9)))
+  expect_identical(stash_keys(s, prefix = "k", start = "k06", n = 3), sprintf("k%02d", c(7, 9, 11)))
+  expect_identical(stash_entries(s, prefix = "k", n = 4)$key, sprintf("k%02d", c(1, 3, 5, 7)))
 })
 
 # Atomic verbs -----------------------------------------------------------------
@@ -102,9 +117,16 @@ test_that("stash_pop() returns and removes, atomically", {
 
 test_that("stash_touch() moves a deadline and ignores a missing key", {
   s <- local_stash()
-  stash_set(s, "k", "v", expire = 0.5)
+  stash_set(s, "k", "v", expire = Sys.time() + 3600)
+  stash_touch(s, "k", Sys.time() - 1)
+  expect_false(stash_has(s, "k"))
+  stash_set(s, "k", "v", expire = Sys.time() - 1)
   stash_touch(s, "k", 3600)
-  Sys.sleep(0.6)
+  # touch ignores an expired entry as it does a missing one.
+  expect_false(stash_has(s, "k"))
+  stash_set(s, "k", "v", expire = 600)
+  stash_touch(s, "k", 3600)
+  expect_true(stash_info(s, "k")$expires > Sys.time() + 3000)
   expect_identical(stash_get(s, "k"), "v")
   stash_touch(s, "k", Inf)
   expect_identical(expiry_rows(s), 0)
@@ -174,4 +196,27 @@ test_that("eight processes incrementing one key produce eight increments", {
     expect_identical(job$get_exit_status(), 0L)
   }
   expect_identical(stash_get(s, "shared"), 200)
+})
+
+test_that("stash_pop() keeps an entry no codec here can read", {
+  dir <- withr::local_tempdir()
+  writer <- stash(dir, codecs = lines_codec())
+  stash_set(writer, "job", c("a", "b"), codec = lines_codec())
+  stash_close(writer)
+  s <- local_stash(dir)
+  expect_error(stash_pop(s, "job"), class = "dastash_codec_error")
+  expect_true(stash_has(s, "job"))
+  expect_identical(store_violations(s), character())
+})
+
+test_that("stash_pop() reads a shared file it releases, and leaves nothing staged", {
+  s <- local_stash(inline_max = 100)
+  value <- runif(1000)
+  stash_set(s, "a", value)
+  stash_set(s, "b", value)
+  expect_identical(stash_pop(s, "a"), value)
+  expect_identical(stash_pop(s, "b"), value)
+  expect_length(list.files(file.path(s$dir, "tmp")), 0L)
+  expect_length(blob_files(s), 0L)
+  expect_identical(store_violations(s), character())
 })

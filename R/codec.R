@@ -241,16 +241,34 @@ file_ext <- function(path) {
   if (m < 0L) "" else substring(basename(path), m + 1L)
 }
 
-# The codec that decodes an entry, found by the name and version its record
-# carries: a built-in, or one the handle was given in `codecs`.
-codec_lookup <- function(name, version, codecs = list(), call = rlang::caller_env()) {
-  codec <- switch(name,
+# The codec a name stands for: a built-in, or one of the user codecs `codecs`;
+# NULL for a name neither knows.
+codec_known <- function(name, codecs = list()) {
+  switch(name,
+    auto = codec_auto(),
     rds = codec_rds(),
     raw = codec_raw(),
     file = codec_file(),
     counter = codec_counter(),
     codecs[[name]]
   )
+}
+
+# Make a user codec readable by the handle that writes with it, so a stash
+# always reads back what it wrote. A codec the handle already knows by that
+# name stays.
+codec_register <- function(s, codec) {
+  if (is.null(codec) || codec$name %in% reserved_codec_names || !is.null(s$codecs[[codec$name]])) {
+    return(invisible())
+  }
+  s$codecs[[codec$name]] <- codec
+  invisible()
+}
+
+# The codec that decodes an entry, found by the name and version its record
+# carries: a built-in, or one the handle knows.
+codec_lookup <- function(name, version, codecs = list(), call = rlang::caller_env()) {
+  codec <- codec_known(name, codecs)
   if (is.null(codec)) {
     abort_codec_error(
       c(
@@ -288,42 +306,42 @@ codec_registry <- function(codecs, call = rlang::caller_env()) {
   codecs
 }
 
+# The most bytes a codec's `meta` may take in its entry's record. Every scan of
+# the catalogue decodes it, so it is for a few fields, not a copy of the value.
+CODEC_META_MAX <- 4096L
+
 # Write `value` to `path` with `codec`, checking first that the codec can hold
 # it. Returns what the record keeps about the encoding.
 codec_encode <- function(codec, value, path, call = rlang::caller_env()) {
-  if (!isTRUE(codec$supports(value))) {
-    abort_type_error(
-      sprintf("The codec %s cannot store this value without loss.", encodeString(codec$name, quote = "\"")),
+  codec_check_supports(codec, value, call)
+  meta <- codec_guard(codec, "encode", call, codec$encode(value, path))
+  # Only a plain named list is meta. Anything else, such as the value itself,
+  # which writers like write.csv() return invisibly, is ignored.
+  if (!is.list(meta) || is.object(meta) || length(meta) == 0L || is.null(names(meta))) {
+    meta <- NULL
+  }
+  if (!is.null(meta) && length(record_encode(meta)) > CODEC_META_MAX) {
+    abort_codec_error(
+      sprintf(
+        "The codec %s returned more than %d bytes of meta from `encode()`.",
+        encodeString(codec$name, quote = "\""), CODEC_META_MAX
+      ),
       codec = codec$name, call = call
     )
   }
-  meta <- tryCatch(
-    codec$encode(value, path),
-    dastash_error = function(cnd) rlang::cnd_signal(cnd),
-    error = function(cnd) {
-      abort_codec_error(
-        sprintf("The codec %s failed to encode the value.", encodeString(codec$name, quote = "\"")),
-        codec = codec$name, parent = cnd, call = call
-      )
-    }
-  )
-  if (!is.list(meta) || length(meta) == 0L || is.null(names(meta))) {
-    meta <- NULL
+  ext <- meta$ext %||% codec$ext
+  # The extension becomes part of the stored file's name.
+  if (!is.null(ext) && (!is.character(ext) || length(ext) != 1L || !grepl("^[A-Za-z0-9]+$", ext))) {
+    abort_codec_error(
+      sprintf("The codec %s returned an `ext` that is not letters and digits.", encodeString(codec$name, quote = "\"")),
+      codec = codec$name, call = call
+    )
   }
-  list(codec = codec$name, version = codec$version, meta = meta, ext = meta$ext %||% codec$ext)
+  list(codec = codec$name, version = codec$version, meta = meta, ext = ext)
 }
 
 codec_decode <- function(codec, path, meta, call = rlang::caller_env()) {
-  tryCatch(
-    codec$decode(path, meta),
-    dastash_error = function(cnd) rlang::cnd_signal(cnd),
-    error = function(cnd) {
-      abort_codec_error(
-        sprintf("The codec %s failed to decode the stored value.", encodeString(codec$name, quote = "\"")),
-        codec = codec$name, path = path, parent = cnd, call = call
-      )
-    }
-  )
+  codec_guard(codec, "decode", call, codec$decode(path, meta), path = path)
 }
 
 
@@ -331,13 +349,8 @@ codec_decode <- function(codec, path, meta, call = rlang::caller_env()) {
 # staging file `stage()` names. Returns the bytes or the file, its size, and
 # what the record keeps about the encoding.
 codec_encode_value <- function(codec, value, stage, call = rlang::caller_env()) {
-  if (!isTRUE(codec$supports(value))) {
-    abort_type_error(
-      sprintf("The codec %s cannot store this value without loss.", encodeString(codec$name, quote = "\"")),
-      codec = codec$name, call = call
-    )
-  }
   if (!is.null(codec$encode_bytes) && !isTRUE(codec$always_file)) {
+    codec_check_supports(codec, value, call)
     out <- codec_guard(codec, "encode", call, codec$encode_bytes(value))
     return(list(
       bytes = out$bytes, path = NULL, size = length(out$bytes),
@@ -351,7 +364,14 @@ codec_encode_value <- function(codec, value, stage, call = rlang::caller_env()) 
   done <- FALSE
   on.exit(if (!done) unlink(path))
   info <- codec_encode(codec, value, path, call = call)
-  out <- c(list(bytes = NULL, path = path, size = file.size(path)), info)
+  size <- file.size(path)
+  if (is.na(size)) {
+    abort_codec_error(
+      sprintf("The codec %s wrote no file.", encodeString(codec$name, quote = "\"")),
+      codec = codec$name, call = call
+    )
+  }
+  out <- c(list(bytes = NULL, path = path, size = size), info)
   done <- TRUE
   out
 }
@@ -368,15 +388,28 @@ codec_decode_bytes <- function(codec, bytes, meta, stage, call = rlang::caller_e
   codec_decode(codec, path, meta, call = call)
 }
 
+codec_check_supports <- function(codec, value, call) {
+  if (!isTRUE(codec$supports(value))) {
+    abort_type_error(
+      sprintf("The codec %s cannot store this value without loss.", encodeString(codec$name, quote = "\"")),
+      codec = codec$name, call = call
+    )
+  }
+}
+
 # Evaluate a codec's own code, turning its failures into dastash_codec_error.
-codec_guard <- function(codec, what, call, expr) {
+# Fields in `...`, such as `path`, go on the condition.
+codec_guard <- function(codec, what, call, expr, ...) {
   tryCatch(
     expr,
     dastash_error = function(cnd) rlang::cnd_signal(cnd),
     error = function(cnd) {
       abort_codec_error(
-        sprintf("The codec %s failed to %s the value.", encodeString(codec$name, quote = "\""), what),
-        codec = codec$name, parent = cnd, call = call
+        sprintf(
+          "The codec %s failed to %s %s.",
+          encodeString(codec$name, quote = "\""), what, if (what == "decode") "the stored value" else "the value"
+        ),
+        codec = codec$name, ..., parent = cnd, call = call
       )
     }
   )

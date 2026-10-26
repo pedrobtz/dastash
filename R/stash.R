@@ -12,8 +12,13 @@ dastash_state$stage <- 0L
 #' safely.
 #'
 #' `local_stash()` opens a stash that closes when the calling function returns,
-#' in a new temporary directory unless you give one, which is then deleted.
-#' `with_stash()` opens one, passes it to a function, and closes it afterwards.
+#' in a new temporary directory unless you give one, which is then deleted. At
+#' the top level there is no function to return from, so nothing closes it:
+#' call `stash_close()` yourself. `with_stash()` opens one, passes it to a
+#' function, and closes it afterwards.
+#'
+#' `stash_close()` closes a handle, `stash_is_open()` says whether it is open,
+#' and `stash_dir()` returns its directory.
 #'
 #' @details
 #' `size_limit`, `eviction`, `inline_max` and `codec` belong to the store and are
@@ -64,7 +69,9 @@ dastash_state$stage <- 0L
 #' @param create Create the directory and the stash if they do not exist.
 #'
 #' @return `stash()` and `local_stash()` return a `dastash_stash`.
-#'   `with_stash()` returns what `fn` returns.
+#'   `with_stash()` returns what `fn` returns. `stash_close()` returns the stash,
+#'   invisibly; `stash_is_open()` `TRUE` or `FALSE`; and `stash_dir()` the
+#'   stash's directory, normalised.
 #'
 #' @examples
 #' dir <- tempfile("stash-")
@@ -96,6 +103,7 @@ stash <- function(dir,
                   readonly = FALSE,
                   create = TRUE) {
   rlang::check_dots_empty()
+  check_supplied("dir")
   explicit <- list(
     size_limit = !missing(size_limit), eviction = !missing(eviction),
     inline_max = !missing(inline_max), codec = !missing(codec)
@@ -156,23 +164,16 @@ stash <- function(dir,
     inline_max = as.double(inline_max),
     codec = codec$name
   )
-  engine_ensure_dbs(s$engine, store_databases(config), timeout = timeout, call = call)
+  # The stored configuration, not this call's defaults, says which indexes
+  # exist: reopening a store without repeating its settings creates nothing.
   s$config <- store_init(s, config, explicit, call)
-  s$codec <- if (explicit$codec) codec else codec_default(s$config$codec, codecs)
+  engine_ensure_dbs(s$engine, store_databases(s$config), timeout = timeout, call = call)
+  # A stored default that is a user codec this handle was not given is NULL:
+  # writing with it is then an error, reading is not.
+  s$codec <- if (explicit$codec) codec else codec_known(s$config$codec, codecs)
+  codec_register(s, s$codec)
   opened <- TRUE
   s
-}
-
-# The default codec a stored name stands for, or NULL for a user codec this
-# handle was not given: writing with it is then an error, reading is not.
-codec_default <- function(name, codecs) {
-  switch(name,
-    auto = codec_auto(),
-    rds = codec_rds(),
-    raw = codec_raw(),
-    file = codec_file(),
-    codecs[[name]]
-  )
 }
 
 #' @rdname stash
@@ -224,6 +225,10 @@ local_stash <- function(dir = NULL, ..., .local_envir = parent.frame()) {
 #' @param fn A function of one argument, the open stash.
 #' @export
 with_stash <- function(dir, fn, ...) {
+  check_supplied(c("dir", "fn"))
+  if (!is.function(fn)) {
+    abort_type_error("`fn` must be a function of one argument, the open stash.")
+  }
   s <- stash(dir, ...)
   on.exit(stash_close(s))
   fn(s)
@@ -235,11 +240,12 @@ format.dastash_stash <- function(x, ...) {
   if (x$closed) {
     return(c(header, "  closed"))
   }
-  n <- tryCatch(stash_count(x), error = function(cnd) NA)
+  # Printing must not fail, whatever stops the count.
+  n <- tryCatch(format(stash_count(x), big.mark = ","), error = function(cnd) "unavailable")
   c(
     header,
     paste0(
-      "  entries ", format(n, big.mark = ","),
+      "  entries ", n,
       " \u00b7 eviction ", x$config$eviction,
       " \u00b7 durability ", stash_durability(x),
       if (x$readonly) " \u00b7 read-only"
@@ -261,6 +267,9 @@ stash_durability <- function(s) {
 # Checks ---------------------------------------------------------------------
 
 check_stash <- function(x, call = rlang::caller_env()) {
+  if (missing(x)) {
+    abort_type_error("`stash` is required.", call = call)
+  }
   if (!inherits(x, "dastash_stash")) {
     abort_type_error("`stash` must be a stash opened with `stash()`.", call = call)
   }
@@ -277,6 +286,17 @@ check_writable <- function(s, call = rlang::caller_env()) {
   check_open(s, call)
   if (s$readonly) {
     abort_readonly("This stash was opened read-only.", dir = s$dir, call = call)
+  }
+}
+
+# Raise dastash_type_error for the first of the caller's arguments `args` it
+# was not given, rather than letting R's own "argument is missing" escape the
+# taxonomy when the argument is first used.
+check_supplied <- function(args, call = rlang::caller_env()) {
+  for (arg in args) {
+    if (eval(as.call(list(quote(missing), as.name(arg))), call)) {
+      abort_type_error(sprintf("`%s` is required.", arg), call = call)
+    }
   }
 }
 
