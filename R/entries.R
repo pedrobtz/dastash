@@ -17,9 +17,9 @@
 #'   `key`, `bytes`, `codec`, `inline`, `blob`, `tags` (a list of character
 #'   vectors), `shape`, `stored`, `accessed`, `hits` and `expires` (`NA` for
 #'   never). In this release `accessed` is always `stored` and `hits` always 0:
-#'   reads are not yet recorded. `stash_stats()` returns a one-row data frame with `count`,
-#'   `bytes_inline`, `bytes_blob`, `volume`, `size_limit`, `evictions`,
-#'   `expired`, `eviction`, `durability`, `format_version` and
+#'   reads are not yet recorded. `stash_stats()` returns a one-row data frame
+#'   with `count`, `bytes_inline`, `bytes_blob`, `volume`, `size_limit`,
+#'   `evictions`, `expired`, `eviction`, `durability`, `format_version` and
 #'   `key_encoding_version`.
 #'
 #' @examples
@@ -35,8 +35,8 @@ stash_entries <- function(stash, ..., prefix = NULL, tag = NULL, n = Inf) {
   rlang::check_dots_empty()
   check_open(stash)
   if (!is.null(prefix)) check_string_or_empty(prefix, "prefix")
-  if (!is.null(tag)) check_string(tag, "tag", rlang::current_env())
-  check_number(n, "n", rlang::current_env(), min = 0, whole = TRUE, allow_inf = TRUE)
+  if (!is.null(tag)) check_string(tag, "tag")
+  check_number(n, "n", min = 0, whole = TRUE, allow_inf = TRUE)
   e <- stash$engine
   now <- unclass(Sys.time())
   found <- engine_read(e, function(txn) {

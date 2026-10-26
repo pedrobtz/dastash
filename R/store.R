@@ -75,11 +75,11 @@ store_init <- function(s, config, explicit, call) {
 }
 
 store_check <- function(found, config, explicit, dir, call) {
-  format <- record_decode(found$format)
+  fmt <- record_decode(found$format)
   newer <- c(
-    format = format$format_version > FORMAT_VERSION,
-    `key encoding` = format$key_encoding_version > KEY_ENCODING_VERSION,
-    `index encoding` = format$index_encoding_version > INDEX_ENCODING_VERSION
+    format = fmt$format_version > FORMAT_VERSION,
+    `key encoding` = fmt$key_encoding_version > KEY_ENCODING_VERSION,
+    `index encoding` = fmt$index_encoding_version > INDEX_ENCODING_VERSION
   )
   if (any(newer)) {
     abort_version_unsupported(
@@ -213,9 +213,7 @@ tag_key <- function(tag, stored) {
 
 tag_key_stored <- function(bytes) {
   nul <- which(bytes == as.raw(0L))[[1L]]
-  stored <- rawToChar(bytes[-seq_len(nul)])
-  Encoding(stored) <- "UTF-8"
-  stored
+  utf8_from_raw(bytes[-seq_len(nul)])
 }
 
 # An ordered index key: eight bytes of order, then the stored key, so rows are
@@ -225,9 +223,7 @@ index_key <- function(value, stored) {
 }
 
 index_key_parts <- function(bytes) {
-  stored <- rawToChar(bytes[-(1:8)])
-  Encoding(stored) <- "UTF-8"
-  list(value = dec_f64(bytes[1:8]), stored = stored)
+  list(value = dec_f64(bytes[1:8]), stored = utf8_from_raw(bytes[-(1:8)]))
 }
 
 # Remove one entry in the open transaction. Returns whether it existed.
@@ -253,26 +249,7 @@ store_record_matches <- function(record, key) {
   !isTRUE(key$digested) || is.null(record$key_text) || identical(record$key_text, key$text)
 }
 
-# Prefix scans --------------------------------------------------------------
-
-# Whether a record belongs to a digested key: one longer than KEY_MAX, stored
-# under `#` and the SHA-256 of its text (design.md §5.3).
-record_digested <- function(record) {
-  !is.null(record$key_bytes)
-}
-
-# Whether a digested key's text begins with `prefix`, judged by the text its
-# record kept, or by its preview when the prefix fits inside the preview. A
-# key too long to keep, with a prefix longer than its preview, cannot be told
-# and does not match.
-record_key_starts_with <- function(record, prefix) {
-  if (!is.null(record$key_text)) {
-    return(startsWith(record$key_text, prefix))
-  }
-  preview <- record$key_preview
-  !is.null(preview) && nchar(prefix, type = "bytes") <= nchar(preview, type = "bytes") &&
-    startsWith(preview, prefix)
-}
+# Prefix scans -----------------------------------------------------------------
 
 # Whether each stored key in `x` sorts at or after `start`, in byte order.
 stored_at_or_after <- function(x, start) {
@@ -295,28 +272,13 @@ store_scan_prefix <- function(s, txn, prefix, start = NULL, n = Inf, now = NULL)
     ok
   }
 
-  # Plain keys: the prefix's range, a chunk at a time until `n` are found.
+  # Plain keys: the prefix's range, until `n` are found.
   from <- if (!is.null(start) && stored_at_or_after(start, prefix)) start else prefix
-  stored <- character()
-  records <- list()
-  first <- TRUE
-  repeat {
-    remaining <- n - length(stored)
-    ask <- if (is.finite(remaining)) remaining + !first else Inf
-    got <- engine_scan(txn, meta, prefix = prefix, start = from, n = ask, as = "character", values = TRUE)
-    keys <- got$keys
-    recs <- lapply(got$values, record_decode)
-    if (!first && length(keys) > 0L) {
-      keys <- keys[-1L]
-      recs <- recs[-1L]
-    }
-    ok <- keep(keys, recs) & !vapply(recs, record_digested, logical(1))
-    stored <- c(stored, keys[ok])
-    records <- c(records, recs[ok])
-    if (!is.finite(ask) || length(got$keys) < ask || length(stored) >= n) break
-    from <- got$keys[[length(got$keys)]]
-    first <- FALSE
-  }
+  plain <- store_scan_pages(s, txn, function(k, r) keep(k, r) & !vapply(r, record_digested, logical(1)),
+    start = from, prefix = prefix, n = n
+  )
+  stored <- plain$stored
+  records <- plain$records
 
   # Digested keys: every one, judged by its text.
   got <- engine_scan(txn, meta, prefix = "#", as = "character", values = TRUE)
@@ -329,4 +291,35 @@ store_scan_prefix <- function(s, txn, prefix, start = NULL, n = Inf, now = NULL)
   o <- order(stored, method = "radix")
   o <- o[seq_len(min(length(o), n))]
   list(stored = stored[o], records = records[o])
+}
+
+# The meta records from `start` (inclusive) in stored-key order, within
+# `prefix`, that `keep(stored, records)` selects, a page at a time until `n`
+# are found: what is skipped, such as expired entries, can take more than one
+# page to fill. A page after the first begins at the key the last one ended
+# on, which mdbx returns again and is dropped. Returns `stored` and `records`;
+# there can be more than `n`.
+store_scan_pages <- function(s, txn, keep, start = NULL, prefix = NULL, n = Inf) {
+  meta <- engine_db(s$engine, "meta")
+  stored <- character()
+  records <- list()
+  first <- TRUE
+  repeat {
+    remaining <- n - length(stored)
+    ask <- if (is.finite(remaining)) remaining + !first else Inf
+    got <- engine_scan(txn, meta, prefix = prefix, start = start, n = ask, as = "character", values = TRUE)
+    keys <- got$keys
+    recs <- lapply(got$values, record_decode)
+    if (!first && length(keys) > 0L) {
+      keys <- keys[-1L]
+      recs <- recs[-1L]
+    }
+    ok <- keep(keys, recs)
+    stored <- c(stored, keys[ok])
+    records <- c(records, recs[ok])
+    if (!is.finite(ask) || length(got$keys) < ask || length(stored) >= n) break
+    start <- got$keys[[length(got$keys)]]
+    first <- FALSE
+  }
+  list(stored = stored, records = records)
 }

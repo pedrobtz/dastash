@@ -4,6 +4,7 @@
 
 #' Reclaim expired entries
 #'
+#' @description
 #' An expired entry is already absent to every read; `stash_expire()` removes it
 #' and frees its space. It walks entries from the earliest deadline, in
 #' transactions of at most `cull_limit` entries (see [stash()]), so it never
@@ -26,7 +27,7 @@
 stash_expire <- function(stash, ..., n = Inf) {
   rlang::check_dots_empty()
   check_writable(stash)
-  check_number(n, "n", rlang::current_env(), min = 0, whole = TRUE, allow_inf = TRUE)
+  check_number(n, "n", min = 0, whole = TRUE, allow_inf = TRUE)
   removed <- 0
   while (removed < n) {
     batch <- min(stash$cull_limit, n - removed)
@@ -118,7 +119,7 @@ stash_evict <- function(stash, ..., tag = NULL, prefix = NULL) {
     abort_type_error("Give exactly one of `tag` and `prefix`.")
   }
   if (!is.null(tag)) {
-    check_string(tag, "tag", rlang::current_env())
+    check_string(tag, "tag")
     tag <- utf8_text(tag)
   } else {
     check_string_or_empty(prefix, "prefix")
@@ -152,13 +153,13 @@ stash_clear <- function(stash) {
   check_writable(stash)
   e <- stash$engine
   engine_write(e, function(txn) {
-    names <- engine_scan(txn, engine_db(e, "blobs"), as = "character")
+    blob_names <- engine_scan(txn, engine_db(e, "blobs"), as = "character")
     for (db in store_databases(stash$config)) engine_clear_db(txn, engine_db(e, db))
     counters <- store_counters(txn)
     counters$bytes_inline <- 0
     counters$bytes_blob <- 0
     engine_put(txn, NULL, "counters", record_encode(counters))
-    if (length(names) > 0L) blob_defer_reap(stash, names)
+    if (length(blob_names) > 0L) blob_defer_reap(stash, blob_names)
   }, timeout = stash$timeout)
   invisible(stash)
 }

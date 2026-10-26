@@ -112,12 +112,12 @@ engine_check_pid <- function(e, call = rlang::caller_env()) {
   }
 }
 
-# Make sure every named database in `names` is usable. The ones that exist are
+# Make sure every named database in `db_names` is usable. The ones that exist are
 # looked up in a read transaction, so opening a store never waits for the
 # write lock; a read-write handle then creates the missing ones in one write
 # transaction, and a read-only one treats them as empty.
-engine_ensure_dbs <- function(e, names, timeout = 60, call = rlang::caller_env()) {
-  wanted <- setdiff(names, names(e$dbs))
+engine_ensure_dbs <- function(e, db_names, timeout = 60, call = rlang::caller_env()) {
+  wanted <- setdiff(db_names, names(e$dbs))
   if (length(wanted) == 0L) {
     return(invisible(e))
   }

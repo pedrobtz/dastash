@@ -29,8 +29,8 @@
 #' deletes one call's entry, and `stash_forget_all()` every entry of the
 #' function.
 #'
+#' @inheritParams stash_get
 #' @param f A function.
-#' @param stash A stash, from [stash()].
 #' @param ... For `stash_memoise()`, must be empty. For the others, the
 #'   arguments of a call to the memoised function.
 #' @param expire,tags,codec Passed to [stash_set()] when a result is stored.
@@ -59,8 +59,12 @@
 #' stash_forget(fast_square, 4)
 #'
 #' # Keep an argument out of the key.
-#' fit <- stash_memoise(function(data_id, verbose = FALSE) data_id * 2, s,
-#'   name = "fit", omit = "verbose")
+#' fit <- stash_memoise(
+#'   function(data_id, verbose = FALSE) data_id * 2,
+#'   s,
+#'   name = "fit",
+#'   omit = "verbose"
+#' )
 #' identical(stash_memoise_key(fit, 1), stash_memoise_key(fit, 1, verbose = TRUE))
 #' @export
 stash_memoise <- function(f, stash, ..., expire = NULL, tags = NULL, codec = NULL,
@@ -85,11 +89,11 @@ stash_memoise <- function(f, stash, ..., expire = NULL, tags = NULL, codec = NUL
       call = call
     )
   }
-  check_string(name, "name", call)
+  check_string(name, "name")
   if (grepl("/", name, fixed = TRUE) || starts_with_opener(name)) {
     abort_key_invalid("`name` cannot contain `/` or start like an encoded key.", call = call)
   }
-  check_number(version, "version", call, min = 0, whole = TRUE)
+  check_number(version, "version", min = 0, whole = TRUE)
   if (!is.null(key) && !is.function(key)) {
     abort_type_error("`key` must be NULL or a function of the matched arguments.", call = call)
   }

@@ -26,10 +26,6 @@ blob_path <- function(s, name) {
   file.path(s$dir, "blobs", substr(name, 1L, 2L), name)
 }
 
-record_blob_name <- function(record) {
-  blob_name(record$blob, record$ext)
-}
-
 # Write an encoded value to a staging file in <root>/tmp and hash it, outside
 # any transaction. Returns what the transaction needs to publish it.
 blob_stage <- function(s, enc) {
@@ -117,7 +113,7 @@ store_unref_blob <- function(s, txn, name) {
 # In the open transaction: have the files `names` reaped once it commits. Every
 # file a transaction releases goes in one reap, so evicting a thousand blobs
 # takes one follow-up transaction, not a thousand.
-blob_defer_reap <- function(s, names) {
+blob_defer_reap <- function(s, blob_names) {
   e <- s$engine
   reap <- engine_deferred(e, "blob_reap")
   if (is.null(reap)) {
@@ -127,7 +123,7 @@ blob_defer_reap <- function(s, names) {
     engine_defer(e, reap, name = "blob_reap")
   }
   pending <- environment(reap)$pending
-  pending$names <- union(pending$names, names)
+  pending$names <- union(pending$names, blob_names)
   invisible()
 }
 
@@ -139,13 +135,13 @@ BLOB_REAP_TIMEOUT <- 5
 # After a commit: unlink the files of blobs that are still unreferenced, under
 # the write lock. If the lock is busy the files stay, as orphans for
 # stash_check() to find; that is never unsafe.
-blob_reap <- function(s, names) {
+blob_reap <- function(s, blob_names) {
   crash_point("unlink")
   e <- s$engine
   tryCatch(
     engine_write(e, function(txn) {
       db <- engine_db(e, "blobs")
-      for (name in names) {
+      for (name in blob_names) {
         if (is.null(engine_get(txn, db, name))) blob_unlink(blob_path(s, name))
       }
     }, timeout = min(s$timeout, BLOB_REAP_TIMEOUT)),

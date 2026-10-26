@@ -92,7 +92,11 @@ stash_memoise_key(fast_square, 4)
 stash_forget(fast_square, 4)
 
 # Keep an argument out of the key.
-fit <- stash_memoise(function(data_id, verbose = FALSE) data_id * 2, s,
-  name = "fit", omit = "verbose")
+fit <- stash_memoise(
+  function(data_id, verbose = FALSE) data_id * 2,
+  s,
+  name = "fit",
+  omit = "verbose"
+)
 identical(stash_memoise_key(fit, 1), stash_memoise_key(fit, 1, verbose = TRUE))
 }

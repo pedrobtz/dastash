@@ -151,15 +151,7 @@ codec_raw <- function() {
       writeBin(charToRaw(enc2utf8(value)), path)
       list(text = TRUE)
     },
-    decode = function(path, meta) {
-      bytes <- readBin(path, "raw", n = file.size(path))
-      if (!isTRUE(meta$text)) {
-        return(bytes)
-      }
-      text <- rawToChar(bytes)
-      Encoding(text) <- "UTF-8"
-      text
-    },
+    decode = function(path, meta) raw_decode(readBin(path, "raw", n = file.size(path)), meta),
     supports = function(value) is_bare_raw(value) || is_bare_string(value),
     encode_bytes = function(value) {
       if (is.raw(value)) {
@@ -167,15 +159,13 @@ codec_raw <- function() {
       }
       list(bytes = charToRaw(enc2utf8(value)), meta = list(text = TRUE))
     },
-    decode_bytes = function(bytes, meta) {
-      if (!isTRUE(meta$text)) {
-        return(bytes)
-      }
-      text <- rawToChar(bytes)
-      Encoding(text) <- "UTF-8"
-      text
-    }
+    decode_bytes = raw_decode
   )
+}
+
+# codec_raw()'s bytes back as they were written: raw, or a UTF-8 string.
+raw_decode <- function(bytes, meta) {
+  if (isTRUE(meta$text)) utf8_from_raw(bytes) else bytes
 }
 
 #' @rdname codec
@@ -298,7 +288,7 @@ codec_registry <- function(codecs, call = rlang::caller_env()) {
   if (!is.list(codecs) || !all(vapply(codecs, is_codec, logical(1)))) {
     abort_codec_error("`codecs` must be a list of codecs made with `codec()`.", call = call)
   }
-  nms <- vapply(codecs, function(c) c$name, character(1))
+  nms <- vapply(codecs, function(x) x$name, character(1))
   if (any(nms %in% reserved_codec_names) || anyDuplicated(nms)) {
     abort_codec_error("`codecs` must hold user codecs with distinct, non-reserved names.", call = call)
   }

@@ -2,10 +2,11 @@
 
 #' Use a stash through the cachem interface
 #'
-#' Returns an object with the methods of a 'cachem' cache — `get()`, `set()`,
+#' @description
+#' Returns an object with the methods of a cachem cache — `get()`, `set()`,
 #' `exists()`, `remove()`, `reset()`, `keys()`, `prune()`, `size()` and
-#' `info()` — so code written for 'cachem', such as `memoise::memoise()` and
-#' Shiny's `bindCache()`, can store in a stash. Keys follow 'cachem''s rule,
+#' `info()` — so code written for cachem, such as `memoise::memoise()` and
+#' Shiny's `bindCache()`, can store in a stash. Keys follow cachem's rule,
 #' lower-case letters, digits, `_` and `-`, and are stored under `prefix`.
 #'
 #' @inheritParams stash_get
@@ -29,7 +30,7 @@
 as_cachem <- function(stash, ..., prefix = "cachem/", expire = NULL, codec = NULL) {
   rlang::check_dots_empty()
   check_open(stash)
-  check_string(prefix, "prefix", rlang::current_env())
+  check_string(prefix, "prefix")
   if (starts_with_opener(prefix)) {
     abort_key_invalid("`prefix` cannot start like an encoded key.")
   }
@@ -86,6 +87,7 @@ print.dastash_cachem <- function(x, ...) {
 
 #' Base generics for a stash
 #'
+#' @description
 #' `length(s)` is [stash_count()]; `s[[key]]` is [stash_get()], an error on a
 #' miss; `s[[key]] <- value` is [stash_set()]; `as.list(s)` reads every value,
 #' warning above 1000 entries and refusing above 100,000. `names()`, `[` and

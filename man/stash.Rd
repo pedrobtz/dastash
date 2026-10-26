@@ -75,7 +75,7 @@ write to finish before raising \code{dastash_busy}.}
 
 \item{create}{Create the directory and the stash if they do not exist.}
 
-\item{stash}{A stash, from \code{stash()}.}
+\item{stash}{A stash, from \code{\link[=stash]{stash()}}.}
 
 \item{.local_envir}{The environment whose exit closes the stash.}
 

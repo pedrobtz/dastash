@@ -109,8 +109,8 @@ stash <- function(dir,
     inline_max = !missing(inline_max), codec = !missing(codec)
   )
   call <- rlang::current_env()
-  check_string(dir, "dir", call)
-  check_number(size_limit, "size_limit", call, min = 0, allow_inf = TRUE)
+  check_string(dir, "dir")
+  check_number(size_limit, "size_limit", min = 0, allow_inf = TRUE)
   eviction <- rlang::arg_match(eviction)
   if (eviction %in% c("least-recently-used", "least-frequently-used")) {
     abort_unsupported(
@@ -118,17 +118,17 @@ stash <- function(dir,
       call = call
     )
   }
-  check_number(inline_max, "inline_max", call, min = 0, whole = TRUE)
+  check_number(inline_max, "inline_max", min = 0, whole = TRUE)
   if (!is_codec(codec)) {
     abort_codec_error("`codec` must be a codec, such as `codec_auto()` or one made with `codec()`.", call = call)
   }
   codecs <- codec_registry(codecs, call = call)
   durability <- rlang::arg_match(durability)
-  check_number(map_size, "map_size", call, min = 1)
-  check_number(cull_limit, "cull_limit", call, min = 1, whole = TRUE)
-  check_number(timeout, "timeout", call, min = 0)
-  check_flag(readonly, "readonly", call)
-  check_flag(create, "create", call)
+  check_number(map_size, "map_size", min = 1)
+  check_number(cull_limit, "cull_limit", min = 1, whole = TRUE)
+  check_number(timeout, "timeout", min = 0)
+  check_flag(readonly, "readonly")
+  check_flag(create, "create")
 
   dir <- path.expand(dir)
   path <- file.path(dir, "cache.mdbx")
@@ -177,7 +177,7 @@ stash <- function(dir,
 }
 
 #' @rdname stash
-#' @param stash A stash, from `stash()`.
+#' @inheritParams stash_get
 #' @export
 stash_close <- function(stash) {
   check_stash(stash)
@@ -261,10 +261,16 @@ print.dastash_stash <- function(x, ...) {
 
 stash_durability <- function(s) {
   flags <- engine_flags(s$engine)
-  if ("UTTERLY_NOSYNC" %in% flags) "unsafe" else if ("SAFE_NOSYNC" %in% flags) "fast" else "safe"
+  if ("UTTERLY_NOSYNC" %in% flags) {
+    "unsafe"
+  } else if ("SAFE_NOSYNC" %in% flags) {
+    "fast"
+  } else {
+    "safe"
+  }
 }
 
-# Checks ---------------------------------------------------------------------
+# Checks -----------------------------------------------------------------------
 
 check_stash <- function(x, call = rlang::caller_env()) {
   if (missing(x)) {
@@ -300,19 +306,26 @@ check_supplied <- function(args, call = rlang::caller_env()) {
   }
 }
 
-check_string <- function(x, arg, call) {
+check_string <- function(x, arg, call = rlang::caller_env()) {
   if (!is.character(x) || length(x) != 1L || is.na(x) || !nzchar(x)) {
     abort_type_error(sprintf("`%s` must be a single non-empty string.", arg), call = call)
   }
 }
 
-check_flag <- function(x, arg, call) {
+check_flag <- function(x, arg, call = rlang::caller_env()) {
   if (!isTRUE(x) && !isFALSE(x)) {
     abort_type_error(sprintf("`%s` must be TRUE or FALSE.", arg), call = call)
   }
 }
 
-check_number <- function(x, arg, call, min = -Inf, whole = FALSE, allow_inf = FALSE) {
+check_string_or_empty <- function(x, arg, call = rlang::caller_env()) {
+  if (!is.character(x) || length(x) != 1L || is.na(x)) {
+    abort_type_error(sprintf("`%s` must be a single string.", arg), call = call)
+  }
+}
+
+check_number <- function(x, arg, call = rlang::caller_env(), min = -Inf, whole = FALSE,
+                         allow_inf = FALSE) {
   ok <- is.numeric(x) && length(x) == 1L && !is.na(x) && x >= min &&
     (allow_inf || is.finite(x)) && (!whole || !is.finite(x) || x == trunc(x))
   if (!ok) {

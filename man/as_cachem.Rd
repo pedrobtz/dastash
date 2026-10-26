@@ -19,10 +19,10 @@ as_cachem(stash, ..., prefix = "cachem/", expire = NULL, codec = NULL)
 A list of functions with class \code{c("dastash_cachem", "cachem")}.
 }
 \description{
-Returns an object with the methods of a 'cachem' cache — \code{get()}, \code{set()},
+Returns an object with the methods of a cachem cache — \code{get()}, \code{set()},
 \code{exists()}, \code{remove()}, \code{reset()}, \code{keys()}, \code{prune()}, \code{size()} and
-\code{info()} — so code written for 'cachem', such as \code{memoise::memoise()} and
-Shiny's \code{bindCache()}, can store in a stash. Keys follow 'cachem''s rule,
+\code{info()} — so code written for cachem, such as \code{memoise::memoise()} and
+Shiny's \code{bindCache()}, can store in a stash. Keys follow cachem's rule,
 lower-case letters, digits, \verb{_} and \code{-}, and are stored under \code{prefix}.
 }
 \examples{

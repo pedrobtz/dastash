@@ -54,12 +54,12 @@ stash_mset <- function(stash, values, ..., expire = NULL, tags = NULL, codec = N
   check_supplied("values")
   rlang::check_dots_empty()
   check_writable(stash)
-  nms <- names(values)
-  if (!is.list(values) || (length(values) > 0L && (is.null(nms) || anyNA(nms) || !all(nzchar(nms))))) {
+  if (!is_named_list(values)) {
     abort_type_error("`values` must be a named list: each name a key, each element its value.")
   }
   entries <- list()
   on.exit(unstage(entries))
+  nms <- names(values)
   for (i in seq_along(values)) {
     entries[[i]] <- stash_prepare(stash, nms[[i]], values[[i]], expire, tags, codec)
   }
@@ -85,6 +85,12 @@ stash_delete <- function(stash, keys) {
     for (key in infos) store_delete_entry(stash, txn, key$stored)
   }, timeout = stash$timeout)
   invisible(stash)
+}
+
+# A list whose every element has a name; an empty list is one.
+is_named_list <- function(x) {
+  nms <- names(x)
+  is.list(x) && (length(x) == 0L || (!is.null(nms) && !anyNA(nms) && all(nzchar(nms))))
 }
 
 # Encode one value for writing, outside any transaction: the key, the codec

@@ -305,7 +305,7 @@ na_or <- function(x, f) {
 # A double vector is tagged `i` when every element is a whole number within
 # ±2^53 (or NA), so `1L` and `1` agree; otherwise `f`.
 number_tag <- function(x) {
-  if (all(is.na(x) & !is.nan(x) | is_whole(x))) "i" else "f"
+  if (all((is.na(x) & !is.nan(x)) | is_whole(x))) "i" else "f"
 }
 
 is_whole <- function(x) {
@@ -448,7 +448,12 @@ utf8_prefix <- function(text, max_bytes) {
   while (end > 0L && bitwAnd(as.integer(bytes[[end + 1L]]), 0xC0L) == 0x80L) {
     end <- end - 1L
   }
-  out <- rawToChar(bytes[seq_len(end)])
-  Encoding(out) <- "UTF-8"
-  out
+  utf8_from_raw(bytes[seq_len(end)])
+}
+
+# Bytes known to be UTF-8, as a string marked so.
+utf8_from_raw <- function(bytes) {
+  text <- rawToChar(bytes)
+  Encoding(text) <- "UTF-8"
+  text
 }

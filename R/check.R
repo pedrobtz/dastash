@@ -33,8 +33,8 @@
 #' @export
 stash_check <- function(stash, ..., repair = FALSE, hash = FALSE) {
   rlang::check_dots_empty()
-  check_flag(repair, "repair", rlang::current_env())
-  check_flag(hash, "hash", rlang::current_env())
+  check_flag(repair, "repair")
+  check_flag(hash, "hash")
   if (repair) check_writable(stash) else check_open(stash)
   e <- stash$engine
 
@@ -93,11 +93,11 @@ check_snapshot <- function(s, txn) {
 
 # Names of blobs whose bytes do not hash to their name.
 check_hashes <- function(s, snap) {
-  names <- intersect(names(snap$blobs), snap$files)
-  bad <- vapply(names, function(name) {
+  stored <- intersect(names(snap$blobs), snap$files)
+  bad <- vapply(stored, function(name) {
     !identical(hash_file(blob_path(s, name)), sub("\\..*$", "", name))
   }, logical(1))
-  names[bad]
+  stored[bad]
 }
 
 check_findings <- function(s, snap, corrupt = character()) {
@@ -200,8 +200,7 @@ check_repair <- function(s, txn, snap, findings) {
   bytes_blob <- 0
   for (name in names(refs)) {
     path <- blob_path(s, name)
-    row <- list(refs = refs[[name]], bytes = 0, ext = exts[[name]])
-    row$bytes <- as.double(file.size(path))
+    row <- list(refs = refs[[name]], bytes = as.double(file.size(path)), ext = exts[[name]])
     engine_put(txn, db, name, record_encode(row))
     bytes_blob <- bytes_blob + row$bytes
   }

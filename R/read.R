@@ -144,7 +144,7 @@ stash_keys <- function(stash, ..., prefix = NULL, start = NULL, n = Inf) {
   rlang::check_dots_empty()
   check_open(stash)
   if (!is.null(prefix)) check_string_or_empty(prefix, "prefix")
-  check_number(n, "n", rlang::current_env(), min = 0, whole = TRUE, allow_inf = TRUE)
+  check_number(n, "n", min = 0, whole = TRUE, allow_inf = TRUE)
   from <- if (!is.null(start)) key_start(start)
   e <- stash$engine
   now <- unclass(Sys.time())
@@ -153,26 +153,10 @@ stash_keys <- function(stash, ..., prefix = NULL, start = NULL, n = Inf) {
       got <- store_scan_prefix(stash, txn, prefix, start = from, n = n, now = now)
       return(store_shown_keys(got$stored, got$records))
     }
-    out <- character()
-    first <- TRUE
-    # Expired entries are skipped, so filling a page of `n` can take more than
-    # one scan. The records come with the keys, so skipping costs no lookup.
-    repeat {
-      remaining <- n - length(out)
-      ask <- if (is.finite(remaining)) remaining + !first else Inf
-      got <- engine_scan(txn, engine_db(e, "meta"), start = from, n = ask, as = "character", values = TRUE)
-      keys <- got$keys
-      records <- lapply(got$values, record_decode)
-      if (!first && length(keys) > 0L) {
-        keys <- keys[-1L]
-        records <- records[-1L]
-      }
-      live <- vapply(records, is_live, logical(1), now = now)
-      out <- c(out, store_shown_keys(keys, records)[live])
-      if (!is.finite(ask) || length(got$keys) < ask || length(out) >= n) break
-      from <- got$keys[[length(got$keys)]]
-      first <- FALSE
-    }
+    # Expired entries are skipped; the records come with the keys, so
+    # skipping costs no lookup.
+    got <- store_scan_pages(stash, txn, function(k, r) vapply(r, is_live, logical(1), now = now), start = from, n = n)
+    out <- store_shown_keys(got$stored, got$records)
     out[seq_len(min(length(out), n))]
   })
 }
@@ -185,7 +169,59 @@ stash_count <- function(stash) {
   as.integer(engine_read(e, function(txn) engine_count(txn, engine_db(e, "meta"))))
 }
 
-# Helpers --------------------------------------------------------------------
+#' @rdname stash_keys
+#' @export
+stash_volume <- function(stash) {
+  check_open(stash)
+  counters <- engine_read(stash$engine, store_counters)
+  as.double(engine_info(stash$engine)$file_size) + counters$bytes_blob
+}
+
+#' The file behind an entry
+#'
+#' @description
+#' An entry of `inline_max` bytes or more, or one written with a file-backed
+#' codec such as [codec_file()], is stored as a file. `stash_path()` returns its
+#' path without reading it, so other tools can read it in place.
+#'
+#' The file is read-only, and identical content is one file however many keys
+#' refer to it. The path is valid while the entry lives: deleting, replacing
+#' or expiring the entry, from any process, may remove the file. Copy the file
+#' if you need it to outlive the entry.
+#'
+#' @inheritParams stash_get
+#'
+#' @return The path, a string. A missing key is a `dastash_not_found` error,
+#'   and an entry stored inline a `dastash_type_error`.
+#'
+#' @examples
+#' s <- local_stash()
+#' stash_set(s, "numbers", runif(1e5))
+#' path <- stash_path(s, "numbers")
+#' file.size(path)
+#' identical(readRDS(path), stash_get(s, "numbers"))
+#' @export
+stash_path <- function(stash, key) {
+  check_supplied("key")
+  check_open(stash)
+  key <- store_key(key)
+  record <- engine_read(stash$engine, function(txn) store_live_record(stash, txn, key))
+  if (is.null(record)) {
+    abort_not_found(sprintf("No entry for key %s.", display_key(key$text)), key = key$text)
+  }
+  if (isTRUE(record$inline)) {
+    abort_type_error(
+      c(
+        sprintf("The entry for key %s is stored inline, not as a file.", display_key(key$text)),
+        i = "Values smaller than `inline_max` are kept in the database."
+      ),
+      key = key$text
+    )
+  }
+  blob_path(stash, record_blob_name(record))
+}
+
+# Helpers ----------------------------------------------------------------------
 
 # The key text to show for stored keys: itself, or for a digested key the text
 # its record kept, or the digest form when the text was too long to keep.
@@ -336,63 +372,6 @@ display_key <- function(text, max = 80L) {
   encodeString(text, quote = "\"")
 }
 
-check_string_or_empty <- function(x, arg, call = rlang::caller_env()) {
-  if (!is.character(x) || length(x) != 1L || is.na(x)) {
-    abort_type_error(sprintf("`%s` must be a single string.", arg), call = call)
-  }
-}
-
-#' The file behind an entry
-#'
-#' @description
-#' An entry of `inline_max` bytes or more, or one written with a file-backed
-#' codec such as [codec_file()], is stored as a file. `stash_path()` returns its
-#' path without reading it, so other tools can read it in place.
-#'
-#' The file is read-only, and identical content is one file however many keys
-#' refer to it. The path is valid while the entry lives: deleting, replacing
-#' or expiring the entry, from any process, may remove the file. Copy the file
-#' if you need it to outlive the entry.
-#'
-#' @inheritParams stash_get
-#'
-#' @return The path, a string. A missing key is a `dastash_not_found` error,
-#'   and an entry stored inline a `dastash_type_error`.
-#'
-#' @examples
-#' s <- local_stash()
-#' stash_set(s, "numbers", runif(1e5))
-#' path <- stash_path(s, "numbers")
-#' file.size(path)
-#' identical(readRDS(path), stash_get(s, "numbers"))
-#' @export
-stash_path <- function(stash, key) {
-  check_supplied("key")
-  check_open(stash)
-  key <- store_key(key)
-  record <- engine_read(stash$engine, function(txn) store_live_record(stash, txn, key))
-  if (is.null(record)) {
-    abort_not_found(sprintf("No entry for key %s.", display_key(key$text)), key = key$text)
-  }
-  if (isTRUE(record$inline)) {
-    abort_type_error(
-      c(
-        sprintf("The entry for key %s is stored inline, not as a file.", display_key(key$text)),
-        i = "Values smaller than `inline_max` are kept in the database."
-      ),
-      key = key$text
-    )
-  }
-  blob_path(stash, record_blob_name(record))
-}
-
-#' @rdname stash_keys
-#' @export
-stash_volume <- function(stash) {
-  check_open(stash)
-  counters <- engine_read(stash$engine, store_counters)
-  as.double(engine_info(stash$engine)$file_size) + counters$bytes_blob
-}
 
 # Where a listing begins, as a stored key. `start` is a position in the
 # listing, so a string is a key's text, as stash_keys() returns it, and is not
