@@ -315,9 +315,10 @@ test_that("a user default codec is needed to write but not to read", {
 
 # Processes --------------------------------------------------------------------
 
+# The one cross-process test that runs on CRAN too: two processes, one key
+# each, about a second (roadmap.md §3).
 test_that("another process reads what this one wrote", {
   skip_unless_children_see_this_build()
-  skip_on_cran()
   dir <- withr::local_tempdir()
   s <- stash(dir)
   withr::defer(stash_close(s))

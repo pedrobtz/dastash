@@ -13,3 +13,18 @@ crash_writer <- function(dir, point, fn) {
     error = "error"
   )
 }
+
+# Run a crash_writer() call and expect its child to have died at the crash
+# point, killed by SIGKILL: an ordinary error before the window would leave the
+# store looking the same and test nothing.
+expect_killed <- function(expr) {
+  cnd <- tryCatch(
+    {
+      expr
+      NULL
+    },
+    callr_status_error = function(cnd) cnd
+  )
+  expect_s3_class(cnd, "callr_status_error")
+  expect_identical(cnd$status, -9L)
+}

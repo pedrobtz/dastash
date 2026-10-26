@@ -440,3 +440,32 @@ test_that("a write that fills the map leaves the stash sound and usable", {
   stash_set(s, "after", 1)
   expect_identical(stash_get(s, "after"), 1)
 })
+
+test_that("every index stays a projection of the records through random mutations", {
+  withr::local_seed(20261026)
+  s <- local_stash(inline_max = 200, size_limit = 20000, cull_limit = 3)
+  keys <- sprintf("k%02d", 1:15)
+  tags <- c("red", "green", "blue")
+  for (step in 1:300) {
+    k <- sample(keys, 1L)
+    switch(sample(c("set", "set", "delete", "pop", "incr", "expire", "touch", "evict"), 1L),
+      set = stash_set(
+        s, k, if (runif(1) < 0.5) runif(sample(1:60, 1L)) else sample(letters, 1L),
+        tags = sample(tags, sample(0:2, 1L)),
+        expire = if (runif(1) < 0.3) sample(c(-1, 3600), 1L)
+      ),
+      delete = stash_delete(s, k),
+      pop = stash_pop(s, k, default = NULL),
+      incr = tryCatch(stash_incr(s, paste0("n", k)), dastash_type_error = function(cnd) NULL),
+      expire = stash_expire(s),
+      touch = stash_touch(s, k, sample(c(-1, 60), 1L)),
+      evict = if (runif(1) < 0.5) stash_evict(s, tag = sample(tags, 1L)) else stash_evict(s, prefix = "k0")
+    )
+    violations <- store_violations(s)
+    if (length(violations) > 0L) {
+      fail(sprintf("after step %d: %s", step, paste(violations, collapse = "; ")))
+      break
+    }
+  }
+  expect_identical(nrow(stash_check(s)), 0L)
+})
