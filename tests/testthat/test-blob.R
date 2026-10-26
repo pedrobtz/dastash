@@ -1,7 +1,3 @@
-blob_files <- function(s) {
-  list.files(file.path(s$dir, "blobs"), recursive = TRUE)
-}
-
 test_that("a value of inline_max bytes or more becomes a read-only file", {
   s <- local_stash(inline_max = 1000)
   small <- 1:10
@@ -197,18 +193,6 @@ test_that("an orphan of the same name is replaced by the freshly written file", 
 })
 
 # Crashes and processes --------------------------------------------------------
-
-crash_writer <- function(dir, point, fn) {
-  callr::r(
-    function(dir, fn) {
-      s <- dastash::stash(dir, inline_max = 100)
-      fn(s)
-    },
-    args = list(dir = dir, fn = fn),
-    env = c(callr::rcmd_safe_env(), DASTASH_CRASH = point),
-    error = "error"
-  )
-}
 
 test_that("a writer killed between publish and commit leaves at most an orphan", {
   skip_unless_children_see_this_build()

@@ -1,13 +1,3 @@
-counted <- function() {
-  env <- new.env()
-  env$n <- 0
-  env$f <- function(x, y = 2, verbose = FALSE, ...) {
-    env$n <- env$n + 1
-    x * y
-  }
-  env
-}
-
 test_that("a memoised function computes once and then reads back", {
   s <- local_stash()
   c <- counted()

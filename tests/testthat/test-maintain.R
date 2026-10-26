@@ -1,8 +1,3 @@
-held <- function(s) {
-  c <- engine_read(s$engine, store_counters)
-  c$bytes_inline + c$bytes_blob
-}
-
 # Size limit and eviction --------------------------------------------------------
 
 test_that("writes keep the stash near its limit, evicting the least recently stored", {

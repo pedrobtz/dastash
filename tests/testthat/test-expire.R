@@ -1,7 +1,3 @@
-expiry_rows <- function(s) {
-  engine_read(s$engine, function(txn) engine_count(txn, engine_db(s$engine, "expiry")))
-}
-
 test_that("expire accepts seconds, difftime, POSIXct, NULL and Inf", {
   now <- unclass(Sys.time())
   expect_identical(parse_expire(NULL, now), Inf)

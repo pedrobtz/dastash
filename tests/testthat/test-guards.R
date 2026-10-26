@@ -1,9 +1,3 @@
-# Examples are built from text so that R CMD check does not read them as
-# undeclared uses of digest or mdbx.
-functions_from <- function(src) {
-  lapply(src, function(s) eval(parse(text = s), envir = globalenv()))
-}
-
 test_that("the package code breaks none of the guards", {
   expect_identical(guard_violations(namespace_functions()), character())
 })

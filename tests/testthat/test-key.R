@@ -1,13 +1,6 @@
 # The encoding is frozen: a failure here means a stored key would no longer be
 # found. Fix the code, never the golden file (spec §0).
 
-golden <- function() {
-  utils::read.csv(
-    test_path("golden", "key-vectors.csv"),
-    colClasses = "character", encoding = "UTF-8", na.strings = character()
-  )
-}
-
 test_that("every golden vector encodes, hashes and stores as recorded", {
   g <- golden()
   expect_gt(nrow(g), 100)

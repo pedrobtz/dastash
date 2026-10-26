@@ -1,5 +1,3 @@
-enc_hex <- function(x) paste(format(enc_f64(x)), collapse = "")
-
 test_that("enc_f64() sorts as numbers do", {
   set.seed(1)
   x <- c(

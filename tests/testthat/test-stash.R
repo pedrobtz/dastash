@@ -275,15 +275,6 @@ test_that("inline bytes are counted", {
 
 # User codecs ------------------------------------------------------------------
 
-lines_codec <- function() {
-  codec(
-    "lines",
-    encode = function(value, path) writeLines(value, path, useBytes = TRUE),
-    decode = function(path, meta) readLines(path, encoding = "UTF-8"),
-    supports = function(value) is.character(value) && !anyNA(value)
-  )
-}
-
 test_that("a user codec writes and reads through a file", {
   s <- local_stash(codecs = list(lines_codec()))
   stash_set(s, "k", c("a", "b"), codec = lines_codec())
