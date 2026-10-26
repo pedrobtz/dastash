@@ -31,9 +31,13 @@ stash_expire <- function(stash, ..., n = Inf) {
   removed <- 0
   while (removed < n) {
     batch <- min(stash$cull_limit, n - removed)
-    done <- engine_write(stash$engine, function(txn) {
-      store_expire_batch(stash, txn, batch, unclass(Sys.time()))
-    }, timeout = stash$timeout)
+    done <- engine_write(
+      stash$engine,
+      function(txn) {
+        store_expire_batch(stash, txn, batch, unclass(Sys.time()))
+      },
+      timeout = stash$timeout
+    )
     removed <- removed + done
     if (done < batch) break
   }
@@ -47,7 +51,9 @@ store_expire_batch <- function(s, txn, n, now) {
   done <- 0
   for (row in rows) {
     parts <- index_key_parts(row)
-    if (parts$value > now) break
+    if (parts$value > now) {
+      break
+    }
     store_delete_entry(s, txn, parts$stored)
     done <- done + 1
   }
@@ -102,9 +108,13 @@ stash_cull <- function(stash) {
     return(invisible(stash))
   }
   repeat {
-    done <- engine_write(stash$engine, function(txn) {
-      store_evict_batch(stash, txn, stash$cull_limit, limit)
-    }, timeout = stash$timeout)
+    done <- engine_write(
+      stash$engine,
+      function(txn) {
+        store_evict_batch(stash, txn, stash$cull_limit, limit)
+      },
+      timeout = stash$timeout
+    )
     if (done < stash$cull_limit) break
   }
   invisible(stash)
@@ -127,21 +137,34 @@ stash_evict <- function(stash, ..., tag = NULL, prefix = NULL) {
   e <- stash$engine
   chunk <- ENGINE_SCAN_CHUNK
   repeat {
-    done <- engine_write(e, function(txn) {
-      if (is.null(tag)) {
-        stored <- store_scan_prefix(stash, txn, prefix, n = chunk)$stored
-        for (k in stored) store_delete_entry(stash, txn, k)
-        return(length(stored))
-      }
-      tags_db <- engine_db(e, "tags")
-      rows <- engine_scan(txn, tags_db, prefix = c(charToRaw(tag), as.raw(0L)), n = chunk)
-      for (row in rows) {
-        # A row whose entry is gone is damage; delete it too, or the walk would
-        # find it at the front of every chunk and never end.
-        if (!store_delete_entry(stash, txn, tag_key_stored(row))) engine_del(txn, tags_db, row)
-      }
-      length(rows)
-    }, timeout = stash$timeout)
+    done <- engine_write(
+      e,
+      function(txn) {
+        if (is.null(tag)) {
+          stored <- store_scan_prefix(stash, txn, prefix, n = chunk)$stored
+          for (k in stored) {
+            store_delete_entry(stash, txn, k)
+          }
+          return(length(stored))
+        }
+        tags_db <- engine_db(e, "tags")
+        rows <- engine_scan(
+          txn,
+          tags_db,
+          prefix = c(charToRaw(tag), as.raw(0L)),
+          n = chunk
+        )
+        for (row in rows) {
+          # A row whose entry is gone is damage; delete it too, or the walk would
+          # find it at the front of every chunk and never end.
+          if (!store_delete_entry(stash, txn, tag_key_stored(row))) {
+            engine_del(txn, tags_db, row)
+          }
+        }
+        length(rows)
+      },
+      timeout = stash$timeout
+    )
     if (done < chunk) break
   }
   invisible(stash)
@@ -152,15 +175,21 @@ stash_evict <- function(stash, ..., tag = NULL, prefix = NULL) {
 stash_clear <- function(stash) {
   check_writable(stash)
   e <- stash$engine
-  engine_write(e, function(txn) {
-    blob_names <- engine_scan(txn, engine_db(e, "blobs"), as = "character")
-    for (db in store_databases(stash$config)) engine_clear_db(txn, engine_db(e, db))
-    counters <- store_counters(txn)
-    counters$bytes_inline <- 0
-    counters$bytes_blob <- 0
-    engine_put(txn, NULL, "counters", record_encode(counters))
-    if (length(blob_names) > 0L) blob_defer_reap(stash, blob_names)
-  }, timeout = stash$timeout)
+  engine_write(
+    e,
+    function(txn) {
+      blob_names <- engine_scan(txn, engine_db(e, "blobs"), as = "character")
+      for (db in store_databases(stash$config)) {
+        engine_clear_db(txn, engine_db(e, db))
+      }
+      counters <- store_counters(txn)
+      counters$bytes_inline <- 0
+      counters$bytes_blob <- 0
+      engine_put(txn, NULL, "counters", record_encode(counters))
+      if (length(blob_names) > 0L) blob_defer_reap(stash, blob_names)
+    },
+    timeout = stash$timeout
+  )
   invisible(stash)
 }
 
@@ -192,9 +221,13 @@ store_evict_batch <- function(s, txn, n, limit, protect = character()) {
   rows <- engine_scan(txn, engine_db(s$engine, index), n = n + length(protect))
   done <- 0
   for (row in rows) {
-    if (done >= n || store_held_bytes(txn) <= limit) break
+    if (done >= n || store_held_bytes(txn) <= limit) {
+      break
+    }
     stored <- index_key_parts(row)$stored
-    if (stored %in% protect) next
+    if (stored %in% protect) {
+      next
+    }
     store_delete_entry(s, txn, stored)
     done <- done + 1
   }

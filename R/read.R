@@ -39,7 +39,9 @@ stash_get <- function(stash, key, default) {
   check_supplied("key")
   check_open(stash)
   key <- store_key(key)
-  hit <- engine_read(stash$engine, function(txn) store_read_entry(stash, txn, key))
+  hit <- engine_read(stash$engine, function(txn) {
+    store_read_entry(stash, txn, key)
+  })
   value <- if (!is.null(hit)) store_decode_entry(stash, hit, key)
   if (is.null(value)) {
     if (missing(default)) {
@@ -75,7 +77,11 @@ stash_mget <- function(stash, keys, default) {
         sprintf(
           "No entry for key %s%s.",
           display_key(infos[[which(absent)[[1L]]]]$text),
-          if (sum(absent) > 1L) sprintf(" and %d more", sum(absent) - 1L) else ""
+          if (sum(absent) > 1L) {
+            sprintf(" and %d more", sum(absent) - 1L)
+          } else {
+            ""
+          }
         ),
         i = "Supply `default` to return a value for missing keys instead of erroring."
       ),
@@ -97,7 +103,11 @@ stash_has <- function(stash, keys) {
   check_open(stash)
   infos <- store_keys(keys)
   engine_read(stash$engine, function(txn) {
-    vapply(infos, function(key) !is.null(store_live_record(stash, txn, key)), logical(1))
+    vapply(
+      infos,
+      function(key) !is.null(store_live_record(stash, txn, key)),
+      logical(1)
+    )
   })
 }
 
@@ -143,19 +153,34 @@ stash_has <- function(stash, keys) {
 stash_keys <- function(stash, ..., prefix = NULL, start = NULL, n = Inf) {
   rlang::check_dots_empty()
   check_open(stash)
-  if (!is.null(prefix)) check_string_or_empty(prefix, "prefix")
+  if (!is.null(prefix)) {
+    check_string_or_empty(prefix, "prefix")
+  }
   check_number(n, "n", min = 0, whole = TRUE, allow_inf = TRUE)
   from <- if (!is.null(start)) key_start(start)
   e <- stash$engine
   now <- unclass(Sys.time())
   engine_read(e, function(txn) {
     if (!is.null(prefix)) {
-      got <- store_scan_prefix(stash, txn, prefix, start = from, n = n, now = now)
+      got <- store_scan_prefix(
+        stash,
+        txn,
+        prefix,
+        start = from,
+        n = n,
+        now = now
+      )
       return(store_shown_keys(got$stored, got$records))
     }
     # Expired entries are skipped; the records come with the keys, so
     # skipping costs no lookup.
-    got <- store_scan_pages(stash, txn, function(k, r) vapply(r, is_live, logical(1), now = now), start = from, n = n)
+    got <- store_scan_pages(
+      stash,
+      txn,
+      function(k, r) vapply(r, is_live, logical(1), now = now),
+      start = from,
+      n = n
+    )
     out <- store_shown_keys(got$stored, got$records)
     out[seq_len(min(length(out), n))]
   })
@@ -166,7 +191,9 @@ stash_keys <- function(stash, ..., prefix = NULL, start = NULL, n = Inf) {
 stash_count <- function(stash) {
   check_open(stash)
   e <- stash$engine
-  as.integer(engine_read(e, function(txn) engine_count(txn, engine_db(e, "meta"))))
+  as.integer(engine_read(e, function(txn) {
+    engine_count(txn, engine_db(e, "meta"))
+  }))
 }
 
 #' @rdname stash_keys
@@ -205,14 +232,22 @@ stash_path <- function(stash, key) {
   check_supplied("key")
   check_open(stash)
   key <- store_key(key)
-  record <- engine_read(stash$engine, function(txn) store_live_record(stash, txn, key))
+  record <- engine_read(stash$engine, function(txn) {
+    store_live_record(stash, txn, key)
+  })
   if (is.null(record)) {
-    abort_not_found(sprintf("No entry for key %s.", display_key(key$text)), key = key$text)
+    abort_not_found(
+      sprintf("No entry for key %s.", display_key(key$text)),
+      key = key$text
+    )
   }
   if (isTRUE(record$inline)) {
     abort_type_error(
       c(
-        sprintf("The entry for key %s is stored inline, not as a file.", display_key(key$text)),
+        sprintf(
+          "The entry for key %s is stored inline, not as a file.",
+          display_key(key$text)
+        ),
         i = "Values smaller than `inline_max` are kept in the database."
       ),
       key = key$text
@@ -226,9 +261,17 @@ stash_path <- function(stash, key) {
 # The key text to show for stored keys: itself, or for a digested key the text
 # its record kept, or the digest form when the text was too long to keep.
 store_shown_keys <- function(stored, records) {
-  vapply(seq_along(stored), function(i) {
-    if (record_digested(records[[i]])) records[[i]]$key_text %||% stored[[i]] else stored[[i]]
-  }, character(1))
+  vapply(
+    seq_along(stored),
+    function(i) {
+      if (record_digested(records[[i]])) {
+        records[[i]]$key_text %||% stored[[i]]
+      } else {
+        stored[[i]]
+      }
+    },
+    character(1)
+  )
 }
 
 # The record and inline bytes of a live entry, or NULL.
@@ -238,7 +281,10 @@ store_read_entry <- function(s, txn, key) {
     return(NULL)
   }
   if (isTRUE(record$inline)) {
-    return(list(record = record, bytes = engine_get(txn, engine_db(s$engine, "values"), key$stored)))
+    return(list(
+      record = record,
+      bytes = engine_get(txn, engine_db(s$engine, "values"), key$stored)
+    ))
   }
   list(record = record, path = blob_path(s, record_blob_name(record)))
 }
@@ -248,7 +294,11 @@ store_read_entry <- function(s, txn, key) {
 # reader before anything deletes it (design.md §4, §9.1).
 store_live_record <- function(s, txn, key, now = unclass(Sys.time())) {
   record <- store_get_record(s, txn, key$stored)
-  if (is.null(record) || !store_record_matches(record, key) || !is_live(record, now)) {
+  if (
+    is.null(record) ||
+      !store_record_matches(record, key) ||
+      !is_live(record, now)
+  ) {
     return(NULL)
   }
   record
@@ -262,9 +312,20 @@ is_live <- function(record, now) {
 # if its file went before it could be read.
 store_decode_entry <- function(s, hit, key, call = rlang::caller_env()) {
   record <- hit$record
-  codec <- codec_lookup(record$codec, record$codec_version, s$codecs, call = call)
+  codec <- codec_lookup(
+    record$codec,
+    record$codec_version,
+    s$codecs,
+    call = call
+  )
   if (isTRUE(record$inline)) {
-    return(list(codec_decode_bytes(codec, hit$bytes, record$codec_meta, stage = function() stage_path(s), call = call)))
+    return(list(codec_decode_bytes(
+      codec,
+      hit$bytes,
+      record$codec_meta,
+      stage = function() stage_path(s),
+      call = call
+    )))
   }
   # A read transaction has ended by now, so another process may delete or
   # replace the entry, and unlink its file, at any moment: before the size is
@@ -299,7 +360,9 @@ store_decode_entry <- function(s, hit, key, call = rlang::caller_env()) {
       }
     )
     if (!is.null(value)) {
-      for (w in warnings) warning(w)
+      for (w in warnings) {
+        warning(w)
+      }
       return(value)
     }
   }
@@ -318,8 +381,13 @@ store_blob_ready <- function(s, hit, key, call) {
   record <- hit$record
   size <- file.size(hit$path)
   if (is.na(size)) {
-    current <- engine_read(s$engine, function(txn) store_live_record(s, txn, key))
-    if (is.null(current) || !identical(record_blob_name(current), record_blob_name(record))) {
+    current <- engine_read(s$engine, function(txn) {
+      store_live_record(s, txn, key)
+    })
+    if (
+      is.null(current) ||
+        !identical(record_blob_name(current), record_blob_name(record))
+    ) {
       return(FALSE)
     }
     # The same bytes may have been stored again after we looked.
@@ -327,7 +395,9 @@ store_blob_ready <- function(s, hit, key, call) {
     if (is.na(size)) {
       abort_blob_corrupt(
         sprintf("The file behind key %s is missing.", display_key(key$text)),
-        key = key$text, path = hit$path, call = call
+        key = key$text,
+        path = hit$path,
+        call = call
       )
     }
   }
@@ -335,9 +405,13 @@ store_blob_ready <- function(s, hit, key, call) {
     abort_blob_corrupt(
       sprintf(
         "The file behind key %s has %s bytes where %s were written.",
-        display_key(key$text), format(size), format(record$bytes)
+        display_key(key$text),
+        format(size),
+        format(record$bytes)
       ),
-      key = key$text, path = hit$path, call = call
+      key = key$text,
+      path = hit$path,
+      call = call
     )
   }
   TRUE
@@ -347,7 +421,9 @@ store_blob_ready <- function(s, hit, key, call) {
 # element, and an unnamed list one key per element. A single `dastash_key`, a
 # named list, a data frame or a POSIXlt is one key, as it is to stash_get().
 as_key_list <- function(keys, call = rlang::caller_env()) {
-  if (is_dastash_key(keys) || is.data.frame(keys) || inherits(keys, "POSIXlt")) {
+  if (
+    is_dastash_key(keys) || is.data.frame(keys) || inherits(keys, "POSIXlt")
+  ) {
     return(list(keys))
   }
   if (is.atomic(keys)) {
@@ -359,7 +435,10 @@ as_key_list <- function(keys, call = rlang::caller_env()) {
     }
     return(unname(keys))
   }
-  abort_type_error("`keys` must be a character vector of keys or a list of keys.", call = call)
+  abort_type_error(
+    "`keys` must be a character vector of keys or a list of keys.",
+    call = call
+  )
 }
 
 # Each of `keys` as store_key() gives it, with errors raised as `call`'s.
@@ -368,7 +447,9 @@ store_keys <- function(keys, call = rlang::caller_env()) {
 }
 
 display_key <- function(text, max = 80L) {
-  if (nchar(text) > max) text <- paste0(substr(text, 1L, max - 1L), "\u2026")
+  if (nchar(text) > max) {
+    text <- paste0(substr(text, 1L, max - 1L), "\u2026")
+  }
   encodeString(text, quote = "\"")
 }
 

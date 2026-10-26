@@ -17,7 +17,8 @@ engine_missing_db <- structure(list(), class = "dastash_missing_db")
 ENGINE_SCAN_CHUNK <- 1000L
 
 engine_sync_flags <- function(durability) {
-  switch(durability,
+  switch(
+    durability,
     safe = NULL,
     fast = "SAFE_NOSYNC",
     unsafe = "UTTERLY_NOSYNC"
@@ -27,9 +28,17 @@ engine_sync_flags <- function(durability) {
 # Open or join the environment at `path` (the database file, whose directory
 # must exist). A second open in this process, under any spelling of the path,
 # joins the first and shares it.
-engine_open <- function(path, readonly = FALSE, map_size = NULL,
-                        durability = "safe", call = rlang::caller_env()) {
-  key <- file.path(normalizePath(dirname(path), mustWork = TRUE), basename(path))
+engine_open <- function(
+  path,
+  readonly = FALSE,
+  map_size = NULL,
+  durability = "safe",
+  call = rlang::caller_env()
+) {
+  key <- file.path(
+    normalizePath(dirname(path), mustWork = TRUE),
+    basename(path)
+  )
   e <- engine_registry[[key]]
   if (!is.null(e)) {
     engine_check_pid(e, call)
@@ -39,7 +48,8 @@ engine_open <- function(path, readonly = FALSE, map_size = NULL,
           "This stash is already open read-only in this process.",
           i = "Close every handle on it before opening it for writing."
         ),
-        dir = dirname(key), call = call
+        dir = dirname(key),
+        call = call
       )
     }
     e$refs <- e$refs + 1L
@@ -48,8 +58,12 @@ engine_open <- function(path, readonly = FALSE, map_size = NULL,
   env <- engine_try(
     mdbx::mdbx_env_open(
       key,
-      readonly = readonly, create = !readonly, subdir = FALSE, max_dbs = 16L,
-      map_size = map_size, flags = c("ACCEDE", engine_sync_flags(durability))
+      readonly = readonly,
+      create = !readonly,
+      subdir = FALSE,
+      max_dbs = 16L,
+      map_size = map_size,
+      flags = c("ACCEDE", engine_sync_flags(durability))
     ),
     call
   )
@@ -89,7 +103,9 @@ engine_close_all <- function() {
   for (key in ls(engine_registry)) {
     e <- engine_registry[[key]]
     if (identical(e$pid, Sys.getpid())) {
-      if (!is.null(e$txn)) try(mdbx::mdbx_txn_abort(e$txn), silent = TRUE)
+      if (!is.null(e$txn)) {
+        try(mdbx::mdbx_txn_abort(e$txn), silent = TRUE)
+      }
       try(mdbx::mdbx_env_close(e$env), silent = TRUE)
     }
     rm(list = key, envir = engine_registry)
@@ -103,7 +119,8 @@ engine_check_pid <- function(e, call = rlang::caller_env()) {
       c(
         sprintf(
           "This stash was opened by process %d and cannot be used from process %d.",
-          e$pid, Sys.getpid()
+          e$pid,
+          Sys.getpid()
         ),
         i = "It was inherited across a fork. Open the stash inside the worker instead."
       ),
@@ -116,26 +133,49 @@ engine_check_pid <- function(e, call = rlang::caller_env()) {
 # looked up in a read transaction, so opening a store never waits for the
 # write lock; a read-write handle then creates the missing ones in one write
 # transaction, and a read-only one treats them as empty.
-engine_ensure_dbs <- function(e, db_names, timeout = 60, call = rlang::caller_env()) {
+engine_ensure_dbs <- function(
+  e,
+  db_names,
+  timeout = 60,
+  call = rlang::caller_env()
+) {
   wanted <- setdiff(db_names, names(e$dbs))
   if (length(wanted) == 0L) {
     return(invisible(e))
   }
-  found <- engine_read(e, function(txn) {
-    existing <- engine_try(mdbx::mdbx_dbi_list(txn), call)
-    out <- lapply(wanted, function(name) {
-      if (name %in% existing) engine_try(mdbx::mdbx_dbi_open(txn, name), call) else engine_missing_db
-    })
-    names(out) <- wanted
-    out
-  }, call = call)
-  absent <- names(found)[vapply(found, inherits, logical(1), "dastash_missing_db")]
-  if (!e$readonly && length(absent) > 0L) {
-    created <- engine_write(e, function(txn) {
-      lapply(absent, function(name) {
-        engine_try(mdbx::mdbx_dbi_open(txn, name, create = TRUE), call)
+  found <- engine_read(
+    e,
+    function(txn) {
+      existing <- engine_try(mdbx::mdbx_dbi_list(txn), call)
+      out <- lapply(wanted, function(name) {
+        if (name %in% existing) {
+          engine_try(mdbx::mdbx_dbi_open(txn, name), call)
+        } else {
+          engine_missing_db
+        }
       })
-    }, timeout = timeout, call = call)
+      names(out) <- wanted
+      out
+    },
+    call = call
+  )
+  absent <- names(found)[vapply(
+    found,
+    inherits,
+    logical(1),
+    "dastash_missing_db"
+  )]
+  if (!e$readonly && length(absent) > 0L) {
+    created <- engine_write(
+      e,
+      function(txn) {
+        lapply(absent, function(name) {
+          engine_try(mdbx::mdbx_dbi_open(txn, name, create = TRUE), call)
+        })
+      },
+      timeout = timeout,
+      call = call
+    )
     found[absent] <- created
   }
   # Only now: a handle from a transaction that aborted refers to nothing.
@@ -150,7 +190,10 @@ engine_db <- function(e, name = NULL) {
   }
   db <- e$dbs[[name]]
   if (is.null(db)) {
-    abort_engine_error(sprintf("Internal error: database %s was never opened.", name), call = NULL)
+    abort_engine_error(
+      sprintf("Internal error: database %s was never opened.", name),
+      call = NULL
+    )
   }
   db
 }
@@ -191,7 +234,10 @@ engine_write <- function(e, fn, timeout = 60, call = rlang::caller_env()) {
   }
   if (!is.null(e$txn)) {
     if (!e$write) {
-      abort_engine_error("Internal error: a write inside a read transaction.", call = call)
+      abort_engine_error(
+        "Internal error: a write inside a read transaction.",
+        call = call
+      )
     }
     return(fn(e$txn))
   }
@@ -220,7 +266,9 @@ engine_write <- function(e, fn, timeout = 60, call = rlang::caller_env()) {
     e$txn <- NULL
     e$write <- FALSE
     e$after_commit <- list()
-    for (action in actions) action()
+    for (action in actions) {
+      action()
+    }
   }
   on.exit({
     if (!committing) {
@@ -255,7 +303,10 @@ engine_begin_write <- function(e, timeout, call) {
     if (remaining <= 0) {
       abort_busy(
         c(
-          sprintf("Could not write: another process held the stash's write lock for %s seconds.", format(timeout)),
+          sprintf(
+            "Could not write: another process held the stash's write lock for %s seconds.",
+            format(timeout)
+          ),
           i = "Raise `timeout` in `stash()` to wait longer.",
           i = if (engine_dead_writer_wedges()) {
             paste(
@@ -264,7 +315,8 @@ engine_begin_write <- function(e, timeout, call) {
             )
           }
         ),
-        timeout = timeout, call = call
+        timeout = timeout,
+        call = call
       )
     }
     Sys.sleep(min(wait * spread, remaining))
@@ -286,7 +338,10 @@ engine_dead_writer_wedges <- function() {
 # and add to it instead of deferring another.
 engine_defer <- function(e, action, name = NULL) {
   if (is.null(e$txn) || !e$write) {
-    abort_engine_error("Internal error: nothing to defer to outside a write transaction.", call = NULL)
+    abort_engine_error(
+      "Internal error: nothing to defer to outside a write transaction.",
+      call = NULL
+    )
   }
   if (is.null(name)) {
     e$after_commit[[length(e$after_commit) + 1L]] <- action
@@ -341,9 +396,17 @@ engine_count <- function(txn, db) {
 # only keys that begin with it, stopping at the first that does not; mdbx has
 # no upper bound on a scan, so the stop is done here, a chunk at a time. At
 # most `n` keys. With `values = TRUE`, a list of `keys` and `values`.
-engine_scan <- function(txn, db, prefix = NULL, start = NULL, n = Inf,
-                        reverse = FALSE, as = "raw", values = FALSE,
-                        chunk = ENGINE_SCAN_CHUNK) {
+engine_scan <- function(
+  txn,
+  db,
+  prefix = NULL,
+  start = NULL,
+  n = Inf,
+  reverse = FALSE,
+  as = "raw",
+  values = FALSE,
+  chunk = ENGINE_SCAN_CHUNK
+) {
   empty <- if (as == "raw") list() else character()
   out_keys <- empty
   out_values <- list()
@@ -351,13 +414,22 @@ engine_scan <- function(txn, db, prefix = NULL, start = NULL, n = Inf,
     return(if (values) list(keys = out_keys, values = out_values) else out_keys)
   }
   if (!is.null(prefix) && reverse) {
-    abort_engine_error("Internal error: a prefix scan runs forwards.", call = NULL)
+    abort_engine_error(
+      "Internal error: a prefix scan runs forwards.",
+      call = NULL
+    )
   }
   matches <- if (is.null(prefix)) {
     function(k) rep(TRUE, length(k))
   } else if (as == "raw") {
     p <- if (is.character(prefix)) charToRaw(prefix) else prefix
-    function(k) vapply(k, function(x) length(x) >= length(p) && identical(x[seq_along(p)], p), logical(1))
+    function(k) {
+      vapply(
+        k,
+        function(x) length(x) >= length(p) && identical(x[seq_along(p)], p),
+        logical(1)
+      )
+    }
   } else {
     function(k) startsWith(k, prefix)
   }
@@ -366,9 +438,26 @@ engine_scan <- function(txn, db, prefix = NULL, start = NULL, n = Inf,
   repeat {
     want <- min(chunk, n - length(out_keys)) + skip_first
     batch <- if (values) {
-      engine_try(mdbx::mdbx_items(txn, limit = want, as = "raw", db = db, start = from, reverse = reverse, keys_as = as))
+      engine_try(mdbx::mdbx_items(
+        txn,
+        limit = want,
+        as = "raw",
+        db = db,
+        start = from,
+        reverse = reverse,
+        keys_as = as
+      ))
     } else {
-      list(keys = engine_try(mdbx::mdbx_keys(txn, limit = want, as = as, db = db, start = from, reverse = reverse)))
+      list(
+        keys = engine_try(mdbx::mdbx_keys(
+          txn,
+          limit = want,
+          as = as,
+          db = db,
+          start = from,
+          reverse = reverse
+        ))
+      )
     }
     got <- length(batch$keys)
     keys <- batch$keys
@@ -386,8 +475,12 @@ engine_scan <- function(txn, db, prefix = NULL, start = NULL, n = Inf,
       if (values) vals <- vals[keep]
     }
     out_keys <- c(out_keys, keys)
-    if (values) out_values <- c(out_values, vals)
-    if (stop_here || got < want || length(out_keys) >= n) break
+    if (values) {
+      out_values <- c(out_values, vals)
+    }
+    if (stop_here || got < want || length(out_keys) >= n) {
+      break
+    }
     from <- batch$keys[[got]]
     skip_first <- TRUE
   }
@@ -420,7 +513,8 @@ engine_translate <- function(cnd, call) {
         "The stash's database is full: it reached its `map_size`.",
         i = "Reopen it with a larger `map_size` in `stash()`."
       ),
-      parent = cnd, call = call
+      parent = cnd,
+      call = call
     )
   }
   abort_engine_error("The storage engine failed.", parent = cnd, call = call)

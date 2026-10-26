@@ -67,8 +67,18 @@
 #' )
 #' identical(stash_memoise_key(fit, 1), stash_memoise_key(fit, 1, verbose = TRUE))
 #' @export
-stash_memoise <- function(f, stash, ..., expire = NULL, tags = NULL, codec = NULL,
-                          key = NULL, omit = NULL, version = 1L, name = NULL) {
+stash_memoise <- function(
+  f,
+  stash,
+  ...,
+  expire = NULL,
+  tags = NULL,
+  codec = NULL,
+  key = NULL,
+  omit = NULL,
+  version = 1L,
+  name = NULL
+) {
   rlang::check_dots_empty()
   check_supplied(c("f", "stash"))
   call <- rlang::current_env()
@@ -91,14 +101,23 @@ stash_memoise <- function(f, stash, ..., expire = NULL, tags = NULL, codec = NUL
   }
   check_string(name, "name")
   if (grepl("/", name, fixed = TRUE) || starts_with_opener(name)) {
-    abort_key_invalid("`name` cannot contain `/` or start like an encoded key.", call = call)
+    abort_key_invalid(
+      "`name` cannot contain `/` or start like an encoded key.",
+      call = call
+    )
   }
   check_number(version, "version", min = 0, whole = TRUE)
   if (!is.null(key) && !is.function(key)) {
-    abort_type_error("`key` must be NULL or a function of the matched arguments.", call = call)
+    abort_type_error(
+      "`key` must be NULL or a function of the matched arguments.",
+      call = call
+    )
   }
   if (!is.null(omit) && (!is.character(omit) || anyNA(omit))) {
-    abort_type_error("`omit` must be a character vector of argument names.", call = call)
+    abort_type_error(
+      "`omit` must be a character vector of argument names.",
+      call = call
+    )
   }
   parse_expire(expire, 0, call = call)
   parse_tags(tags, call = call)
@@ -110,20 +129,38 @@ stash_memoise <- function(f, stash, ..., expire = NULL, tags = NULL, codec = NUL
 
   fmls <- formals(args(f))
   info <- list(
-    f = f, stash = stash, name = name, version = as.integer(version), formals = fmls,
-    key = key, omit = omit, expire = expire, tags = tags, codec = codec
+    f = f,
+    stash = stash,
+    name = name,
+    version = as.integer(version),
+    formals = fmls,
+    key = key,
+    omit = omit,
+    expire = expire,
+    tags = tags,
+    codec = codec
   )
   env <- new.env(parent = environment(f) %||% baseenv())
   env$`_dastash_memo` <- info
   memoised <- rlang::new_function(
     fmls,
-    as.call(list(memo_call, quote(environment()), quote(match.call(expand.dots = FALSE)), quote(`_dastash_memo`))),
+    as.call(list(
+      memo_call,
+      quote(environment()),
+      quote(match.call(expand.dots = FALSE)),
+      quote(`_dastash_memo`)
+    )),
     env
   )
   # The same formals, computing only the key: shared by the companions.
   info$key_of <- rlang::new_function(
     fmls,
-    as.call(list(memo_key_of, quote(environment()), quote(match.call(expand.dots = FALSE)), quote(`_dastash_memo`))),
+    as.call(list(
+      memo_key_of,
+      quote(environment()),
+      quote(match.call(expand.dots = FALSE)),
+      quote(`_dastash_memo`)
+    )),
     env
   )
   env$`_dastash_memo` <- info
@@ -162,8 +199,13 @@ is_stash_memoised <- function(f) {
 print.dastash_memoised <- function(x, ...) {
   info <- memo_info(x)
   cat(
-    "<dastash_memoised> ", info$name, " v", info$version,
-    " in ", info$stash$dir, "\n",
+    "<dastash_memoised> ",
+    info$name,
+    " v",
+    info$version,
+    " in ",
+    info$stash$dir,
+    "\n",
     sep = ""
   )
   print(info$f, ...)
@@ -172,7 +214,10 @@ print.dastash_memoised <- function(x, ...) {
 
 memo_info <- function(f, call = rlang::caller_env()) {
   if (!is_stash_memoised(f)) {
-    abort_type_error("`f` must be a function made by `stash_memoise()`.", call = call)
+    abort_type_error(
+      "`f` must be a function made by `stash_memoise()`.",
+      call = call
+    )
   }
   environment(f)$`_dastash_memo`
 }
@@ -182,7 +227,11 @@ memo_default_name <- function(expr) {
   if (is.symbol(expr)) {
     return(as.character(expr))
   }
-  if (is.call(expr) && (identical(expr[[1L]], quote(`::`)) || identical(expr[[1L]], quote(`:::`)))) {
+  if (
+    is.call(expr) &&
+      (identical(expr[[1L]], quote(`::`)) ||
+        identical(expr[[1L]], quote(`:::`)))
+  ) {
     return(as.character(expr[[3L]]))
   }
   NULL
@@ -201,7 +250,14 @@ memo_call <- function(frame, mc, info) {
   # stash cannot take it for now, return it anyway. A codec that refuses it is
   # a mistake in the setup, and stays an error.
   tryCatch(
-    stash_set(info$stash, key, result$value, expire = info$expire, tags = info$tags, codec = info$codec),
+    stash_set(
+      info$stash,
+      key,
+      result$value,
+      expire = info$expire,
+      tags = info$tags,
+      codec = info$codec
+    ),
     dastash_busy = function(cnd) memo_unstored(info, cnd),
     dastash_store_full = function(cnd) memo_unstored(info, cnd),
     dastash_readonly = function(cnd) memo_unstored(info, cnd)
@@ -222,12 +278,16 @@ memo_collect <- function(frame, mc, info) {
   fmls <- info$formals
   supplied <- setdiff(names(as.list(mc))[-1L], c("", "..."))
   values <- list()
-  for (n in supplied) values[n] <- list(get(n, envir = frame))
+  for (n in supplied) {
+    values[n] <- list(get(n, envir = frame))
+  }
   dots <- if ("..." %in% names(fmls)) eval(quote(list(...)), frame) else list()
 
   key <- values
   for (n in setdiff(names(fmls), c(supplied, "..."))) {
-    if (rlang::is_missing(fmls[[n]])) next
+    if (rlang::is_missing(fmls[[n]])) {
+      next
+    }
     # A default is evaluated as the function would, in the call's frame; one
     # that cannot be evaluated here depends on the body, and so on the other
     # arguments, which are keyed already.
@@ -237,14 +297,20 @@ memo_collect <- function(frame, mc, info) {
   if (length(dots) > 0L) {
     # Dots are positional and may be named: a list of name and value, in order.
     nms <- names(dots) %||% rep("", length(dots))
-    key[["..."]] <- lapply(seq_along(dots), function(i) list(name = nms[[i]], value = dots[[i]]))
+    key[["..."]] <- lapply(seq_along(dots), function(i) {
+      list(name = nms[[i]], value = dots[[i]])
+    })
   }
   key <- key[setdiff(names(key), info$omit)]
   list(call = c(values, dots), key = key)
 }
 
 memo_key_text <- function(info, args, call) {
-  body <- if (is.null(info$key)) key_canon(args, call = call) else key_canon(info$key(args), call = call)
+  body <- if (is.null(info$key)) {
+    key_canon(args, call = call)
+  } else {
+    key_canon(info$key(args), call = call)
+  }
   paste0(info$name, "/v", info$version, "/", body)
 }
 

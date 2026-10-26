@@ -39,7 +39,13 @@ blob_stage <- function(s, enc) {
     path <- enc$path
     hash <- hash_file(path)
   }
-  out <- list(staged = path, hash = hash, ext = enc$ext, name = blob_name(hash, enc$ext), size = as.double(file.size(path)))
+  out <- list(
+    staged = path,
+    hash = hash,
+    ext = enc$ext,
+    name = blob_name(hash, enc$ext),
+    size = as.double(file.size(path))
+  )
   done <- TRUE
   out
 }
@@ -58,7 +64,12 @@ store_ref_blob <- function(s, txn, blob) {
   }
   blob_publish(s, blob)
   crash_point("publish")
-  engine_put(txn, db, blob$name, record_encode(list(refs = 1, bytes = blob$size, ext = blob$ext)))
+  engine_put(
+    txn,
+    db,
+    blob$name,
+    record_encode(list(refs = 1, bytes = blob$size, ext = blob$ext))
+  )
   store_counters_add(txn, list(bytes_blob = blob$size))
   invisible(TRUE)
 }
@@ -74,7 +85,9 @@ store_ref_blob <- function(s, txn, blob) {
 blob_publish <- function(s, blob) {
   target <- blob_path(s, blob$name)
   dir <- dirname(target)
-  if (!dir.exists(dir)) dir.create(dir, recursive = TRUE, showWarnings = FALSE)
+  if (!dir.exists(dir)) {
+    dir.create(dir, recursive = TRUE, showWarnings = FALSE)
+  }
   if (file.exists(target)) {
     Sys.chmod(target, "0644", use_umask = FALSE)
     crash_point("replace")
@@ -82,8 +95,12 @@ blob_publish <- function(s, blob) {
   Sys.chmod(blob$staged, "0444", use_umask = FALSE)
   if (!file.rename(blob$staged, target)) {
     abort_engine_error(
-      sprintf("Could not move a new blob into %s.", encodeString(dir, quote = "\"")),
-      path = target, call = NULL
+      sprintf(
+        "Could not move a new blob into %s.",
+        encodeString(dir, quote = "\"")
+      ),
+      path = target,
+      call = NULL
     )
   }
   target
@@ -139,12 +156,18 @@ blob_reap <- function(s, blob_names) {
   crash_point("unlink")
   e <- s$engine
   tryCatch(
-    engine_write(e, function(txn) {
-      db <- engine_db(e, "blobs")
-      for (name in blob_names) {
-        if (is.null(engine_get(txn, db, name))) blob_unlink(blob_path(s, name))
-      }
-    }, timeout = min(s$timeout, BLOB_REAP_TIMEOUT)),
+    engine_write(
+      e,
+      function(txn) {
+        db <- engine_db(e, "blobs")
+        for (name in blob_names) {
+          if (is.null(engine_get(txn, db, name))) {
+            blob_unlink(blob_path(s, name))
+          }
+        }
+      },
+      timeout = min(s$timeout, BLOB_REAP_TIMEOUT)
+    ),
     dastash_busy = function(cnd) NULL
   )
   invisible()
@@ -156,11 +179,16 @@ blob_reap <- function(s, blob_names) {
 # elsewhere. Remove it with unlink().
 blob_hold <- function(s, path) {
   held <- stage_path(s)
-  linked <- .Platform$OS.type == "unix" && suppressWarnings(file.link(path, held))
+  linked <- .Platform$OS.type == "unix" &&
+    suppressWarnings(file.link(path, held))
   if (!linked && !file.copy(path, held, copy.mode = FALSE)) {
     abort_engine_error(
-      sprintf("Could not keep the file %s to read it.", encodeString(path, quote = "\"")),
-      path = path, call = NULL
+      sprintf(
+        "Could not keep the file %s to read it.",
+        encodeString(path, quote = "\"")
+      ),
+      path = path,
+      call = NULL
     )
   }
   held

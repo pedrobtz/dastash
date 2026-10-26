@@ -54,10 +54,23 @@ dastash_conditions <- c(
 # Every dastash error goes through here, so the class chain is always
 # `dastash_<class>`, `dastash_error`, `rlang_error`, `error`, `condition`.
 # Structured fields go in `...`; `parent` chains an underlying condition.
-dastash_abort <- function(class, message, ..., call = rlang::caller_env(), parent = NULL) {
-  if (!is.character(class) || length(class) != 1L || !class %in% dastash_conditions) {
+dastash_abort <- function(
+  class,
+  message,
+  ...,
+  call = rlang::caller_env(),
+  parent = NULL
+) {
+  if (
+    !is.character(class) ||
+      length(class) != 1L ||
+      !class %in% dastash_conditions
+  ) {
     rlang::abort(
-      sprintf("Internal error: unknown dastash condition class %s.", format(class)),
+      sprintf(
+        "Internal error: unknown dastash condition class %s.",
+        format(class)
+      ),
       call = NULL
     )
   }
@@ -106,7 +119,11 @@ abort_config_conflict <- function(message, ..., call = rlang::caller_env()) {
   dastash_abort("config_conflict", message, ..., call = call)
 }
 
-abort_version_unsupported <- function(message, ..., call = rlang::caller_env()) {
+abort_version_unsupported <- function(
+  message,
+  ...,
+  call = rlang::caller_env()
+) {
   dastash_abort("version_unsupported", message, ..., call = call)
 }
 

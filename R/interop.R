@@ -27,7 +27,13 @@
 #' fast_double <- memoise::memoise(slow_double, cache = cache)
 #' fast_double(21)
 #' @export
-as_cachem <- function(stash, ..., prefix = "cachem/", expire = NULL, codec = NULL) {
+as_cachem <- function(
+  stash,
+  ...,
+  prefix = "cachem/",
+  expire = NULL,
+  codec = NULL
+) {
   rlang::check_dots_empty()
   check_open(stash)
   check_string(prefix, "prefix")
@@ -37,7 +43,12 @@ as_cachem <- function(stash, ..., prefix = "cachem/", expire = NULL, codec = NUL
   parse_expire(expire, 0)
   key_missing <- structure(list(), class = "key_missing")
   full <- function(key) {
-    if (!is.character(key) || length(key) != 1L || is.na(key) || !grepl("^[a-z0-9_-]+$", key)) {
+    if (
+      !is.character(key) ||
+        length(key) != 1L ||
+        is.na(key) ||
+        !grepl("^[a-z0-9_-]+$", key)
+    ) {
       abort_key_invalid(
         "A cachem key must be one string of lower-case letters, digits, `_` and `-`.",
         call = rlang::caller_env()
@@ -50,7 +61,9 @@ as_cachem <- function(stash, ..., prefix = "cachem/", expire = NULL, codec = NUL
   }
   structure(
     list(
-      get = function(key, missing = key_missing) stash_get(stash, full(key), default = missing),
+      get = function(key, missing = key_missing) {
+        stash_get(stash, full(key), default = missing)
+      },
       set = function(key, value) {
         stash_set(stash, full(key), value, expire = expire, codec = codec)
         invisible(TRUE)
@@ -71,7 +84,11 @@ as_cachem <- function(stash, ..., prefix = "cachem/", expire = NULL, codec = NUL
       },
       size = function() length(keys()),
       info = function() {
-        list(dir = stash_dir(stash), prefix = prefix, size_limit = stash$config$size_limit)
+        list(
+          dir = stash_dir(stash),
+          prefix = prefix,
+          size_limit = stash$config$size_limit
+        )
       }
     ),
     class = c("dastash_cachem", "cachem")
@@ -81,7 +98,14 @@ as_cachem <- function(stash, ..., prefix = "cachem/", expire = NULL, codec = NUL
 #' @export
 print.dastash_cachem <- function(x, ...) {
   info <- x$info()
-  cat("<dastash_cachem> ", info$dir, " under ", encodeString(info$prefix, quote = "\""), "\n", sep = "")
+  cat(
+    "<dastash_cachem> ",
+    info$dir,
+    " under ",
+    encodeString(info$prefix, quote = "\""),
+    "\n",
+    sep = ""
+  )
   invisible(x)
 }
 
@@ -138,10 +162,15 @@ as.list.dastash_stash <- function(x, ...) {
   rlang::check_dots_empty()
   keys <- stash_keys(x)
   if (length(keys) > 1e5) {
-    abort_unsupported("This stash has more than 100,000 entries; read them with `stash_mget()` in pages.")
+    abort_unsupported(
+      "This stash has more than 100,000 entries; read them with `stash_mget()` in pages."
+    )
   }
   if (length(keys) > 1000) {
-    rlang::warn(sprintf("Reading all %d values of this stash into memory.", length(keys)))
+    rlang::warn(sprintf(
+      "Reading all %d values of this stash into memory.",
+      length(keys)
+    ))
   }
   stash_mget(x, lapply(keys, stash_key_text), default = NULL)
 }

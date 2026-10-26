@@ -26,7 +26,14 @@ record_format <- function() {
 }
 
 record_counters <- function() {
-  list(bytes_inline = 0, bytes_blob = 0, hits = 0, misses = 0, evictions = 0, expired = 0)
+  list(
+    bytes_inline = 0,
+    bytes_blob = 0,
+    hits = 0,
+    misses = 0,
+    evictions = 0,
+    expired = 0
+  )
 }
 
 # The meta record of one entry. `enc` is what codec_encode_value() returned;
@@ -74,6 +81,7 @@ record_key_starts_with <- function(record, prefix) {
     return(startsWith(record$key_text, prefix))
   }
   preview <- record$key_preview
-  !is.null(preview) && nchar(prefix, type = "bytes") <= nchar(preview, type = "bytes") &&
+  !is.null(preview) &&
+    nchar(prefix, type = "bytes") <= nchar(preview, type = "bytes") &&
     startsWith(preview, prefix)
 }

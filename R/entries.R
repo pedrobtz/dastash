@@ -34,32 +34,57 @@
 stash_entries <- function(stash, ..., prefix = NULL, tag = NULL, n = Inf) {
   rlang::check_dots_empty()
   check_open(stash)
-  if (!is.null(prefix)) check_string_or_empty(prefix, "prefix")
-  if (!is.null(tag)) check_string(tag, "tag")
+  if (!is.null(prefix)) {
+    check_string_or_empty(prefix, "prefix")
+  }
+  if (!is.null(tag)) {
+    check_string(tag, "tag")
+  }
   check_number(n, "n", min = 0, whole = TRUE, allow_inf = TRUE)
   e <- stash$engine
   now <- unclass(Sys.time())
   found <- engine_read(e, function(txn) {
     if (!is.null(tag)) {
-      rows <- engine_scan(txn, engine_db(e, "tags"), prefix = c(charToRaw(utf8_text(tag)), as.raw(0L)))
+      rows <- engine_scan(
+        txn,
+        engine_db(e, "tags"),
+        prefix = c(charToRaw(utf8_text(tag)), as.raw(0L))
+      )
       stored <- vapply(rows, tag_key_stored, character(1))
       records <- lapply(stored, function(k) store_get_record(stash, txn, k))
       if (!is.null(prefix)) {
-        matches <- vapply(seq_along(stored), function(i) {
-          r <- records[[i]]
-          if (!is.null(r) && record_digested(r)) record_key_starts_with(r, prefix) else startsWith(stored[[i]], prefix)
-        }, logical(1))
+        matches <- vapply(
+          seq_along(stored),
+          function(i) {
+            r <- records[[i]]
+            if (!is.null(r) && record_digested(r)) {
+              record_key_starts_with(r, prefix)
+            } else {
+              startsWith(stored[[i]], prefix)
+            }
+          },
+          logical(1)
+        )
         stored <- stored[matches]
         records <- records[matches]
       }
     } else if (!is.null(prefix)) {
       return(store_scan_prefix(stash, txn, prefix, now = now))
     } else {
-      got <- engine_scan(txn, engine_db(e, "meta"), as = "character", values = TRUE)
+      got <- engine_scan(
+        txn,
+        engine_db(e, "meta"),
+        as = "character",
+        values = TRUE
+      )
       stored <- got$keys
       records <- lapply(got$values, record_decode)
     }
-    live <- vapply(records, function(r) !is.null(r) && is_live(r, now), logical(1))
+    live <- vapply(
+      records,
+      function(r) !is.null(r) && is_live(r, now),
+      logical(1)
+    )
     list(stored = stored[live], records = records[live])
   })
   keep <- seq_len(min(length(found$stored), n))
@@ -73,7 +98,9 @@ stash_info <- function(stash, key) {
   check_supplied("key")
   check_open(stash)
   key <- store_key(key)
-  record <- engine_read(stash$engine, function(txn) store_live_record(stash, txn, key))
+  record <- engine_read(stash$engine, function(txn) {
+    store_live_record(stash, txn, key)
+  })
   if (is.null(record)) {
     return(NULL)
   }
@@ -118,7 +145,11 @@ entries_frame <- function(stored, records) {
   expire <- field("expire", numeric(1))
   expire[!is.finite(expire)] <- NA
   inline <- field("inline", logical(1))
-  blob <- vapply(records, function(r) if (isTRUE(r$inline)) NA_character_ else r$blob, character(1))
+  blob <- vapply(
+    records,
+    function(r) if (isTRUE(r$inline)) NA_character_ else r$blob,
+    character(1)
+  )
   out <- data.frame(
     key = keys,
     bytes = field("bytes", numeric(1)),
