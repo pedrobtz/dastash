@@ -11,7 +11,7 @@ tell "compute it again" apart from "the store is broken":
 | `dastash_not_found` | A read of an absent or expired key without `default`; [`stash()`](https://pedrobtz.github.io/dastash/reference/stash.md) with `create = FALSE` on a missing directory |
 | `dastash_type_error` | A counter operation on a non-counter or past 2^53; a path or lazy read of an entry of the wrong shape; a value a codec cannot store; an `expire` that is `NA` or `NaN` |
 | `dastash_codec_error` | Encoding or decoding failed; a codec's package is not installed; a record names a codec the handle does not know |
-| `dastash_blob_corrupt` | A read finds the file behind a record missing |
+| `dastash_blob_corrupt` | A read finds the file behind a record missing, or not the size its record holds |
 | `dastash_busy` | The write lock was not acquired within `timeout` |
 | `dastash_store_full` | The database reached its `map_size` |
 | `dastash_readonly` | A write on a read-only handle |
@@ -25,3 +25,8 @@ tell "compute it again" apart from "the store is broken":
 Conditions carry structured fields where they apply, such as `key`,
 `dir`, `path` and `codec`, so a handler can act on them without parsing
 the message.
+
+dastash raises one warning, of class `dastash_memoise_unstored` and
+`dastash_warning`: a memoised function computed a result but the stash
+was busy, full or read-only, so it was returned without being stored.
+Its `parent` is the error that prevented storing it.

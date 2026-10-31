@@ -11,6 +11,9 @@ connection, an environment, a function — is an error at call time: leave it
 out with omit, or supply key.
 Two processes missing the same call at once both run f, and one result
 is kept. That is duplicated work, never a wrong result.
+If the stash cannot store a result because its write lock stayed busy, it is
+full or it is read-only, the result is returned anyway, with a warning of
+class dastash_memoise_unstored. A codec that cannot store it is an error.
 stash_memoise_key() returns the key a call would use, stash_forget()
 deletes one call's entry, and stash_forget_all() every entry of the
 function."><meta property="og:description" content="stash_memoise() returns a function that looks each call up in the stash
@@ -25,6 +28,9 @@ connection, an environment, a function — is an error at call time: leave it
 out with omit, or supply key.
 Two processes missing the same call at once both run f, and one result
 is kept. That is duplicated work, never a wrong result.
+If the stash cannot store a result because its write lock stayed busy, it is
+full or it is read-only, the result is returned anyway, with a warning of
+class dastash_memoise_unstored. A codec that cannot store it is an error.
 stash_memoise_key() returns the key a call would use, stash_forget()
 deletes one call's entry, and stash_forget_all() every entry of the
 function."></head><body>
@@ -76,6 +82,9 @@ connection, an environment, a function — is an error at call time: leave it
 out with <code>omit</code>, or supply <code>key</code>.</p>
 <p>Two processes missing the same call at once both run <code>f</code>, and one result
 is kept. That is duplicated work, never a wrong result.</p>
+<p>If the stash cannot store a result because its write lock stayed busy, it is
+full or it is read-only, the result is returned anyway, with a warning of
+class <code>dastash_memoise_unstored</code>. A codec that cannot store it is an error.</p>
 <p><code>stash_memoise_key()</code> returns the key a call would use, <code>stash_forget()</code>
 deletes one call's entry, and <code>stash_forget_all()</code> every entry of the
 function.</p>
@@ -171,8 +180,12 @@ passed as; an anonymous function needs one.</p></dd>
 <span class="r-err co"><span class="r-pr">#&gt;</span> <span class="error">Error:</span> object 'fast_square' not found</span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="co"># Keep an argument out of the key.</span></span></span>
-<span class="r-in"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu">stash_memoise</span><span class="op">(</span><span class="kw">function</span><span class="op">(</span><span class="va">data_id</span>, <span class="va">verbose</span> <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span> <span class="va">data_id</span> <span class="op">*</span> <span class="fl">2</span>, <span class="va">s</span>,</span></span>
-<span class="r-in"><span>  name <span class="op">=</span> <span class="st">"fit"</span>, omit <span class="op">=</span> <span class="st">"verbose"</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu">stash_memoise</span><span class="op">(</span></span></span>
+<span class="r-in"><span>  <span class="kw">function</span><span class="op">(</span><span class="va">data_id</span>, <span class="va">verbose</span> <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span> <span class="va">data_id</span> <span class="op">*</span> <span class="fl">2</span>,</span></span>
+<span class="r-in"><span>  <span class="va">s</span>,</span></span>
+<span class="r-in"><span>  name <span class="op">=</span> <span class="st">"fit"</span>,</span></span>
+<span class="r-in"><span>  omit <span class="op">=</span> <span class="st">"verbose"</span></span></span>
+<span class="r-in"><span><span class="op">)</span></span></span>
 <span class="r-err co"><span class="r-pr">#&gt;</span> <span class="error">Error in stash_memoise(function(data_id, verbose = FALSE) data_id * 2,     s, name = "fit", omit = "verbose"):</span> This stash has been closed.</span>
 <span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="fu">stash_memoise_key</span><span class="op">(</span><span class="va">fit</span>, <span class="fl">1</span><span class="op">)</span>, <span class="fu">stash_memoise_key</span><span class="op">(</span><span class="va">fit</span>, <span class="fl">1</span>, verbose <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">)</span></span></span>
 <span class="r-err co"><span class="r-pr">#&gt;</span> <span class="error">Error:</span> object 'fit' not found</span>

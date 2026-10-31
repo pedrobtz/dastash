@@ -7,8 +7,12 @@ it safely.
 
 `local_stash()` opens a stash that closes when the calling function
 returns, in a new temporary directory unless you give one, which is then
-deleted. `with_stash()` opens one, passes it to a function, and closes
-it afterwards.
+deleted. At the top level there is no function to return from, so
+nothing closes it: call `stash_close()` yourself. `with_stash()` opens
+one, passes it to a function, and closes it afterwards.
+
+`stash_close()` closes a handle, `stash_is_open()` says whether it is
+open, and `stash_dir()` returns its directory.
 
 ## Usage
 
@@ -124,7 +128,9 @@ with_stash(dir, fn, ...)
 ## Value
 
 `stash()` and `local_stash()` return a `dastash_stash`. `with_stash()`
-returns what `fn` returns.
+returns what `fn` returns. `stash_close()` returns the stash, invisibly;
+`stash_is_open()` `TRUE` or `FALSE`; and `stash_dir()` the stash's
+directory, normalised.
 
 ## Details
 

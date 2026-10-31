@@ -2,8 +2,12 @@
 
 `code` runs with one write transaction open on the stash. Every write
 inside it commits together when `code` finishes, or none does if it
-raises an error, and reads inside it see its own writes. A nested
-`stash_transact()` joins the outer one.
+raises an error or is interrupted, and reads inside it see its own
+writes. Leaving `code` early with
+[`return()`](https://rdrr.io/r/base/function.html),
+[`break`](https://rdrr.io/r/base/Control.html) or
+[`next`](https://rdrr.io/r/base/Control.html) is finishing it: the
+writes commit. A nested `stash_transact()` joins the outer one.
 
 The transaction holds the stash's write lock for as long as `code` runs,
 so other processes' writes wait: keep it short, and never compute a

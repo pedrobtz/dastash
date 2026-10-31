@@ -51,7 +51,9 @@ stash_volume(stash)
 
 - start:
 
-  Begin at this key, inclusive.
+  Begin at this key, inclusive: a key's text as `stash_keys()` returns
+  it, or a key from
+  [`stash_key()`](https://pedrobtz.github.io/dastash/reference/stash_key.md).
 
 - n:
 

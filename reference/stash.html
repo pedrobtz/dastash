@@ -4,14 +4,22 @@ returns a handle for the other stash_*() functions. Any number of R
 processes on the machine can open the same directory at once; they share it
 safely.
 local_stash() opens a stash that closes when the calling function returns,
-in a new temporary directory unless you give one, which is then deleted.
-with_stash() opens one, passes it to a function, and closes it afterwards."><meta property="og:description" content="stash() opens the cache in directory dir, creating it if needed, and
+in a new temporary directory unless you give one, which is then deleted. At
+the top level there is no function to return from, so nothing closes it:
+call stash_close() yourself. with_stash() opens one, passes it to a
+function, and closes it afterwards.
+stash_close() closes a handle, stash_is_open() says whether it is open,
+and stash_dir() returns its directory."><meta property="og:description" content="stash() opens the cache in directory dir, creating it if needed, and
 returns a handle for the other stash_*() functions. Any number of R
 processes on the machine can open the same directory at once; they share it
 safely.
 local_stash() opens a stash that closes when the calling function returns,
-in a new temporary directory unless you give one, which is then deleted.
-with_stash() opens one, passes it to a function, and closes it afterwards."></head><body>
+in a new temporary directory unless you give one, which is then deleted. At
+the top level there is no function to return from, so nothing closes it:
+call stash_close() yourself. with_stash() opens one, passes it to a
+function, and closes it afterwards.
+stash_close() closes a handle, stash_is_open() says whether it is open,
+and stash_dir() returns its directory."></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
 
@@ -53,8 +61,12 @@ returns a handle for the other <code>stash_*()</code> functions. Any number of R
 processes on the machine can open the same directory at once; they share it
 safely.</p>
 <p><code>local_stash()</code> opens a stash that closes when the calling function returns,
-in a new temporary directory unless you give one, which is then deleted.
-<code>with_stash()</code> opens one, passes it to a function, and closes it afterwards.</p>
+in a new temporary directory unless you give one, which is then deleted. At
+the top level there is no function to return from, so nothing closes it:
+call <code>stash_close()</code> yourself. <code>with_stash()</code> opens one, passes it to a
+function, and closes it afterwards.</p>
+<p><code>stash_close()</code> closes a handle, <code>stash_is_open()</code> says whether it is open,
+and <code>stash_dir()</code> returns its directory.</p>
     </div>
 
     <div class="section level2">
@@ -170,7 +182,9 @@ write to finish before raising <code>dastash_busy</code>.</p></dd>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
     <p><code>stash()</code> and <code>local_stash()</code> return a <code>dastash_stash</code>.
-<code>with_stash()</code> returns what <code>fn</code> returns.</p>
+<code>with_stash()</code> returns what <code>fn</code> returns. <code>stash_close()</code> returns the stash,
+invisibly; <code>stash_is_open()</code> <code>TRUE</code> or <code>FALSE</code>; and <code>stash_dir()</code> the
+stash's directory, normalised.</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>

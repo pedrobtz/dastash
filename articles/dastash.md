@@ -12,7 +12,7 @@ library(dastash)
 dir <- file.path(tempdir(), "getting-started")
 s <- stash(dir)
 s
-#> <dastash_stash> /tmp/RtmpyDsoIa/getting-started
+#> <dastash_stash> /tmp/RtmpHxkLH4/getting-started
 #>   entries 0 · eviction least-recently-stored · durability safe
 ```
 
@@ -136,10 +136,10 @@ fast_mean <- stash_memoise(slow_mean, s)
 
 system.time(fast_mean(1e5))
 #>    user  system elapsed 
-#>   0.008   0.000   0.508
+#>   0.007   0.000   0.508
 system.time(fast_mean(1e5))
 #>    user  system elapsed 
-#>   0.001   0.000   0.001
+#>   0.000   0.000   0.001
 ```
 
 A call is keyed on the function’s name and its arguments, with defaults
@@ -184,7 +184,7 @@ stash_entries(s)[, c("key", "bytes", "inline", "expires")]
 #> 3                             numbers    133   TRUE                <NA>
 #> 4                         prices/XNYS     39   TRUE                <NA>
 #> 5                         prices/XSWX     39   TRUE                <NA>
-#> 6                       session-token      6   TRUE 2026-10-05 13:12:15
+#> 6                       session-token      6   TRUE 2026-10-31 13:53:33
 #> 7 {date=d:2026-08-29,exchange=s:XSWX}      6   TRUE                <NA>
 stash_stats(s)[, c("count", "bytes_inline", "bytes_blob", "volume")]
 #>   count bytes_inline bytes_blob  volume

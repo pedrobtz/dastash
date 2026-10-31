@@ -16,6 +16,11 @@ time: leave it out with `omit`, or supply `key`.
 Two processes missing the same call at once both run `f`, and one result
 is kept. That is duplicated work, never a wrong result.
 
+If the stash cannot store a result because its write lock stayed busy,
+it is full or it is read-only, the result is returned anyway, with a
+warning of class `dastash_memoise_unstored`. A codec that cannot store
+it is an error.
+
 `stash_memoise_key()` returns the key a call would use, `stash_forget()`
 deletes one call's entry, and `stash_forget_all()` every entry of the
 function.
@@ -112,8 +117,12 @@ stash_forget(fast_square, 4)
 #> Error: object 'fast_square' not found
 
 # Keep an argument out of the key.
-fit <- stash_memoise(function(data_id, verbose = FALSE) data_id * 2, s,
-  name = "fit", omit = "verbose")
+fit <- stash_memoise(
+  function(data_id, verbose = FALSE) data_id * 2,
+  s,
+  name = "fit",
+  omit = "verbose"
+)
 #> Error in stash_memoise(function(data_id, verbose = FALSE) data_id * 2,     s, name = "fit", omit = "verbose"): This stash has been closed.
 identical(stash_memoise_key(fit, 1), stash_memoise_key(fit, 1, verbose = TRUE))
 #> Error: object 'fit' not found

@@ -1,12 +1,12 @@
 # Use a stash through the cachem interface
 
-Returns an object with the methods of a 'cachem' cache —
+Returns an object with the methods of a cachem cache —
 [`get()`](https://rdrr.io/r/base/get.html), `set()`,
 [`exists()`](https://rdrr.io/r/base/exists.html),
 [`remove()`](https://rdrr.io/r/base/rm.html), `reset()`, `keys()`,
-`prune()`, `size()` and `info()` — so code written for 'cachem', such as
+`prune()`, `size()` and `info()` — so code written for cachem, such as
 [`memoise::memoise()`](https://memoise.r-lib.org/reference/memoise.html)
-and Shiny's `bindCache()`, can store in a stash. Keys follow 'cachem”s
+and Shiny's `bindCache()`, can store in a stash. Keys follow cachem's
 rule, lower-case letters, digits, `_` and `-`, and are stored under
 `prefix`.
 
