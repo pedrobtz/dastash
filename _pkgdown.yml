@@ -6,6 +6,7 @@ articles:
 - title: Articles
   contents:
   - dastash
+  - caching-slow-work
   - shared-stash
 
 reference:

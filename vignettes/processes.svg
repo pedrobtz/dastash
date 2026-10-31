@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 270" width="680" height="270" role="img" aria-labelledby="title desc" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13">
+  <title id="title">Many readers, one writer at a time</title>
+  <desc id="desc">Three processes read the stash at once without waiting, each seeing the last committed state. One process holds the write lock and writes; a second writer waits for its turn, and raises dastash_busy if it waits longer than timeout.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#52606d"/>
+    </marker>
+    <marker id="arrow-write" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#b45309"/>
+    </marker>
+  </defs>
+  <rect width="680" height="270" fill="#ffffff"/>
+
+  <!-- readers -->
+  <text x="88" y="28" text-anchor="middle" font-weight="600" fill="#047857">readers</text>
+  <g fill="#ecfdf5" stroke="#059669">
+    <rect x="16" y="44" width="144" height="40" rx="6"/>
+    <rect x="16" y="112" width="144" height="40" rx="6"/>
+    <rect x="16" y="180" width="144" height="40" rx="6"/>
+  </g>
+  <g fill="#1f2933" text-anchor="middle">
+    <text x="88" y="69">interactive session</text>
+    <text x="88" y="137">Shiny app</text>
+    <text x="88" y="205">parallel worker</text>
+  </g>
+  <g stroke="#52606d" stroke-width="1.5" fill="none">
+    <path d="M160,64 C200,64 210,110 252,122" marker-start="url(#arrow)"/>
+    <line x1="160" y1="132" x2="252" y2="132" marker-start="url(#arrow)"/>
+    <path d="M160,200 C200,200 210,154 252,142" marker-start="url(#arrow)"/>
+  </g>
+  <text x="88" y="246" text-anchor="middle" font-size="12" fill="#52606d">read at once, never wait,</text>
+  <text x="88" y="262" text-anchor="middle" font-size="12" fill="#52606d">see the last commit</text>
+
+  <!-- stash -->
+  <rect x="256" y="72" width="168" height="120" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="340" y="112" text-anchor="middle" font-weight="600" fill="#1e3a8a">the stash</text>
+  <text x="340" y="132" text-anchor="middle" font-size="12" fill="#52606d">cache.mdbx + blobs/</text>
+  <text x="340" y="160" text-anchor="middle" font-size="12" fill="#52606d">write lock in</text>
+  <text x="340" y="176" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#52606d">cache.mdbx-lck</text>
+
+  <!-- writers -->
+  <text x="592" y="28" text-anchor="middle" font-weight="600" fill="#b45309">writers</text>
+  <rect x="520" y="56" width="144" height="52" rx="6" fill="#fff7ed" stroke="#d97706" stroke-width="1.5"/>
+  <text x="592" y="78" text-anchor="middle" fill="#1f2933">nightly job</text>
+  <text x="592" y="96" text-anchor="middle" font-size="12" fill="#b45309">holds the lock</text>
+  <path d="M520,82 C480,82 470,104 428,112" stroke="#b45309" stroke-width="2" fill="none" marker-end="url(#arrow-write)"/>
+
+  <rect x="520" y="156" width="144" height="52" rx="6" fill="#ffffff" stroke="#d97706" stroke-dasharray="5 4"/>
+  <text x="592" y="178" text-anchor="middle" fill="#1f2933">worker 2</text>
+  <text x="592" y="196" text-anchor="middle" font-size="12" fill="#52606d">waits its turn</text>
+  <path d="M520,182 C480,182 470,160 428,152" stroke="#9aa5b1" stroke-width="1.5" stroke-dasharray="5 4" fill="none" marker-end="url(#arrow)"/>
+  <text x="592" y="232" text-anchor="middle" font-size="12" fill="#52606d">longer than timeout:</text>
+  <text x="592" y="248" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" fill="#b91c1c">dastash_busy</text>
+</svg>

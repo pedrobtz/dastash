@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 300" width="680" height="300" role="img" aria-labelledby="title desc" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13">
+  <title id="title">Where a stash keeps a value</title>
+  <desc id="desc">A small value is stored inside the record in cache.mdbx. A large value is stored as a read-only file in blobs/, named by the hash of its content, and the record points at it.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#52606d"/>
+    </marker>
+  </defs>
+  <rect width="680" height="300" fill="#ffffff"/>
+
+  <!-- calls -->
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1f2933">
+    <rect x="12" y="62" width="226" height="36" rx="6" fill="#f5f7fa" stroke="#cbd2d9"/>
+    <text x="21" y="84">stash_set(s, "price", 101.2)</text>
+    <rect x="12" y="190" width="226" height="36" rx="6" fill="#f5f7fa" stroke="#cbd2d9"/>
+    <text x="21" y="212">stash_set(s, "big", runif(1e5))</text>
+  </g>
+  <line x1="238" y1="80" x2="276" y2="80" stroke="#52606d" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="238" y1="208" x2="276" y2="208" stroke="#52606d" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- cache.mdbx -->
+  <rect x="280" y="16" width="200" height="268" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="380" y="40" text-anchor="middle" font-weight="600" fill="#1e3a8a">cache.mdbx</text>
+  <text x="380" y="56" text-anchor="middle" font-size="11" fill="#52606d">one record per key</text>
+
+  <rect x="296" y="66" width="168" height="64" rx="6" fill="#ffffff" stroke="#93c5fd"/>
+  <text x="308" y="86" font-weight="600" fill="#1f2933">"price"</text>
+  <text x="308" y="104" font-size="12" fill="#52606d">codec rds, expiry, tags</text>
+  <text x="308" y="121" font-size="12" fill="#047857">value: inside the record</text>
+
+  <rect x="296" y="176" width="168" height="64" rx="6" fill="#ffffff" stroke="#93c5fd"/>
+  <text x="308" y="196" font-weight="600" fill="#1f2933">"big"</text>
+  <text x="308" y="214" font-size="12" fill="#52606d">codec rds, size, hash</text>
+  <text x="308" y="231" font-size="12" fill="#b45309">value: blob b795…</text>
+
+  <line x1="464" y1="208" x2="514" y2="208" stroke="#52606d" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- blobs -->
+  <rect x="518" y="150" width="150" height="116" rx="10" fill="#fff7ed" stroke="#d97706" stroke-width="1.5"/>
+  <text x="593" y="174" text-anchor="middle" font-weight="600" fill="#7c2d12">blobs/</text>
+  <rect x="530" y="184" width="126" height="46" rx="4" fill="#ffffff" stroke="#fdba74"/>
+  <text x="593" y="203" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1f2933">b7/b795…3745.rds</text>
+  <text x="593" y="220" text-anchor="middle" font-size="11" fill="#52606d">781 KiB, read-only</text>
+  <text x="593" y="252" text-anchor="middle" font-size="11" fill="#52606d">named by content</text>
+
+  <text x="593" y="62" text-anchor="middle" font-size="12" fill="#52606d">under inline_max</text>
+  <text x="593" y="78" text-anchor="middle" font-size="12" fill="#52606d">(32 KiB): in the</text>
+  <text x="593" y="94" text-anchor="middle" font-size="12" fill="#52606d">database; at or above</text>
+  <text x="593" y="110" text-anchor="middle" font-size="12" fill="#52606d">it: a file</text>
+</svg>
