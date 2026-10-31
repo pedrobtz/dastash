@@ -25,6 +25,12 @@ the last committed state. Writes take turns. A write that waits longer
 than `timeout` seconds (60 by default) for another process’s write
 raises `dastash_busy`, not a hang.
 
+![Readers never wait; one writer holds the lock and the next waits its
+turn.](processes.svg)
+
+Readers never wait; one writer holds the lock and the next waits its
+turn.
+
 Each process opens the stash itself. A handle cannot be carried into a
 forked child, such as a
 [`parallel::mclapply()`](https://rdrr.io/r/parallel/mclapply.html)

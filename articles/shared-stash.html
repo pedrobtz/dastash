@@ -84,6 +84,10 @@ share) is not supported.</p>
 the last committed state. Writes take turns. A write that waits longer
 than <code>timeout</code> seconds (60 by default) for another process’s
 write raises <code>dastash_busy</code>, not a hang.</p>
+<div class="float">
+<img src="processes.svg" style="width:100.0%" alt="Readers never wait; one writer holds the lock and the next waits its turn."><div class="figcaption">Readers never wait; one writer holds the lock
+and the next waits its turn.</div>
+</div>
 <p>Each process opens the stash itself. A handle cannot be carried into
 a forked child, such as a <code><a href="https://rdrr.io/r/parallel/mclapply.html" class="external-link">parallel::mclapply()</a></code> worker.
 Using it there raises <code>dastash_forked</code>, so open the stash

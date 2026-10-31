@@ -12,7 +12,7 @@ library(dastash)
 dir <- file.path(tempdir(), "getting-started")
 s <- stash(dir)
 s
-#> <dastash_stash> /tmp/RtmpHxkLH4/getting-started
+#> <dastash_stash> /tmp/RtmpeZh0aR/getting-started
 #>   entries 0 · eviction least-recently-stored · durability safe
 ```
 
@@ -136,7 +136,7 @@ fast_mean <- stash_memoise(slow_mean, s)
 
 system.time(fast_mean(1e5))
 #>    user  system elapsed 
-#>   0.007   0.000   0.508
+#>   0.006   0.000   0.507
 system.time(fast_mean(1e5))
 #>    user  system elapsed 
 #>   0.000   0.000   0.001
@@ -162,6 +162,23 @@ stored once.
 [`stash_path()`](https://pedrobtz.github.io/dastash/reference/stash_path.md)
 gives the file, for tools that read it in place.
 
+![A small value lives inside its record in cache.mdbx; a large one
+becomes a file in blobs/ that the record points at.](storage.svg)
+
+A small value lives inside its record in `cache.mdbx`; a large one
+becomes a file in `blobs/` that the record points at.
+
+The stash’s directory holds the database, its lock file, the files and a
+staging area:
+
+``` text
+getting-started/
+├── cache.mdbx        every record and index
+├── cache.mdbx-lck    the lock that coordinates processes
+├── blobs/b7/b795…3745.rds
+└── tmp/              files being written, before they are published
+```
+
 ``` r
 
 big <- runif(1e5)
@@ -184,7 +201,7 @@ stash_entries(s)[, c("key", "bytes", "inline", "expires")]
 #> 3                             numbers    133   TRUE                <NA>
 #> 4                         prices/XNYS     39   TRUE                <NA>
 #> 5                         prices/XSWX     39   TRUE                <NA>
-#> 6                       session-token      6   TRUE 2026-10-31 13:53:33
+#> 6                       session-token      6   TRUE 2026-10-31 13:55:34
 #> 7 {date=d:2026-08-29,exchange=s:XSWX}      6   TRUE                <NA>
 stash_stats(s)[, c("count", "bytes_inline", "bytes_blob", "volume")]
 #>   count bytes_inline bytes_blob  volume
