@@ -128,6 +128,19 @@ Values of `inline_max` bytes (32 KiB) or more are stored as read-only files, nam
 the hash of their content, so identical values are stored once. `stash_path()` gives
 the file, for tools that read it in place.
 
+![A small value lives inside its record in `cache.mdbx`; a large one becomes a file in
+`blobs/` that the record points at.](storage.svg){width=100%}
+
+The stash's directory holds the database, its lock file, the files and a staging area:
+
+```text
+getting-started/
+├── cache.mdbx        every record and index
+├── cache.mdbx-lck    the lock that coordinates processes
+├── blobs/b7/b795…3745.rds
+└── tmp/              files being written, before they are published
+```
+
 ```{r}
 big <- runif(1e5)
 stash_set(s, "big", big)
