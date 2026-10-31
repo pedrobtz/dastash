@@ -1,7 +1,3 @@
-blob_files <- function(s) {
-  list.files(file.path(s$dir, "blobs"), recursive = TRUE)
-}
-
 test_that("a value of inline_max bytes or more becomes a read-only file", {
   s <- local_stash(inline_max = 1000)
   small <- 1:10
@@ -198,29 +194,22 @@ test_that("an orphan of the same name is replaced by the freshly written file", 
 
 # Crashes and processes --------------------------------------------------------
 
-crash_writer <- function(dir, point, fn) {
-  callr::r(
-    function(dir, fn) {
-      s <- dastash::stash(dir, inline_max = 100)
-      fn(s)
-    },
-    args = list(dir = dir, fn = fn),
-    env = c(callr::rcmd_safe_env(), DASTASH_CRASH = point),
-    error = "error"
-  )
-}
-
 test_that("a writer killed between publish and commit leaves at most an orphan", {
   skip_unless_children_see_this_build()
   skip_on_cran()
   skip_on_os("windows")
   dir <- withr::local_tempdir()
-  expect_error(crash_writer(dir, "publish", function(s) dastash::stash_set(s, "k", runif(100))))
+  expect_killed(crash_writer(dir, "publish", function(s) dastash::stash_set(s, "k", runif(100))))
   s <- stash(dir)
   withr::defer(stash_close(s))
   expect_false(stash_has(s, "k"))
   expect_length(blob_files(s), 1L)
   expect_identical(store_violations(s), character())
+  # What the dead process itself held may be cleared too; the only damage is
+  # the orphan, and repair reclaims it.
+  kinds <- stash_check(s, repair = TRUE)$kind
+  expect_identical(setdiff(kinds, c("reader_stale", "tmp_stale")), "blob_orphan")
+  expect_length(blob_files(s), 0L)
   stash_set(s, "k", 1)
   expect_identical(stash_get(s, "k"), 1)
 })
@@ -233,12 +222,17 @@ test_that("a writer killed between commit and unlink leaves at most an orphan", 
   s <- stash(dir, inline_max = 100)
   stash_set(s, "k", runif(100))
   stash_close(s)
-  expect_error(crash_writer(dir, "unlink", function(s) dastash::stash_delete(s, "k")))
+  expect_killed(crash_writer(dir, "unlink", function(s) dastash::stash_delete(s, "k")))
   s <- stash(dir)
   withr::defer(stash_close(s))
   expect_false(stash_has(s, "k"))
   expect_length(blob_files(s), 1L)
   expect_identical(store_violations(s), character())
+  # What the dead process itself held may be cleared too; the only damage is
+  # the orphan, and repair reclaims it.
+  kinds <- stash_check(s, repair = TRUE)$kind
+  expect_identical(setdiff(kinds, c("reader_stale", "tmp_stale")), "blob_orphan")
+  expect_length(blob_files(s), 0L)
 })
 
 test_that("a writer killed replacing a file its transaction released leaves the file", {
@@ -253,7 +247,7 @@ test_that("a writer killed replacing a file its transaction released leaves the 
   # Deleting "a" drops the file's last reference inside the transaction, so
   # storing the same bytes under "b" publishes over the existing file; the
   # transaction never commits, and "a" needs its file afterwards.
-  expect_error(crash_writer(dir, "replace", function(s) {
+  expect_killed(crash_writer(dir, "replace", function(s) {
     dastash::stash_transact(s, {
       v <- dastash::stash_get(s, "a")
       dastash::stash_delete(s, "a")
@@ -338,4 +332,44 @@ test_that("readers never see a dangling file while writers replace and delete", 
     expect_no_error(r$get_result())
   }
   expect_identical(store_violations(s), character())
+})
+
+test_that("seven readers racing a writer through eviction never see a dangling file", {
+  skip_unless_children_see_this_build()
+  skip_on_cran()
+  dir <- withr::local_tempdir()
+  # Room for about three values, so nearly every write evicts, and the files
+  # of evicted entries are reaped while readers may be decoding them.
+  s <- stash(dir, inline_max = 100, size_limit = 7500)
+  withr::defer(stash_close(s))
+  values <- lapply(1:10, function(i) runif(300))
+  writer <- callr::r_bg(function(dir, values) {
+    s <- dastash::stash(dir)
+    on.exit(dastash::stash_close(s))
+    for (j in 1:80) dastash::stash_set(s, sprintf("k%02d", j %% 20), values[[j %% 10 + 1]])
+  }, args = list(dir = dir, values = values))
+  readers <- lapply(1:7, function(i) {
+    callr::r_bg(function(dir, values) {
+      s <- dastash::stash(dir)
+      on.exit(dastash::stash_close(s))
+      seen <- 0
+      for (j in 1:200) {
+        v <- dastash::stash_get(s, sprintf("k%02d", j %% 20), default = NULL)
+        if (!is.null(v)) {
+          stopifnot(any(vapply(values, identical, logical(1), v)))
+          seen <- seen + 1
+        }
+      }
+      seen
+    }, args = list(dir = dir, values = values))
+  })
+  writer$wait(timeout = 120000)
+  expect_no_error(writer$get_result())
+  for (r in readers) {
+    r$wait(timeout = 120000)
+    expect_no_error(r$get_result())
+  }
+  expect_lte(stash_count(s), 4L)
+  expect_identical(store_violations(s), character())
+  expect_identical(nrow(stash_check(s, hash = TRUE)), 0L)
 })

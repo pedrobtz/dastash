@@ -19,7 +19,8 @@ stash_volume(stash)
 
 \item{prefix}{Only keys whose text begins with this string.}
 
-\item{start}{Begin at this key, inclusive.}
+\item{start}{Begin at this key, inclusive: a key's text as \code{stash_keys()}
+returns it, or a key from \code{\link[=stash_key]{stash_key()}}.}
 
 \item{n}{The most keys to return.}
 }

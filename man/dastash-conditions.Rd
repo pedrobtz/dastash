@@ -12,7 +12,7 @@ it again" apart from "the store is broken":\tabular{ll}{
    \code{dastash_not_found} \tab A read of an absent or expired key without \code{default}; \code{stash()} with \code{create = FALSE} on a missing directory \cr
    \code{dastash_type_error} \tab A counter operation on a non-counter or past 2^53; a path or lazy read of an entry of the wrong shape; a value a codec cannot store; an \code{expire} that is \code{NA} or \code{NaN} \cr
    \code{dastash_codec_error} \tab Encoding or decoding failed; a codec's package is not installed; a record names a codec the handle does not know \cr
-   \code{dastash_blob_corrupt} \tab A read finds the file behind a record missing \cr
+   \code{dastash_blob_corrupt} \tab A read finds the file behind a record missing, or not the size its record holds \cr
    \code{dastash_busy} \tab The write lock was not acquired within \code{timeout} \cr
    \code{dastash_store_full} \tab The database reached its \code{map_size} \cr
    \code{dastash_readonly} \tab A write on a read-only handle \cr
@@ -27,4 +27,9 @@ it again" apart from "the store is broken":\tabular{ll}{
 
 Conditions carry structured fields where they apply, such as \code{key}, \code{dir},
 \code{path} and \code{codec}, so a handler can act on them without parsing the message.
+
+dastash raises one warning, of class \code{dastash_memoise_unstored} and
+\code{dastash_warning}: a memoised function computed a result but the stash was
+busy, full or read-only, so it was returned without being stored. Its
+\code{parent} is the error that prevented storing it.
 }

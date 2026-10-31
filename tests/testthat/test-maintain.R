@@ -1,8 +1,3 @@
-held <- function(s) {
-  c <- engine_read(s$engine, store_counters)
-  c$bytes_inline + c$bytes_blob
-}
-
 # Size limit and eviction --------------------------------------------------------
 
 test_that("writes keep the stash near its limit, evicting the least recently stored", {
@@ -29,15 +24,15 @@ test_that("stash_mset() keeps the stash near its limit however large the batch",
 })
 
 test_that("stash_cull() finishes the job", {
-  s <- local_stash(size_limit = Inf, inline_max = 1000)
-  for (i in 1:20) stash_set(s, sprintf("k%02d", i), runif(250))
-  stash_close(s)
-  s <- local_stash(dir = s$dir)
-  # A lower limit cannot be set on an existing stash, so write it directly.
-  s$config$size_limit <- 10000
+  # One eviction per write cannot make room for a value three times the size
+  # of the others, so the write leaves the stash over its limit.
+  s <- local_stash(size_limit = 10000, inline_max = 1000, cull_limit = 1)
+  for (i in 1:4) stash_set(s, sprintf("k%02d", i), runif(250))
+  stash_set(s, "k05", runif(750))
+  expect_gt(held(s), 10000)
   stash_cull(s)
   expect_lte(held(s), 10000)
-  expect_identical(stash_keys(s)[length(stash_keys(s))], "k20")
+  expect_true("k05" %in% stash_keys(s))
   expect_identical(store_violations(s), character())
 })
 
@@ -204,7 +199,9 @@ test_that("stash_check() finds and repairs every kind of damage", {
     row <- record_decode(engine_get(txn, engine_db(e, "blobs"), name))
     row$refs <- 7
     engine_put(txn, engine_db(e, "blobs"), name, record_encode(row))
-    store_counters_add(txn, list(bytes_inline = 99))
+    store_counters_add(txn, list(bytes_inline = 99, bytes_blob = 7))
+    # A file whose blobs row is gone.
+    engine_del(txn, engine_db(e, "blobs"), basename(stash_path(s, "blob")))
   })
   nofile <- stash_path(s, "nofile")
   corrupt <- stash_path(s, "corrupt")
@@ -222,6 +219,9 @@ test_that("stash_check() finds and repairs every kind of damage", {
       "blob_missing", "blob_corrupt", "blob_orphan", "refcount_drift", "counter_drift")
   )
   expect_false(any(found$repaired))
+  expect_true("file present but not counted" %in% found$detail)
+  expect_true(any(startsWith(found$detail, "bytes_blob")))
+  expect_true(any(startsWith(found$detail, "bytes_inline")))
 
   fixed <- stash_check(s, repair = TRUE)
   expect_true(all(fixed$repaired))
@@ -257,8 +257,10 @@ test_that("stale staging files of dead processes are reported and removed", {
   s <- local_stash()
   live <- callr::r_bg(function() Sys.sleep(60))
   withr::defer(live$kill())
-  old <- file.path(s$dir, "tmp", "999999-1")
-  fresh <- file.path(s$dir, "tmp", "999999-2")
+  # A process that has exited, so its id is certainly not running now.
+  dead <- callr::r(function() Sys.getpid())
+  old <- file.path(s$dir, "tmp", sprintf("%d-1", dead))
+  fresh <- file.path(s$dir, "tmp", sprintf("%d-2", dead))
   busy <- file.path(s$dir, "tmp", sprintf("%d-1", live$get_pid()))
   for (path in c(old, fresh, busy)) writeLines("x", path)
   Sys.setFileTime(old, Sys.time() - 7200)
@@ -294,8 +296,13 @@ test_that("an encoder that fails or is interrupted leaves no staging file", {
   expect_length(list.files(tmp), 0L)
   expect_identical(stash_count(s), 0L)
   # Interrupted on its own staging file, a file-backed value of bytes.
-  local_mocked_bindings(hash_bytes = function(bytes) rlang::interrupt())
+  reached <- FALSE
+  local_mocked_bindings(hash_bytes = function(bytes) {
+    reached <<- TRUE
+    rlang::interrupt()
+  })
   tryCatch(stash_set(s, "r", as.raw(1:10)), interrupt = function(cnd) NULL)
+  expect_true(reached)
   expect_length(list.files(tmp), 0L)
 })
 
@@ -308,7 +315,6 @@ test_that("a crash's orphan is reclaimed by repair", {
     engine_del(txn, engine_db(s$engine, "meta"), "k")
     engine_del(txn, engine_db(s$engine, "blobs"), basename(path))
     store_counters_add(txn, list(bytes_blob = -file.size(path)))
-    for (row in index_rows(s, "k", list(expire = Inf, stored = 0, tags = character()))) NULL
   })
   engine_write(s$engine, function(txn) engine_clear_db(txn, engine_db(s$engine, "stored")))
   f <- stash_check(s, repair = TRUE)
@@ -329,7 +335,7 @@ test_that("prefix selects digested keys by their text", {
   }
   expect_setequal(
     stash_keys(s, prefix = "p/"),
-    c("p/a", "p/b", long, stash_keys(s, prefix = "p/y"))
+    c("p/a", "p/b", long, paste0("#", stash_key_hash(longer)))
   )
   expect_length(stash_keys(s, prefix = "p/"), 4L)
   expect_identical(
@@ -365,4 +371,101 @@ test_that("start pages through a prefix that holds digested keys", {
   last <- page1[[4]]
   page2 <- stash_keys(s, prefix = "p/", start = last, n = 10)
   expect_identical(c(page1, page2[-1L]), all)
+})
+
+test_that("stash_evict() removes more entries than one scan holds", {
+  s <- local_stash()
+  n <- ENGINE_SCAN_CHUNK + 1L
+  values <- as.list(seq_len(n))
+  stash_mset(s, stats::setNames(values, sprintf("p/%04d", seq_len(n))))
+  stash_mset(s, stats::setNames(values, sprintf("t/%04d", seq_len(n))), tags = "many")
+  stash_evict(s, prefix = "p/")
+  expect_identical(stash_count(s), n)
+  stash_evict(s, tag = "many")
+  expect_identical(stash_count(s), 0L)
+  expect_identical(store_violations(s), character())
+})
+
+test_that("stash_evict() by tag ends on tag rows whose entries are gone", {
+  s <- local_stash()
+  e <- s$engine
+  engine_write(e, function(txn) {
+    for (i in seq_len(ENGINE_SCAN_CHUNK)) {
+      engine_put(txn, engine_db(e, "tags"), tag_key("t", sprintf("ghost%04d", i)), raw())
+    }
+  })
+  stash_set(s, "real", 1, tags = "t")
+  stash_evict(s, tag = "t")
+  expect_identical(stash_count(s), 0L)
+  expect_identical(engine_read(e, function(txn) engine_count(txn, engine_db(e, "tags"))), 0)
+})
+
+test_that("the files a transaction releases are reaped in one follow-up", {
+  s <- local_stash(inline_max = 100)
+  for (i in 1:20) stash_set(s, paste0("k", i), runif(100))
+  reaps <- 0
+  reap <- blob_reap
+  local_mocked_bindings(blob_reap = function(s, names) {
+    reaps <<- reaps + 1
+    reap(s, names)
+  })
+  stash_clear(s)
+  expect_identical(reaps, 1)
+  for (i in 1:20) stash_set(s, paste0("k", i), runif(100))
+  stash_evict(s, prefix = "k")
+  expect_identical(reaps, 2)
+  expect_length(blob_files(s), 0L)
+})
+
+test_that("a write that fills the map leaves the stash sound and usable", {
+  s <- local_stash(map_size = 2^20, inline_max = 10000, size_limit = Inf)
+  # Each batch publishes a file first, then fills the map with an inline value,
+  # so the commit that fails has already published a file.
+  full <- tryCatch(
+    {
+      for (i in 1:200) {
+        stash_mset(s, stats::setNames(list(runif(5000), runif(1000)), sprintf(c("b%03d", "i%03d"), i)))
+      }
+      FALSE
+    },
+    dastash_store_full = function(cnd) TRUE
+  )
+  skip_if_not(full, "the map did not fill")
+  expect_length(list.files(file.path(s$dir, "tmp")), 0L)
+  expect_identical(store_violations(s), character())
+  stash_evict(s, prefix = "i")
+  f <- stash_check(s, repair = TRUE)
+  expect_true(all(f$kind %in% "blob_orphan"))
+  expect_identical(nrow(stash_check(s)), 0L)
+  stash_set(s, "after", 1)
+  expect_identical(stash_get(s, "after"), 1)
+})
+
+test_that("every index stays a projection of the records through random mutations", {
+  withr::local_seed(20261026)
+  s <- local_stash(inline_max = 200, size_limit = 20000, cull_limit = 3)
+  keys <- sprintf("k%02d", 1:15)
+  tags <- c("red", "green", "blue")
+  for (step in 1:300) {
+    k <- sample(keys, 1L)
+    switch(sample(c("set", "set", "delete", "pop", "incr", "expire", "touch", "evict"), 1L),
+      set = stash_set(
+        s, k, if (runif(1) < 0.5) runif(sample(1:60, 1L)) else sample(letters, 1L),
+        tags = sample(tags, sample(0:2, 1L)),
+        expire = if (runif(1) < 0.3) sample(c(-1, 3600), 1L)
+      ),
+      delete = stash_delete(s, k),
+      pop = stash_pop(s, k, default = NULL),
+      incr = tryCatch(stash_incr(s, paste0("n", k)), dastash_type_error = function(cnd) NULL),
+      expire = stash_expire(s),
+      touch = stash_touch(s, k, sample(c(-1, 60), 1L)),
+      evict = if (runif(1) < 0.5) stash_evict(s, tag = sample(tags, 1L)) else stash_evict(s, prefix = "k0")
+    )
+    violations <- store_violations(s)
+    if (length(violations) > 0L) {
+      fail(sprintf("after step %d: %s", step, paste(violations, collapse = "; ")))
+      break
+    }
+  }
+  expect_identical(nrow(stash_check(s)), 0L)
 })

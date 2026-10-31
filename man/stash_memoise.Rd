@@ -71,6 +71,10 @@ out with \code{omit}, or supply \code{key}.
 Two processes missing the same call at once both run \code{f}, and one result
 is kept. That is duplicated work, never a wrong result.
 
+If the stash cannot store a result because its write lock stayed busy, it is
+full or it is read-only, the result is returned anyway, with a warning of
+class \code{dastash_memoise_unstored}. A codec that cannot store it is an error.
+
 \code{stash_memoise_key()} returns the key a call would use, \code{stash_forget()}
 deletes one call's entry, and \code{stash_forget_all()} every entry of the
 function.
@@ -88,7 +92,11 @@ stash_memoise_key(fast_square, 4)
 stash_forget(fast_square, 4)
 
 # Keep an argument out of the key.
-fit <- stash_memoise(function(data_id, verbose = FALSE) data_id * 2, s,
-  name = "fit", omit = "verbose")
+fit <- stash_memoise(
+  function(data_id, verbose = FALSE) data_id * 2,
+  s,
+  name = "fit",
+  omit = "verbose"
+)
 identical(stash_memoise_key(fit, 1), stash_memoise_key(fit, 1, verbose = TRUE))
 }

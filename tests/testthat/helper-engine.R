@@ -65,8 +65,19 @@ store_violations <- function(s) {
     if (!isTRUE(all.equal(counters$bytes_inline, bytes_inline))) out <- c(out, "bytes_inline drifted")
     blob_bytes <- sum(vapply(rows, function(r) r$bytes, 0))
     if (!isTRUE(all.equal(counters$bytes_blob, blob_bytes))) out <- c(out, "bytes_blob drifted")
-    n_expiring <- sum(vapply(records, function(r) is.finite(r$expire), logical(1)))
-    if (engine_count(txn, engine_db(e, "expiry")) != n_expiring) out <- c(out, "expiry rows differ from records")
+    # Every index, row for row, against what the records imply.
+    want <- list()
+    for (k in names(records)) {
+      for (row in index_rows(s, k, records[[k]])) {
+        want[[row$db]] <- c(want[[row$db]], raw_hex(row$key))
+      }
+    }
+    for (db in setdiff(store_databases(s$config), c("meta", "values", "blobs"))) {
+      have <- vapply(engine_scan(txn, engine_db(e, db)), raw_hex, character(1))
+      expected <- want[[db]] %||% character()
+      if (length(setdiff(have, expected)) > 0L) out <- c(out, paste(db, "has rows no record implies"))
+      if (length(setdiff(expected, have)) > 0L) out <- c(out, paste(db, "is missing rows its records imply"))
+    }
     out
   })
 }

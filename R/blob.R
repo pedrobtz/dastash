@@ -26,10 +26,6 @@ blob_path <- function(s, name) {
   file.path(s$dir, "blobs", substr(name, 1L, 2L), name)
 }
 
-record_blob_name <- function(record) {
-  blob_name(record$blob, record$ext)
-}
-
 # Write an encoded value to a staging file in <root>/tmp and hash it, outside
 # any transaction. Returns what the transaction needs to publish it.
 blob_stage <- function(s, enc) {
@@ -43,7 +39,13 @@ blob_stage <- function(s, enc) {
     path <- enc$path
     hash <- hash_file(path)
   }
-  out <- list(staged = path, hash = hash, ext = enc$ext, name = blob_name(hash, enc$ext), size = as.double(file.size(path)))
+  out <- list(
+    staged = path,
+    hash = hash,
+    ext = enc$ext,
+    name = blob_name(hash, enc$ext),
+    size = as.double(file.size(path))
+  )
   done <- TRUE
   out
 }
@@ -62,7 +64,12 @@ store_ref_blob <- function(s, txn, blob) {
   }
   blob_publish(s, blob)
   crash_point("publish")
-  engine_put(txn, db, blob$name, record_encode(list(refs = 1, bytes = blob$size, ext = blob$ext)))
+  engine_put(
+    txn,
+    db,
+    blob$name,
+    record_encode(list(refs = 1, bytes = blob$size, ext = blob$ext))
+  )
   store_counters_add(txn, list(bytes_blob = blob$size))
   invisible(TRUE)
 }
@@ -78,7 +85,9 @@ store_ref_blob <- function(s, txn, blob) {
 blob_publish <- function(s, blob) {
   target <- blob_path(s, blob$name)
   dir <- dirname(target)
-  if (!dir.exists(dir)) dir.create(dir, recursive = TRUE, showWarnings = FALSE)
+  if (!dir.exists(dir)) {
+    dir.create(dir, recursive = TRUE, showWarnings = FALSE)
+  }
   if (file.exists(target)) {
     Sys.chmod(target, "0644", use_umask = FALSE)
     crash_point("replace")
@@ -86,8 +95,12 @@ blob_publish <- function(s, blob) {
   Sys.chmod(blob$staged, "0444", use_umask = FALSE)
   if (!file.rename(blob$staged, target)) {
     abort_engine_error(
-      sprintf("Could not move a new blob into %s.", encodeString(dir, quote = "\"")),
-      path = target, call = NULL
+      sprintf(
+        "Could not move a new blob into %s.",
+        encodeString(dir, quote = "\"")
+      ),
+      path = target,
+      call = NULL
     )
   }
   target
@@ -110,26 +123,75 @@ store_unref_blob <- function(s, txn, name) {
   }
   engine_del(txn, db, name)
   store_counters_add(txn, list(bytes_blob = -row$bytes))
-  engine_defer(e, function() blob_reap(s, name))
+  blob_defer_reap(s, name)
   invisible(TRUE)
 }
+
+# In the open transaction: have the files `names` reaped once it commits. Every
+# file a transaction releases goes in one reap, so evicting a thousand blobs
+# takes one follow-up transaction, not a thousand.
+blob_defer_reap <- function(s, blob_names) {
+  e <- s$engine
+  reap <- engine_deferred(e, "blob_reap")
+  if (is.null(reap)) {
+    pending <- new.env(parent = emptyenv())
+    pending$names <- character()
+    reap <- function() blob_reap(s, pending$names)
+    engine_defer(e, reap, name = "blob_reap")
+  }
+  pending <- environment(reap)$pending
+  pending$names <- union(pending$names, blob_names)
+  invisible()
+}
+
+# How long a reap waits for the write lock. The write that released the files
+# has already committed, and a reap that gives up only leaves orphans, so it
+# need not wait the stash's full `timeout`.
+BLOB_REAP_TIMEOUT <- 5
 
 # After a commit: unlink the files of blobs that are still unreferenced, under
 # the write lock. If the lock is busy the files stay, as orphans for
 # stash_check() to find; that is never unsafe.
-blob_reap <- function(s, names) {
+blob_reap <- function(s, blob_names) {
   crash_point("unlink")
   e <- s$engine
   tryCatch(
-    engine_write(e, function(txn) {
-      db <- engine_db(e, "blobs")
-      for (name in names) {
-        if (is.null(engine_get(txn, db, name))) blob_unlink(blob_path(s, name))
-      }
-    }, timeout = s$timeout),
+    engine_write(
+      e,
+      function(txn) {
+        db <- engine_db(e, "blobs")
+        for (name in blob_names) {
+          if (is.null(engine_get(txn, db, name))) {
+            blob_unlink(blob_path(s, name))
+          }
+        }
+      },
+      timeout = min(s$timeout, BLOB_REAP_TIMEOUT)
+    ),
     dastash_busy = function(cnd) NULL
   )
   invisible()
+}
+
+# In the open transaction: a second name for a blob's bytes in <root>/tmp, so
+# they can be read after the commit even if the blob is reaped first, by this
+# process or another. A hard link where there are hard links; a copy
+# elsewhere. Remove it with unlink().
+blob_hold <- function(s, path) {
+  held <- stage_path(s)
+  linked <- .Platform$OS.type == "unix" &&
+    suppressWarnings(file.link(path, held))
+  if (!linked && !file.copy(path, held, copy.mode = FALSE)) {
+    abort_engine_error(
+      sprintf(
+        "Could not keep the file %s to read it.",
+        encodeString(path, quote = "\"")
+      ),
+      path = path,
+      call = NULL
+    )
+  }
+  held
 }
 
 # Read-only files must be made writable before Windows will delete them.

@@ -7,9 +7,10 @@
 #'
 #' @description
 #' `code` runs with one write transaction open on the stash. Every write inside
-#' it commits together when `code` finishes, or none does if it raises an error,
-#' and reads inside it see its own writes. A nested `stash_transact()` joins the
-#' outer one.
+#' it commits together when `code` finishes, or none does if it raises an error
+#' or is interrupted, and reads inside it see its own writes. Leaving `code`
+#' early with `return()`, `break` or `next` is finishing it: the writes commit.
+#' A nested `stash_transact()` joins the outer one.
 #'
 #' The transaction holds the stash's write lock for as long as `code` runs, so
 #' other processes' writes wait: keep it short, and never compute a value
@@ -44,6 +45,7 @@
 #' stash_get(s, "balance")
 #' @export
 stash_transact <- function(stash, code) {
+  check_supplied("code")
   check_writable(stash)
   engine_write(stash$engine, function(txn) code, timeout = stash$timeout)
 }

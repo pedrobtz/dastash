@@ -29,7 +29,8 @@ This is the first submission of dastash.
 
 * Tests that start several R processes (with 'callr' or `fork()`) to check
   behaviour across processes are skipped on CRAN, to stay within its time and
-  CPU limits. They run in the package's continuous integration.
+  CPU limits, except one that starts a single child process. They all run in
+  the package's continuous integration.
 
 * There are no published references describing the methods in this package.
   It follows the design of the 'Python' library 'diskcache'

@@ -33,9 +33,13 @@
 #' @export
 stash_check <- function(stash, ..., repair = FALSE, hash = FALSE) {
   rlang::check_dots_empty()
-  check_flag(repair, "repair", rlang::current_env())
-  check_flag(hash, "hash", rlang::current_env())
-  if (repair) check_writable(stash) else check_open(stash)
+  check_flag(repair, "repair")
+  check_flag(hash, "hash")
+  if (repair) {
+    check_writable(stash)
+  } else {
+    check_open(stash)
+  }
   e <- stash$engine
 
   corrupt <- character()
@@ -49,18 +53,32 @@ stash_check <- function(stash, ..., repair = FALSE, hash = FALSE) {
     return(rbind(findings, check_tmp(stash, repair = FALSE)))
   }
 
-  reap <- character()
-  findings <- engine_write(e, function(txn) {
-    snap <- check_snapshot(stash, txn)
-    findings <- check_findings(stash, snap, corrupt)
-    reap <<- check_repair(stash, txn, snap, findings)
-    findings
-  }, timeout = stash$timeout)
+  findings <- engine_write(
+    e,
+    function(txn) {
+      snap <- check_snapshot(stash, txn)
+      findings <- check_findings(stash, snap, corrupt)
+      reap <- check_repair(stash, txn, snap, findings)
+      # Unlinked once the deletes are durable: after this commit, or inside
+      # stash_transact() after the outer one, never while they can still abort.
+      if (length(reap) > 0L) {
+        blob_defer_reap(stash, reap)
+      }
+      findings
+    },
+    timeout = stash$timeout
+  )
   findings$repaired <- rep(TRUE, nrow(findings))
-  if (length(reap) > 0L) blob_reap(stash, reap)
   readers <- engine_reader_check(e)
   if (readers > 0) {
-    findings <- rbind(findings, finding("reader_stale", detail = sprintf("%d reader slots of dead processes cleared", readers), repaired = TRUE))
+    findings <- rbind(
+      findings,
+      finding(
+        "reader_stale",
+        detail = sprintf("%d reader slots of dead processes cleared", readers),
+        repaired = TRUE
+      )
+    )
   }
   rbind(findings, check_tmp(stash, repair = TRUE))
 }
@@ -68,7 +86,12 @@ stash_check <- function(stash, ..., repair = FALSE, hash = FALSE) {
 # Everything the check compares, read in one transaction.
 check_snapshot <- function(s, txn) {
   e <- s$engine
-  meta <- engine_scan(txn, engine_db(e, "meta"), as = "character", values = TRUE)
+  meta <- engine_scan(
+    txn,
+    engine_db(e, "meta"),
+    as = "character",
+    values = TRUE
+  )
   records <- lapply(meta$values, record_decode)
   names(records) <- meta$keys
   index <- list()
@@ -76,7 +99,12 @@ check_snapshot <- function(s, txn) {
     rows <- engine_scan(txn, engine_db(e, db))
     index[[db]] <- vapply(rows, raw_hex, character(1))
   }
-  blobs <- engine_scan(txn, engine_db(e, "blobs"), as = "character", values = TRUE)
+  blobs <- engine_scan(
+    txn,
+    engine_db(e, "blobs"),
+    as = "character",
+    values = TRUE
+  )
   rows <- lapply(blobs$values, record_decode)
   names(rows) <- blobs$keys
   files <- list.files(file.path(s$dir, "blobs"), recursive = TRUE)
@@ -92,11 +120,15 @@ check_snapshot <- function(s, txn) {
 
 # Names of blobs whose bytes do not hash to their name.
 check_hashes <- function(s, snap) {
-  names <- intersect(names(snap$blobs), snap$files)
-  bad <- vapply(names, function(name) {
-    !identical(hash_file(blob_path(s, name)), sub("\\..*$", "", name))
-  }, logical(1))
-  names[bad]
+  stored <- intersect(names(snap$blobs), snap$files)
+  bad <- vapply(
+    stored,
+    function(name) {
+      !identical(hash_file(blob_path(s, name)), sub("\\..*$", "", name))
+    },
+    logical(1)
+  )
+  stored[bad]
 }
 
 check_findings <- function(s, snap, corrupt = character()) {
@@ -114,34 +146,72 @@ check_findings <- function(s, snap, corrupt = character()) {
   for (db in names(snap$index)) {
     have <- snap$index[[db]]
     want <- expected[[db]] %||% character()
-    for (h in setdiff(have, want)) add("index_orphan", key = index_row_key(db, h), detail = db)
-    for (h in setdiff(want, have)) add("index_missing", key = index_row_key(db, h), detail = db)
+    for (h in setdiff(have, want)) {
+      add("index_orphan", key = index_row_key(db, h), detail = db)
+    }
+    for (h in setdiff(want, have)) {
+      add("index_missing", key = index_row_key(db, h), detail = db)
+    }
   }
 
   # Inline values.
-  inline <- names(records)[vapply(records, function(r) isTRUE(r$inline), logical(1))]
-  for (k in setdiff(inline, snap$values)) add("value_missing", key = k)
-  for (k in setdiff(snap$values, inline)) add("value_orphan", key = k)
+  inline <- names(records)[vapply(
+    records,
+    function(r) isTRUE(r$inline),
+    logical(1)
+  )]
+  for (k in setdiff(inline, snap$values)) {
+    add("value_missing", key = k)
+  }
+  for (k in setdiff(snap$values, inline)) {
+    add("value_orphan", key = k)
+  }
 
   # Blobs: every reference against its row and its file.
-  refs <- table(unlist(lapply(records, function(r) if (!isTRUE(r$inline)) record_blob_name(r))))
+  refs <- table(unlist(lapply(records, function(r) {
+    if (!isTRUE(r$inline)) record_blob_name(r)
+  })))
   for (k in names(records)) {
     r <- records[[k]]
-    if (isTRUE(r$inline)) next
+    if (isTRUE(r$inline)) {
+      next
+    }
     name <- record_blob_name(r)
     path <- blob_path(s, name)
     if (!name %in% snap$files) {
       add("blob_missing", key = k, path = path, detail = "file absent")
     } else if (is.null(snap$blobs[[name]])) {
-      add("refcount_drift", key = k, path = path, detail = "file present but not counted")
+      add(
+        "refcount_drift",
+        key = k,
+        path = path,
+        detail = "file present but not counted"
+      )
     } else if (file.size(path) != r$bytes || name %in% corrupt) {
-      add("blob_corrupt", key = k, path = path, detail = if (name %in% corrupt) "bytes do not match the name" else "wrong size")
+      add(
+        "blob_corrupt",
+        key = k,
+        path = path,
+        detail = if (name %in% corrupt) {
+          "bytes do not match the name"
+        } else {
+          "wrong size"
+        }
+      )
     }
   }
   for (name in names(snap$blobs)) {
     n <- if (name %in% names(refs)) as.double(refs[[name]]) else 0
     if (!identical(snap$blobs[[name]]$refs, n)) {
-      add("refcount_drift", path = blob_path(s, name), detail = sprintf("%s references counted, %s found", snap$blobs[[name]]$refs, n))
+      add(
+        "refcount_drift",
+        path = blob_path(s, name),
+        detail = sprintf(
+          "%s references counted, %s found",
+          snap$blobs[[name]]$refs,
+          n
+        )
+      )
     }
   }
   for (name in setdiff(snap$files, names(snap$blobs))) {
@@ -152,10 +222,24 @@ check_findings <- function(s, snap, corrupt = character()) {
   bytes_inline <- sum(vapply(records[inline], function(r) r$bytes, numeric(1)))
   bytes_blob <- sum(vapply(snap$blobs, function(r) r$bytes, numeric(1)))
   if (!isTRUE(all.equal(snap$counters$bytes_inline, bytes_inline))) {
-    add("counter_drift", detail = sprintf("bytes_inline %s, entries hold %s", snap$counters$bytes_inline, bytes_inline))
+    add(
+      "counter_drift",
+      detail = sprintf(
+        "bytes_inline %s, entries hold %s",
+        snap$counters$bytes_inline,
+        bytes_inline
+      )
+    )
   }
   if (!isTRUE(all.equal(snap$counters$bytes_blob, bytes_blob))) {
-    add("counter_drift", detail = sprintf("bytes_blob %s, files hold %s", snap$counters$bytes_blob, bytes_blob))
+    add(
+      "counter_drift",
+      detail = sprintf(
+        "bytes_blob %s, files hold %s",
+        snap$counters$bytes_blob,
+        bytes_blob
+      )
+    )
   }
   if (length(out) == 0L) finding() else do.call(rbind, out)
 }
@@ -166,7 +250,9 @@ check_findings <- function(s, snap, corrupt = character()) {
 check_repair <- function(s, txn, snap, findings) {
   e <- s$engine
   records <- snap$records
-  drop <- unique(findings$key[findings$kind %in% c("value_missing", "blob_missing", "blob_corrupt")])
+  drop <- unique(findings$key[
+    findings$kind %in% c("value_missing", "blob_missing", "blob_corrupt")
+  ])
   for (k in drop) {
     engine_del(txn, engine_db(e, "meta"), k)
     engine_del(txn, engine_db(e, "values"), k)
@@ -176,14 +262,20 @@ check_repair <- function(s, txn, snap, findings) {
     engine_del(txn, engine_db(e, "values"), k)
   }
   # Rebuild every index from the records that remain.
-  for (db in names(snap$index)) engine_clear_db(txn, engine_db(e, db))
-  for (k in names(records)) store_index(s, txn, k, records[[k]])
+  for (db in names(snap$index)) {
+    engine_clear_db(txn, engine_db(e, db))
+  }
+  for (k in names(records)) {
+    store_index(s, txn, k, records[[k]])
+  }
 
   # Recount references; a row nothing refers to goes, and so does its file.
   refs <- list()
   exts <- list()
   for (r in records) {
-    if (isTRUE(r$inline)) next
+    if (isTRUE(r$inline)) {
+      next
+    }
     name <- record_blob_name(r)
     refs[[name]] <- (refs[[name]] %||% 0) + 1
     exts[name] <- list(r$ext)
@@ -199,13 +291,20 @@ check_repair <- function(s, txn, snap, findings) {
   bytes_blob <- 0
   for (name in names(refs)) {
     path <- blob_path(s, name)
-    row <- list(refs = refs[[name]], bytes = 0, ext = exts[[name]])
-    row$bytes <- as.double(file.size(path))
+    row <- list(
+      refs = refs[[name]],
+      bytes = as.double(file.size(path)),
+      ext = exts[[name]]
+    )
     engine_put(txn, db, name, record_encode(row))
     bytes_blob <- bytes_blob + row$bytes
   }
   counters <- store_counters(txn)
-  counters$bytes_inline <- sum(vapply(records, function(r) if (isTRUE(r$inline)) r$bytes else 0, numeric(1)))
+  counters$bytes_inline <- sum(vapply(
+    records,
+    function(r) if (isTRUE(r$inline)) r$bytes else 0,
+    numeric(1)
+  ))
   counters$bytes_blob <- bytes_blob
   engine_put(txn, NULL, "counters", record_encode(counters))
   reap
@@ -213,18 +312,36 @@ check_repair <- function(s, txn, snap, findings) {
 
 # Staging files left by processes that are gone. A file whose process is known
 # to be dead is stale at once; where liveness cannot be asked (Windows), a file
-# is stale once it is an hour old.
+# is stale once it is an hour old. Its age is from the later of its
+# modification and change times: codec_file() copies a file's modification
+# time with it, so a file staged a moment ago can look a year old.
 check_tmp <- function(s, repair) {
   dir <- file.path(s$dir, "tmp")
   files <- list.files(dir, full.names = TRUE)
   out <- list()
   for (path in files) {
     pid <- suppressWarnings(as.integer(sub("-.*$", "", basename(path))))
-    age <- as.double(difftime(Sys.time(), file.mtime(path), units = "secs"))
-    if (is.na(pid) || pid == Sys.getpid() || is.na(age)) next
-    if (!pid_known_dead(pid) && (age < 3600 || pid_alive(pid))) next
-    if (repair) blob_unlink(path)
-    out[[length(out) + 1L]] <- finding("tmp_stale", path = path, detail = sprintf("process %d, %.0f seconds old", pid, age), repaired = repair)
+    info <- file.info(path)
+    age <- as.double(difftime(
+      Sys.time(),
+      max(info$mtime, info$ctime),
+      units = "secs"
+    ))
+    if (is.na(pid) || pid == Sys.getpid() || is.na(age)) {
+      next
+    }
+    if (!pid_known_dead(pid) && (age < 3600 || pid_alive(pid))) {
+      next
+    }
+    if (repair) {
+      blob_unlink(path)
+    }
+    out[[length(out) + 1L]] <- finding(
+      "tmp_stale",
+      path = path,
+      detail = sprintf("process %d, %.0f seconds old", pid, age),
+      repaired = repair
+    )
   }
   if (length(out) == 0L) finding() else do.call(rbind, out)
 }
@@ -243,8 +360,13 @@ pid_alive <- function(pid) {
   isTRUE(tools::pskill(pid, 0L))
 }
 
-finding <- function(kind = character(), key = NA_character_, path = NA_character_,
-                    detail = NA_character_, repaired = FALSE) {
+finding <- function(
+  kind = character(),
+  key = NA_character_,
+  path = NA_character_,
+  detail = NA_character_,
+  repaired = FALSE
+) {
   n <- length(kind)
   data.frame(
     kind = kind,
@@ -261,7 +383,10 @@ raw_hex <- function(bytes) {
 }
 
 hex_raw <- function(hex) {
-  as.raw(strtoi(substring(hex, seq(1L, nchar(hex), 2L), seq(2L, nchar(hex), 2L)), 16L))
+  as.raw(strtoi(
+    substring(hex, seq(1L, nchar(hex), 2L), seq(2L, nchar(hex), 2L)),
+    16L
+  ))
 }
 
 # The stored key an index row belongs to, for reporting.

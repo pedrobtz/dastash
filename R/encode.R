@@ -11,7 +11,10 @@ INDEX_ENCODING_VERSION <- 1L
 # NaN has no position and is refused.
 enc_f64 <- function(x, call = rlang::caller_env()) {
   if (!is.numeric(x) || length(x) != 1L || is.na(x)) {
-    abort_type_error("An ordered time or quantity must be one number, not NA or NaN.", call = call)
+    abort_type_error(
+      "An ordered time or quantity must be one number, not NA or NaN.",
+      call = call
+    )
   }
   bytes <- writeBin(as.double(x), raw(), size = 8L, endian = "big")
   if (as.integer(bytes[[1L]]) >= 128L) {
@@ -31,10 +34,22 @@ dec_f64 <- function(bytes) {
   readBin(bytes, "double", size = 8L, endian = "big")
 }
 
-# Eight bytes, big-endian, for a whole number in [0, 2^53].
+# Eight bytes, big-endian, for a whole number in [0, 2^53]. Unused until the
+# `hits` index of access-aware eviction (design.md §7.4, 0.3.0); it is here,
+# and tested, because the on-disk format is final from 0.1.0.
 enc_u64 <- function(n, call = rlang::caller_env()) {
-  if (!is.numeric(n) || length(n) != 1L || is.na(n) || n < 0 || n > 2^53 || n != trunc(n)) {
-    abort_type_error("An ordered count must be one whole number between 0 and 2^53.", call = call)
+  if (
+    !is.numeric(n) ||
+      length(n) != 1L ||
+      is.na(n) ||
+      n < 0 ||
+      n > 2^53 ||
+      n != trunc(n)
+  ) {
+    abort_type_error(
+      "An ordered count must be one whole number between 0 and 2^53.",
+      call = call
+    )
   }
   n <- as.double(n)
   out <- raw(8L)

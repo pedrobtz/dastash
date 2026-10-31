@@ -49,8 +49,12 @@ test_that("a read-only open cannot be joined for writing", {
 })
 
 test_that("durability is reported by the environment's flags", {
-  e <- local_engine(durability = "fast")
-  expect_true("SAFE_NOSYNC" %in% engine_flags(e))
+  fast <- local_engine(durability = "fast")
+  expect_true("SAFE_NOSYNC" %in% engine_flags(fast))
+  unsafe <- local_engine(durability = "unsafe")
+  expect_true("UTTERLY_NOSYNC" %in% engine_flags(unsafe))
+  safe <- local_engine()
+  expect_false(any(c("SAFE_NOSYNC", "UTTERLY_NOSYNC") %in% engine_flags(safe)))
 })
 
 # Named databases --------------------------------------------------------------

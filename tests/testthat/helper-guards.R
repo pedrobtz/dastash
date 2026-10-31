@@ -88,3 +88,9 @@ guard_violations <- function(fns) {
   }
   unique(hits)
 }
+
+# Examples are built from text so that R CMD check does not read them as
+# undeclared uses of digest or mdbx.
+functions_from <- function(src) {
+  lapply(src, function(s) eval(parse(text = s), envir = globalenv()))
+}

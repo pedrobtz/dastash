@@ -26,7 +26,14 @@ record_format <- function() {
 }
 
 record_counters <- function() {
-  list(bytes_inline = 0, bytes_blob = 0, hits = 0, misses = 0, evictions = 0, expired = 0)
+  list(
+    bytes_inline = 0,
+    bytes_blob = 0,
+    hits = 0,
+    misses = 0,
+    evictions = 0,
+    expired = 0
+  )
 }
 
 # The meta record of one entry. `enc` is what codec_encode_value() returned;
@@ -52,4 +59,29 @@ record_entry <- function(enc, key, now, inline, expire = Inf) {
     record$key_preview <- key$key_preview
   }
   record
+}
+
+# The name of the file behind a record that is not inline.
+record_blob_name <- function(record) {
+  blob_name(record$blob, record$ext)
+}
+
+# Whether a record belongs to a digested key: one longer than KEY_MAX, stored
+# under `#` and the SHA-256 of its text (design.md §5.3).
+record_digested <- function(record) {
+  !is.null(record$key_bytes)
+}
+
+# Whether a digested key's text begins with `prefix`, judged by the text its
+# record kept, or by its preview when the prefix fits inside the preview. A
+# key too long to keep, with a prefix longer than its preview, cannot be told
+# and does not match.
+record_key_starts_with <- function(record, prefix) {
+  if (!is.null(record$key_text)) {
+    return(startsWith(record$key_text, prefix))
+  }
+  preview <- record$key_preview
+  !is.null(preview) &&
+    nchar(prefix, type = "bytes") <= nchar(preview, type = "bytes") &&
+    startsWith(preview, prefix)
 }

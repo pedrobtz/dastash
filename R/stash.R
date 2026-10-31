@@ -12,8 +12,13 @@ dastash_state$stage <- 0L
 #' safely.
 #'
 #' `local_stash()` opens a stash that closes when the calling function returns,
-#' in a new temporary directory unless you give one, which is then deleted.
-#' `with_stash()` opens one, passes it to a function, and closes it afterwards.
+#' in a new temporary directory unless you give one, which is then deleted. At
+#' the top level there is no function to return from, so nothing closes it:
+#' call `stash_close()` yourself. `with_stash()` opens one, passes it to a
+#' function, and closes it afterwards.
+#'
+#' `stash_close()` closes a handle, `stash_is_open()` says whether it is open,
+#' and `stash_dir()` returns its directory.
 #'
 #' @details
 #' `size_limit`, `eviction`, `inline_max` and `codec` belong to the store and are
@@ -64,7 +69,9 @@ dastash_state$stage <- 0L
 #' @param create Create the directory and the stash if they do not exist.
 #'
 #' @return `stash()` and `local_stash()` return a `dastash_stash`.
-#'   `with_stash()` returns what `fn` returns.
+#'   `with_stash()` returns what `fn` returns. `stash_close()` returns the stash,
+#'   invisibly; `stash_is_open()` `TRUE` or `FALSE`; and `stash_dir()` the
+#'   stash's directory, normalised.
 #'
 #' @examples
 #' dir <- tempfile("stash-")
@@ -81,46 +88,61 @@ dastash_state$stage <- 0L
 #' }
 #' f()
 #' @export
-stash <- function(dir,
-                  ...,
-                  size_limit = 1024^3,
-                  eviction = c("least-recently-stored", "least-recently-used",
-                               "least-frequently-used", "none"),
-                  inline_max = 32 * 1024,
-                  codec = codec_auto(),
-                  codecs = list(),
-                  durability = c("safe", "fast", "unsafe"),
-                  map_size = 1024^3,
-                  cull_limit = 10L,
-                  timeout = 60,
-                  readonly = FALSE,
-                  create = TRUE) {
+stash <- function(
+  dir,
+  ...,
+  size_limit = 1024^3,
+  eviction = c(
+    "least-recently-stored",
+    "least-recently-used",
+    "least-frequently-used",
+    "none"
+  ),
+  inline_max = 32 * 1024,
+  codec = codec_auto(),
+  codecs = list(),
+  durability = c("safe", "fast", "unsafe"),
+  map_size = 1024^3,
+  cull_limit = 10L,
+  timeout = 60,
+  readonly = FALSE,
+  create = TRUE
+) {
   rlang::check_dots_empty()
+  check_supplied("dir")
   explicit <- list(
-    size_limit = !missing(size_limit), eviction = !missing(eviction),
-    inline_max = !missing(inline_max), codec = !missing(codec)
+    size_limit = !missing(size_limit),
+    eviction = !missing(eviction),
+    inline_max = !missing(inline_max),
+    codec = !missing(codec)
   )
   call <- rlang::current_env()
-  check_string(dir, "dir", call)
-  check_number(size_limit, "size_limit", call, min = 0, allow_inf = TRUE)
+  check_string(dir, "dir")
+  check_number(size_limit, "size_limit", min = 0, allow_inf = TRUE)
   eviction <- rlang::arg_match(eviction)
   if (eviction %in% c("least-recently-used", "least-frequently-used")) {
     abort_unsupported(
-      sprintf("`eviction = \"%s\"` is not available yet; it arrives with access tracking.", eviction),
+      sprintf(
+        "`eviction = \"%s\"` is not available yet; it arrives with access tracking.",
+        eviction
+      ),
       call = call
     )
   }
-  check_number(inline_max, "inline_max", call, min = 0, whole = TRUE)
+  check_number(inline_max, "inline_max", min = 0, whole = TRUE)
   if (!is_codec(codec)) {
-    abort_codec_error("`codec` must be a codec, such as `codec_auto()` or one made with `codec()`.", call = call)
+    abort_codec_error(
+      "`codec` must be a codec, such as `codec_auto()` or one made with `codec()`.",
+      call = call
+    )
   }
   codecs <- codec_registry(codecs, call = call)
   durability <- rlang::arg_match(durability)
-  check_number(map_size, "map_size", call, min = 1)
-  check_number(cull_limit, "cull_limit", call, min = 1, whole = TRUE)
-  check_number(timeout, "timeout", call, min = 0)
-  check_flag(readonly, "readonly", call)
-  check_flag(create, "create", call)
+  check_number(map_size, "map_size", min = 1)
+  check_number(cull_limit, "cull_limit", min = 1, whole = TRUE)
+  check_number(timeout, "timeout", min = 0)
+  check_flag(readonly, "readonly")
+  check_flag(create, "create")
 
   dir <- path.expand(dir)
   path <- file.path(dir, "cache.mdbx")
@@ -128,7 +150,8 @@ stash <- function(dir,
     if (readonly || !create) {
       abort_not_found(
         sprintf("There is no stash in %s.", encodeString(dir, quote = "\"")),
-        dir = dir, call = call
+        dir = dir,
+        call = call
       )
     }
     store_mkdir(dir, call)
@@ -146,7 +169,13 @@ stash <- function(dir,
   s$timeout <- timeout
   s$cull_limit <- as.integer(cull_limit)
   s$codecs <- codecs
-  s$engine <- engine_open(path, readonly = readonly, map_size = map_size, durability = durability, call = call)
+  s$engine <- engine_open(
+    path,
+    readonly = readonly,
+    map_size = map_size,
+    durability = durability,
+    call = call
+  )
   opened <- FALSE
   on.exit(if (!opened) engine_close(s$engine, call = call))
 
@@ -156,27 +185,25 @@ stash <- function(dir,
     inline_max = as.double(inline_max),
     codec = codec$name
   )
-  engine_ensure_dbs(s$engine, store_databases(config), timeout = timeout, call = call)
+  # The stored configuration, not this call's defaults, says which indexes
+  # exist: reopening a store without repeating its settings creates nothing.
   s$config <- store_init(s, config, explicit, call)
-  s$codec <- if (explicit$codec) codec else codec_default(s$config$codec, codecs)
+  engine_ensure_dbs(
+    s$engine,
+    store_databases(s$config),
+    timeout = timeout,
+    call = call
+  )
+  # A stored default that is a user codec this handle was not given is NULL:
+  # writing with it is then an error, reading is not.
+  s$codec <- if (explicit$codec) codec else codec_known(s$config$codec, codecs)
+  codec_register(s, s$codec)
   opened <- TRUE
   s
 }
 
-# The default codec a stored name stands for, or NULL for a user codec this
-# handle was not given: writing with it is then an error, reading is not.
-codec_default <- function(name, codecs) {
-  switch(name,
-    auto = codec_auto(),
-    rds = codec_rds(),
-    raw = codec_raw(),
-    file = codec_file(),
-    codecs[[name]]
-  )
-}
-
 #' @rdname stash
-#' @param stash A stash, from `stash()`.
+#' @inheritParams stash_get
 #' @export
 stash_close <- function(stash) {
   check_stash(stash)
@@ -224,6 +251,10 @@ local_stash <- function(dir = NULL, ..., .local_envir = parent.frame()) {
 #' @param fn A function of one argument, the open stash.
 #' @export
 with_stash <- function(dir, fn, ...) {
+  check_supplied(c("dir", "fn"))
+  if (!is.function(fn)) {
+    abort_type_error("`fn` must be a function of one argument, the open stash.")
+  }
   s <- stash(dir, ...)
   on.exit(stash_close(s))
   fn(s)
@@ -235,13 +266,19 @@ format.dastash_stash <- function(x, ...) {
   if (x$closed) {
     return(c(header, "  closed"))
   }
-  n <- tryCatch(stash_count(x), error = function(cnd) NA)
+  # Printing must not fail, whatever stops the count.
+  n <- tryCatch(format(stash_count(x), big.mark = ","), error = function(cnd) {
+    "unavailable"
+  })
   c(
     header,
     paste0(
-      "  entries ", format(n, big.mark = ","),
-      " \u00b7 eviction ", x$config$eviction,
-      " \u00b7 durability ", stash_durability(x),
+      "  entries ",
+      n,
+      " \u00b7 eviction ",
+      x$config$eviction,
+      " \u00b7 durability ",
+      stash_durability(x),
       if (x$readonly) " \u00b7 read-only"
     )
   )
@@ -255,14 +292,26 @@ print.dastash_stash <- function(x, ...) {
 
 stash_durability <- function(s) {
   flags <- engine_flags(s$engine)
-  if ("UTTERLY_NOSYNC" %in% flags) "unsafe" else if ("SAFE_NOSYNC" %in% flags) "fast" else "safe"
+  if ("UTTERLY_NOSYNC" %in% flags) {
+    "unsafe"
+  } else if ("SAFE_NOSYNC" %in% flags) {
+    "fast"
+  } else {
+    "safe"
+  }
 }
 
-# Checks ---------------------------------------------------------------------
+# Checks -----------------------------------------------------------------------
 
 check_stash <- function(x, call = rlang::caller_env()) {
+  if (missing(x)) {
+    abort_type_error("`stash` is required.", call = call)
+  }
   if (!inherits(x, "dastash_stash")) {
-    abort_type_error("`stash` must be a stash opened with `stash()`.", call = call)
+    abort_type_error(
+      "`stash` must be a stash opened with `stash()`.",
+      call = call
+    )
   }
 }
 
@@ -280,24 +329,60 @@ check_writable <- function(s, call = rlang::caller_env()) {
   }
 }
 
-check_string <- function(x, arg, call) {
-  if (!is.character(x) || length(x) != 1L || is.na(x) || !nzchar(x)) {
-    abort_type_error(sprintf("`%s` must be a single non-empty string.", arg), call = call)
+# Raise dastash_type_error for the first of the caller's arguments `args` it
+# was not given, rather than letting R's own "argument is missing" escape the
+# taxonomy when the argument is first used.
+check_supplied <- function(args, call = rlang::caller_env()) {
+  for (arg in args) {
+    if (eval(as.call(list(quote(missing), as.name(arg))), call)) {
+      abort_type_error(sprintf("`%s` is required.", arg), call = call)
+    }
   }
 }
 
-check_flag <- function(x, arg, call) {
+check_string <- function(x, arg, call = rlang::caller_env()) {
+  if (!is.character(x) || length(x) != 1L || is.na(x) || !nzchar(x)) {
+    abort_type_error(
+      sprintf("`%s` must be a single non-empty string.", arg),
+      call = call
+    )
+  }
+}
+
+check_flag <- function(x, arg, call = rlang::caller_env()) {
   if (!isTRUE(x) && !isFALSE(x)) {
     abort_type_error(sprintf("`%s` must be TRUE or FALSE.", arg), call = call)
   }
 }
 
-check_number <- function(x, arg, call, min = -Inf, whole = FALSE, allow_inf = FALSE) {
-  ok <- is.numeric(x) && length(x) == 1L && !is.na(x) && x >= min &&
-    (allow_inf || is.finite(x)) && (!whole || !is.finite(x) || x == trunc(x))
+check_string_or_empty <- function(x, arg, call = rlang::caller_env()) {
+  if (!is.character(x) || length(x) != 1L || is.na(x)) {
+    abort_type_error(sprintf("`%s` must be a single string.", arg), call = call)
+  }
+}
+
+check_number <- function(
+  x,
+  arg,
+  call = rlang::caller_env(),
+  min = -Inf,
+  whole = FALSE,
+  allow_inf = FALSE
+) {
+  ok <- is.numeric(x) &&
+    length(x) == 1L &&
+    !is.na(x) &&
+    x >= min &&
+    (allow_inf || is.finite(x)) &&
+    (!whole || !is.finite(x) || x == trunc(x))
   if (!ok) {
     abort_type_error(
-      sprintf("`%s` must be a single %s of at least %s.", arg, if (whole) "whole number" else "number", format(min)),
+      sprintf(
+        "`%s` must be a single %s of at least %s.",
+        arg,
+        if (whole) "whole number" else "number",
+        format(min)
+      ),
       call = call
     )
   }

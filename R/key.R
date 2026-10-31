@@ -81,12 +81,14 @@ stash_key <- function(...) {
 #' @rdname stash_key
 #' @export
 stash_key_chr <- function(key) {
+  check_supplied("key")
   key_canon(key)
 }
 
 #' @rdname stash_key
 #' @export
 stash_key_text <- function(text) {
+  check_supplied("text")
   if (!is.character(text) || length(text) != 1L || is.na(text)) {
     abort_key_invalid("`text` must be one key's text, a single string.")
   }
@@ -96,6 +98,7 @@ stash_key_text <- function(text) {
 #' @rdname stash_key
 #' @export
 stash_key_hash <- function(key) {
+  check_supplied("key")
   hash_text(key_canon(key))
 }
 
@@ -143,7 +146,11 @@ key_canon <- function(x, call = rlang::caller_env()) {
 # A character(1), not NA, with no names. Other attributes are ignored, as they
 # are everywhere in the encoding (spec §4).
 is_plain_string <- function(x) {
-  is.character(x) && length(x) == 1L && !is.na(x) && is.null(names(x)) && !isS4(x)
+  is.character(x) &&
+    length(x) == 1L &&
+    !is.na(x) &&
+    is.null(names(x)) &&
+    !isS4(x)
 }
 
 # Text at the top level that could be mistaken for an encoded value: `~`, `#`,
@@ -156,7 +163,10 @@ starts_with_opener <- function(text) {
 # string has no well-defined bytes to be keyed by.
 utf8_text <- function(x, call = rlang::caller_env()) {
   if (any(Encoding(x) == "bytes", na.rm = TRUE)) {
-    abort_key_invalid("A key string cannot have \"bytes\" encoding.", call = call)
+    abort_key_invalid(
+      "A key string cannot have \"bytes\" encoding.",
+      call = call
+    )
   }
   x <- enc2utf8(x)
   if (!all(validUTF8(x[!is.na(x)]))) {
@@ -183,7 +193,10 @@ canon_value <- function(x, call = rlang::caller_env()) {
     x <- as.POSIXct(x)
   }
   if (is.data.frame(x)) {
-    return(paste0("D", canon_named(unclass(x)[seq_along(x)], names(x), call = call)))
+    return(paste0(
+      "D",
+      canon_named(unclass(x)[seq_along(x)], names(x), call = call)
+    ))
   }
   if (is.list(x)) {
     nms <- names(x)
@@ -208,7 +221,10 @@ canon_named <- function(x, nms, call) {
   check_names(nms, call = call)
   if (anyDuplicated(nms)) {
     abort_key_invalid(
-      sprintf("A key cannot repeat the name %s.", encodeString(nms[anyDuplicated(nms)], quote = "\"")),
+      sprintf(
+        "A key cannot repeat the name %s.",
+        encodeString(nms[anyDuplicated(nms)], quote = "\"")
+      ),
       call = call
     )
   }
@@ -216,7 +232,9 @@ canon_named <- function(x, nms, call) {
   ord <- order(nms, method = "radix")
   parts <- vapply(
     ord,
-    function(i) paste0(escape_payload(nms[[i]]), "=", canon_value(x[[i]], call = call)),
+    function(i) {
+      paste0(escape_payload(nms[[i]]), "=", canon_value(x[[i]], call = call))
+    },
     character(1)
   )
   paste0("{", paste(parts, collapse = ","), "}")
@@ -268,7 +286,10 @@ atomic_payloads <- function(x, call) {
     return(list(tag = "d", payload = text))
   }
   if (inherits(x, "POSIXct")) {
-    return(list(tag = "t", payload = timestamp_payload(unclass(x), call = call)))
+    return(list(
+      tag = "t",
+      payload = timestamp_payload(unclass(x), call = call)
+    ))
   }
   if (inherits(x, "difftime")) {
     secs <- as.numeric(x, units = "secs")
@@ -276,17 +297,27 @@ atomic_payloads <- function(x, call) {
   }
   if (inherits(x, "integer64")) {
     if (!requireNamespace("bit64", quietly = TRUE)) {
-      abort_key_invalid("Keying an `integer64` value needs the bit64 package.", call = call)
+      abort_key_invalid(
+        "Keying an `integer64` value needs the bit64 package.",
+        call = call
+      )
     }
     text <- as.character(x)
     text[is.na(x)] <- "!"
     return(list(tag = "i", payload = text))
   }
-  switch(typeof(x),
-    character = list(tag = "s", payload = na_or(utf8_text(x, call = call), escape_payload)),
+  switch(
+    typeof(x),
+    character = list(
+      tag = "s",
+      payload = na_or(utf8_text(x, call = call), escape_payload)
+    ),
     integer = list(tag = "i", payload = na_or(x, function(v) sprintf("%d", v))),
     double = list(tag = number_tag(x), payload = number_payload(x)),
-    logical = list(tag = "l", payload = ifelse(is.na(x), "!", ifelse(x, "T", "F"))),
+    logical = list(
+      tag = "l",
+      payload = ifelse(is.na(x), "!", ifelse(x, "T", "F"))
+    ),
     raw = list(tag = "r", payload = sprintf("%02x", as.integer(x))),
     abort_unkeyable(x, call = call)
   )
@@ -302,7 +333,7 @@ na_or <- function(x, f) {
 # A double vector is tagged `i` when every element is a whole number within
 # ±2^53 (or NA), so `1L` and `1` agree; otherwise `f`.
 number_tag <- function(x) {
-  if (all(is.na(x) & !is.nan(x) | is_whole(x))) "i" else "f"
+  if (all((is.na(x) & !is.nan(x)) | is_whole(x))) "i" else "f"
 }
 
 is_whole <- function(x) {
@@ -347,9 +378,12 @@ hex_float <- function(x) {
   }
   paste0(
     if (negative) "-",
-    "0x", lead,
+    "0x",
+    lead,
     if (nzchar(mantissa)) paste0(".", mantissa),
-    "p", if (power >= 0L) "+", power
+    "p",
+    if (power >= 0L) "+",
+    power
   )
 }
 
@@ -376,7 +410,12 @@ timestamp_payload <- function(secs, call) {
 # Percent-escape the structural bytes, `%` itself, and control characters.
 # Everything else, including non-ASCII UTF-8, is kept as it is.
 escape_payload <- function(x) {
-  needs <- grepl("[%,=\\[\\]{}():!~\x01-\x1f\x7f]", x, perl = TRUE, useBytes = TRUE)
+  needs <- grepl(
+    "[%,=\\[\\]{}():!~\x01-\x1f\x7f]",
+    x,
+    perl = TRUE,
+    useBytes = TRUE
+  )
   x[needs] <- vapply(x[needs], escape_one, character(1), USE.NAMES = FALSE)
   x
 }
@@ -384,7 +423,11 @@ escape_payload <- function(x) {
 escape_one <- function(s) {
   bytes <- charToRaw(s)
   special <- as.integer(bytes) %in% c(escape_bytes, 0x01:0x1F, 0x7F)
-  parts <- ifelse(special, sprintf("%%%02X", as.integer(bytes)), vapply(bytes, rawToChar, ""))
+  parts <- ifelse(
+    special,
+    sprintf("%%%02X", as.integer(bytes)),
+    vapply(bytes, rawToChar, "")
+  )
   out <- paste(parts, collapse = "")
   Encoding(out) <- "UTF-8"
   out
@@ -396,10 +439,16 @@ abort_unkeyable <- function(x, call) {
   what <- if (isS4(x)) {
     "an S4 object"
   } else {
-    switch(typeof(x),
-      closure = , builtin = , special = "a function",
+    switch(
+      typeof(x),
+      closure = ,
+      builtin = ,
+      special = "a function",
       environment = "an environment",
-      symbol = , language = , expression = , promise = "an unevaluated expression",
+      symbol = ,
+      language = ,
+      expression = ,
+      promise = "an unevaluated expression",
       externalptr = "an external pointer",
       complex = "a complex number",
       paste("an object of type", typeof(x))
@@ -424,7 +473,11 @@ key_storage <- function(text) {
   if (n <= KEY_MAX) {
     return(list(stored = text, digested = FALSE))
   }
-  out <- list(stored = paste0("#", hash_text(text)), digested = TRUE, key_bytes = n)
+  out <- list(
+    stored = paste0("#", hash_text(text)),
+    digested = TRUE,
+    key_bytes = n
+  )
   if (n <= CANON_KEEP_MAX) {
     out$key_text <- text
   } else {
@@ -445,7 +498,12 @@ utf8_prefix <- function(text, max_bytes) {
   while (end > 0L && bitwAnd(as.integer(bytes[[end + 1L]]), 0xC0L) == 0x80L) {
     end <- end - 1L
   }
-  out <- rawToChar(bytes[seq_len(end)])
-  Encoding(out) <- "UTF-8"
-  out
+  utf8_from_raw(bytes[seq_len(end)])
+}
+
+# Bytes known to be UTF-8, as a string marked so.
+utf8_from_raw <- function(bytes) {
+  text <- rawToChar(bytes)
+  Encoding(text) <- "UTF-8"
+  text
 }

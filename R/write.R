@@ -35,58 +35,130 @@
 #' stash_delete(s, c("a", "b"))
 #' stash_keys(s)
 #' @export
-stash_set <- function(stash, key, value, ..., expire = NULL, tags = NULL, codec = NULL) {
+stash_set <- function(
+  stash,
+  key,
+  value,
+  ...,
+  expire = NULL,
+  tags = NULL,
+  codec = NULL
+) {
+  check_supplied(c("key", "value"))
   rlang::check_dots_empty()
   check_writable(stash)
   entry <- stash_prepare(stash, key, value, expire, tags, codec)
   on.exit(unstage(list(entry)))
-  engine_write(stash$engine, function(txn) {
-    store_put_entry(stash, txn, entry$key, entry$enc, unclass(Sys.time()), expire = entry$expire, tags = entry$tags)
-    store_cull_step(stash, txn, protect = entry$key$stored)
-  }, timeout = stash$timeout)
+  engine_write(
+    stash$engine,
+    function(txn) {
+      store_put_entry(
+        stash,
+        txn,
+        entry$key,
+        entry$enc,
+        unclass(Sys.time()),
+        expire = entry$expire,
+        tags = entry$tags
+      )
+      store_cull_step(stash, txn, protect = entry$key$stored)
+    },
+    timeout = stash$timeout
+  )
   invisible(stash)
 }
 
 #' @rdname stash_set
 #' @export
-stash_mset <- function(stash, values, ..., expire = NULL, tags = NULL, codec = NULL) {
+stash_mset <- function(
+  stash,
+  values,
+  ...,
+  expire = NULL,
+  tags = NULL,
+  codec = NULL
+) {
+  check_supplied("values")
   rlang::check_dots_empty()
   check_writable(stash)
-  nms <- names(values)
-  if (!is.list(values) || (length(values) > 0L && (is.null(nms) || anyNA(nms) || !all(nzchar(nms))))) {
-    abort_type_error("`values` must be a named list: each name a key, each element its value.")
+  if (!is_named_list(values)) {
+    abort_type_error(
+      "`values` must be a named list: each name a key, each element its value."
+    )
   }
   entries <- list()
   on.exit(unstage(entries))
+  nms <- names(values)
   for (i in seq_along(values)) {
-    entries[[i]] <- stash_prepare(stash, nms[[i]], values[[i]], expire, tags, codec)
+    entries[[i]] <- stash_prepare(
+      stash,
+      nms[[i]],
+      values[[i]],
+      expire,
+      tags,
+      codec
+    )
   }
-  engine_write(stash$engine, function(txn) {
-    now <- unclass(Sys.time())
-    # One cull step per entry, as a run of stash_set() calls would take, so a
-    # batch larger than the limit cannot leave the stash far over it.
-    for (entry in entries) {
-      store_put_entry(stash, txn, entry$key, entry$enc, now, expire = entry$expire, tags = entry$tags)
-      store_cull_step(stash, txn, protect = entry$key$stored)
-    }
-  }, timeout = stash$timeout)
+  engine_write(
+    stash$engine,
+    function(txn) {
+      now <- unclass(Sys.time())
+      # One cull step per entry, as a run of stash_set() calls would take, so a
+      # batch larger than the limit cannot leave the stash far over it.
+      for (entry in entries) {
+        store_put_entry(
+          stash,
+          txn,
+          entry$key,
+          entry$enc,
+          now,
+          expire = entry$expire,
+          tags = entry$tags
+        )
+        store_cull_step(stash, txn, protect = entry$key$stored)
+      }
+    },
+    timeout = stash$timeout
+  )
   invisible(stash)
 }
 
 #' @rdname stash_set
 #' @export
 stash_delete <- function(stash, keys) {
+  check_supplied("keys")
   check_writable(stash)
-  infos <- lapply(as_key_list(keys), store_key)
-  engine_write(stash$engine, function(txn) {
-    for (key in infos) store_delete_entry(stash, txn, key$stored)
-  }, timeout = stash$timeout)
+  infos <- store_keys(keys)
+  engine_write(
+    stash$engine,
+    function(txn) {
+      for (key in infos) {
+        store_delete_entry(stash, txn, key$stored)
+      }
+    },
+    timeout = stash$timeout
+  )
   invisible(stash)
+}
+
+# A list whose every element has a name; an empty list is one.
+is_named_list <- function(x) {
+  nms <- names(x)
+  is.list(x) &&
+    (length(x) == 0L || (!is.null(nms) && !anyNA(nms) && all(nzchar(nms))))
 }
 
 # Encode one value for writing, outside any transaction: the key, the codec
 # that will write it, and its bytes.
-stash_prepare <- function(s, key, value, expire, tags, codec, call = rlang::caller_env()) {
+stash_prepare <- function(
+  s,
+  key,
+  value,
+  expire,
+  tags,
+  codec,
+  call = rlang::caller_env()
+) {
   deadline <- parse_expire(expire, unclass(Sys.time()), call = call)
   tags <- parse_tags(tags, call = call)
   key <- store_key(key, call = call)
@@ -94,17 +166,30 @@ stash_prepare <- function(s, key, value, expire, tags, codec, call = rlang::call
   if (is.null(codec)) {
     abort_codec_error(
       c(
-        sprintf("This stash's default codec is %s, which this handle does not know.", encodeString(s$config$codec, quote = "\"")),
+        sprintf(
+          "This stash's default codec is %s, which this handle does not know.",
+          encodeString(s$config$codec, quote = "\"")
+        ),
         i = "Pass it to `stash()` in `codecs =`, or give `codec =` here."
       ),
-      codec = s$config$codec, call = call
+      codec = s$config$codec,
+      call = call
     )
   }
   if (!is_codec(codec)) {
-    abort_codec_error("`codec` must be a codec, such as `codec_rds()`.", call = call)
+    abort_codec_error(
+      "`codec` must be a codec, such as `codec_rds()`.",
+      call = call
+    )
   }
+  codec_register(s, codec)
   codec <- codec_for_value(codec, value)
-  enc <- codec_encode_value(codec, value, stage = function() stage_path(s), call = call)
+  enc <- codec_encode_value(
+    codec,
+    value,
+    stage = function() stage_path(s),
+    call = call
+  )
   # Until the entry is returned, its staged file is this function's to remove.
   staged <- enc$path
   on.exit(if (!is.null(staged)) unlink(staged))
@@ -129,19 +214,27 @@ parse_tags <- function(tags, call = rlang::caller_env()) {
     return(character())
   }
   if (!is.character(tags) || anyNA(tags) || !all(nzchar(tags))) {
-    abort_type_error("`tags` must be a character vector of non-empty strings.", call = call)
+    abort_type_error(
+      "`tags` must be a character vector of non-empty strings.",
+      call = call
+    )
   }
   tags <- utf8_text(unique(tags), call = call)
   if (length(tags) > 16L) {
     abort_type_error("An entry can carry at most 16 tags.", call = call)
   }
   if (any(nchar(tags, type = "bytes") > TAG_MAX)) {
-    abort_type_error(sprintf("A tag can be at most %d bytes.", TAG_MAX), call = call)
+    abort_type_error(
+      sprintf("A tag can be at most %d bytes.", TAG_MAX),
+      call = call
+    )
   }
   sort(tags, method = "radix")
 }
 
 # An `expire` argument as an absolute deadline in epoch seconds: Inf for never.
+# A deadline of -Inf is now: already expired, like any other past deadline, and
+# finite, so the entry has an expiry row and stash_expire() reclaims it.
 parse_expire <- function(expire, now, call = rlang::caller_env()) {
   if (is.null(expire)) {
     return(Inf)
@@ -152,16 +245,19 @@ parse_expire <- function(expire, now, call = rlang::caller_env()) {
       call = call
     )
   }
-  if (inherits(expire, "POSIXct")) {
-    return(as.double(unclass(expire)))
+  deadline <- if (inherits(expire, "POSIXct")) {
+    as.double(unclass(expire))
+  } else if (inherits(expire, "difftime")) {
+    now + as.double(expire, units = "secs")
+  } else if (is.object(expire)) {
+    abort_type_error(
+      "`expire` must be NULL, a number of seconds, a difftime, or a POSIXct.",
+      call = call
+    )
+  } else {
+    now + as.double(expire)
   }
-  if (inherits(expire, "difftime")) {
-    return(now + as.double(expire, units = "secs"))
-  }
-  if (inherits(expire, "POSIXlt") || !is.null(attr(expire, "class"))) {
-    abort_type_error("`expire` must be NULL, a number of seconds, a difftime, or a POSIXct.", call = call)
-  }
-  now + as.double(expire)
+  if (deadline == -Inf) now else deadline
 }
 
 #' Atomic writes
@@ -202,46 +298,74 @@ parse_expire <- function(expire, now, call = rlang::caller_env()) {
 #' stash_pop(s, "job")
 #' stash_has(s, "job")
 #' @export
-stash_add <- function(stash, key, value, ..., expire = NULL, tags = NULL, codec = NULL) {
+stash_add <- function(
+  stash,
+  key,
+  value,
+  ...,
+  expire = NULL,
+  tags = NULL,
+  codec = NULL
+) {
+  check_supplied(c("key", "value"))
   rlang::check_dots_empty()
   check_writable(stash)
   entry <- stash_prepare(stash, key, value, expire, tags, codec)
   on.exit(unstage(list(entry)))
-  engine_write(stash$engine, function(txn) {
-    now <- unclass(Sys.time())
-    if (!is.null(store_live_record(stash, txn, entry$key, now))) {
-      return(FALSE)
-    }
-    store_put_entry(stash, txn, entry$key, entry$enc, now, expire = entry$expire, tags = entry$tags)
-    store_cull_step(stash, txn, protect = entry$key$stored)
-    TRUE
-  }, timeout = stash$timeout)
+  engine_write(
+    stash$engine,
+    function(txn) {
+      now <- unclass(Sys.time())
+      if (!is.null(store_live_record(stash, txn, entry$key, now))) {
+        return(FALSE)
+      }
+      store_put_entry(
+        stash,
+        txn,
+        entry$key,
+        entry$enc,
+        now,
+        expire = entry$expire,
+        tags = entry$tags
+      )
+      store_cull_step(stash, txn, protect = entry$key$stored)
+      TRUE
+    },
+    timeout = stash$timeout
+  )
 }
 
 #' @rdname stash_add
 #' @export
 stash_pop <- function(stash, key, default) {
+  check_supplied("key")
   check_writable(stash)
   key <- store_key(key)
-  e <- stash$engine
-  nested <- !is.null(e$txn)
-  value <- NULL
-  hit <- engine_write(e, function(txn) {
-    found <- store_read_entry(stash, txn, key)
-    if (is.null(found)) {
-      return(NULL)
-    }
-    if (!nested && !isTRUE(found$record$inline)) {
-      # The file is unlinked after the commit; read it first. (Inside
-      # stash_transact() it stays until the outer commit.)
-      engine_defer(e, function() value <<- store_decode_entry(stash, found, key))
-    }
-    store_delete_entry(stash, txn, key$stored)
-    found
-  }, timeout = stash$timeout)
-  if (!is.null(hit) && is.null(value)) {
-    value <- store_decode_entry(stash, hit, key)
-  }
+  held <- NULL
+  on.exit(if (!is.null(held)) unlink(held))
+  hit <- engine_write(
+    stash$engine,
+    function(txn) {
+      found <- store_read_entry(stash, txn, key)
+      if (is.null(found)) {
+        return(NULL)
+      }
+      # Before anything is deleted: an entry no codec here can read stays.
+      record <- found$record
+      codec_lookup(record$codec, record$codec_version, stash$codecs)
+      if (!isTRUE(record$inline) && !identical(record$shape, "file")) {
+        # The file may be reaped as soon as this commits, by this process or
+        # another; the value is read from a second name for its bytes. (A file
+        # entry's value is the path itself, so there is nothing to hold.)
+        held <<- blob_hold(stash, found$path)
+        found$path <- held
+      }
+      store_delete_entry(stash, txn, key$stored)
+      found
+    },
+    timeout = stash$timeout
+  )
+  value <- if (!is.null(hit)) store_decode_entry(stash, hit, key)
   if (is.null(value)) {
     if (missing(default)) {
       abort_not_found(
@@ -260,17 +384,22 @@ stash_pop <- function(stash, key, default) {
 #' @rdname stash_add
 #' @export
 stash_touch <- function(stash, key, expire) {
+  check_supplied(c("key", "expire"))
   check_writable(stash)
   key <- store_key(key)
   deadline <- parse_expire(expire, unclass(Sys.time()))
-  engine_write(stash$engine, function(txn) {
-    old <- store_live_record(stash, txn, key)
-    if (!is.null(old)) {
-      record <- old
-      record$expire <- deadline
-      store_update_record(stash, txn, key$stored, old, record)
-    }
-  }, timeout = stash$timeout)
+  engine_write(
+    stash$engine,
+    function(txn) {
+      old <- store_live_record(stash, txn, key)
+      if (!is.null(old)) {
+        record <- old
+        record$expire <- deadline
+        store_update_record(stash, txn, key$stored, old, record)
+      }
+    },
+    timeout = stash$timeout
+  )
   invisible(stash)
 }
 

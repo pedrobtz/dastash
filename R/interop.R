@@ -2,10 +2,11 @@
 
 #' Use a stash through the cachem interface
 #'
-#' Returns an object with the methods of a 'cachem' cache — `get()`, `set()`,
+#' @description
+#' Returns an object with the methods of a cachem cache — `get()`, `set()`,
 #' `exists()`, `remove()`, `reset()`, `keys()`, `prune()`, `size()` and
-#' `info()` — so code written for 'cachem', such as `memoise::memoise()` and
-#' Shiny's `bindCache()`, can store in a stash. Keys follow 'cachem''s rule,
+#' `info()` — so code written for cachem, such as `memoise::memoise()` and
+#' Shiny's `bindCache()`, can store in a stash. Keys follow cachem's rule,
 #' lower-case letters, digits, `_` and `-`, and are stored under `prefix`.
 #'
 #' @inheritParams stash_get
@@ -26,17 +27,28 @@
 #' fast_double <- memoise::memoise(slow_double, cache = cache)
 #' fast_double(21)
 #' @export
-as_cachem <- function(stash, ..., prefix = "cachem/", expire = NULL, codec = NULL) {
+as_cachem <- function(
+  stash,
+  ...,
+  prefix = "cachem/",
+  expire = NULL,
+  codec = NULL
+) {
   rlang::check_dots_empty()
   check_open(stash)
-  check_string(prefix, "prefix", rlang::current_env())
+  check_string(prefix, "prefix")
   if (starts_with_opener(prefix)) {
     abort_key_invalid("`prefix` cannot start like an encoded key.")
   }
   parse_expire(expire, 0)
   key_missing <- structure(list(), class = "key_missing")
   full <- function(key) {
-    if (!is.character(key) || length(key) != 1L || is.na(key) || !grepl("^[a-z0-9_-]+$", key)) {
+    if (
+      !is.character(key) ||
+        length(key) != 1L ||
+        is.na(key) ||
+        !grepl("^[a-z0-9_-]+$", key)
+    ) {
       abort_key_invalid(
         "A cachem key must be one string of lower-case letters, digits, `_` and `-`.",
         call = rlang::caller_env()
@@ -49,7 +61,9 @@ as_cachem <- function(stash, ..., prefix = "cachem/", expire = NULL, codec = NUL
   }
   structure(
     list(
-      get = function(key, missing = key_missing) stash_get(stash, full(key), default = missing),
+      get = function(key, missing = key_missing) {
+        stash_get(stash, full(key), default = missing)
+      },
       set = function(key, value) {
         stash_set(stash, full(key), value, expire = expire, codec = codec)
         invisible(TRUE)
@@ -70,7 +84,11 @@ as_cachem <- function(stash, ..., prefix = "cachem/", expire = NULL, codec = NUL
       },
       size = function() length(keys()),
       info = function() {
-        list(dir = stash_dir(stash), prefix = prefix, size_limit = stash$config$size_limit)
+        list(
+          dir = stash_dir(stash),
+          prefix = prefix,
+          size_limit = stash$config$size_limit
+        )
       }
     ),
     class = c("dastash_cachem", "cachem")
@@ -80,12 +98,20 @@ as_cachem <- function(stash, ..., prefix = "cachem/", expire = NULL, codec = NUL
 #' @export
 print.dastash_cachem <- function(x, ...) {
   info <- x$info()
-  cat("<dastash_cachem> ", info$dir, " under ", encodeString(info$prefix, quote = "\""), "\n", sep = "")
+  cat(
+    "<dastash_cachem> ",
+    info$dir,
+    " under ",
+    encodeString(info$prefix, quote = "\""),
+    "\n",
+    sep = ""
+  )
   invisible(x)
 }
 
 #' Base generics for a stash
 #'
+#' @description
 #' `length(s)` is [stash_count()]; `s[[key]]` is [stash_get()], an error on a
 #' miss; `s[[key]] <- value` is [stash_set()]; `as.list(s)` reads every value,
 #' warning above 1000 entries and refusing above 100,000. `names()`, `[` and
@@ -136,10 +162,15 @@ as.list.dastash_stash <- function(x, ...) {
   rlang::check_dots_empty()
   keys <- stash_keys(x)
   if (length(keys) > 1e5) {
-    abort_unsupported("This stash has more than 100,000 entries; read them with `stash_mget()` in pages.")
+    abort_unsupported(
+      "This stash has more than 100,000 entries; read them with `stash_mget()` in pages."
+    )
   }
   if (length(keys) > 1000) {
-    rlang::warn(sprintf("Reading all %d values of this stash into memory.", length(keys)))
+    rlang::warn(sprintf(
+      "Reading all %d values of this stash into memory.",
+      length(keys)
+    ))
   }
   stash_mget(x, lapply(keys, stash_key_text), default = NULL)
 }
