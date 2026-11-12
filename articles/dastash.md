@@ -12,7 +12,7 @@ library(dastash)
 dir <- file.path(tempdir(), "getting-started")
 s <- stash(dir)
 s
-#> <dastash_stash> /tmp/RtmpDHkP6o/getting-started
+#> <dastash_stash> /tmp/RtmpF3iBpt/getting-started
 #>   entries 0 · eviction least-recently-stored · durability safe
 ```
 
@@ -201,7 +201,7 @@ stash_entries(s)[, c("key", "bytes", "inline", "expires")]
 #> 3                             numbers    133   TRUE                <NA>
 #> 4                         prices/XNYS     39   TRUE                <NA>
 #> 5                         prices/XSWX     39   TRUE                <NA>
-#> 6                       session-token      6   TRUE 2026-11-12 10:12:54
+#> 6                       session-token      6   TRUE 2026-11-12 10:44:33
 #> 7 {date=d:2026-08-29,exchange=s:XSWX}      6   TRUE                <NA>
 stash_stats(s)[, c("count", "bytes_inline", "bytes_blob", "volume")]
 #>   count bytes_inline bytes_blob  volume
