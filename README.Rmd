@@ -10,7 +10,7 @@ knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 
 <!-- badges: start -->
 [![R-CMD-check](https://github.com/pedrobtz/dastash/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/pedrobtz/dastash/actions/workflows/R-CMD-check.yaml)
-[![coverage](https://raw.githubusercontent.com/pedrobtz/dastash/main/.github/badges/coverage.svg)](https://github.com/pedrobtz/dastash/actions/workflows/coverage.yaml)
+[![coverage](https://raw.githubusercontent.com/pedrobtz/dastash/gh-pages/badges/coverage.svg)](https://github.com/pedrobtz/dastash/actions/workflows/coverage.yaml)
 <!-- badges: end -->
 
 dastash is a persistent disk cache that every R process on a machine can share, in the
