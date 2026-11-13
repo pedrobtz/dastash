@@ -272,7 +272,7 @@ test_that("counters return a double whatever type `by` and `default` are (#110)"
   }
 })
 
-test_that("a counter row that is not 8 bytes is a codec error (#100)", {
+test_that("a counter row that is not 8 bytes is never a count (#100)", {
   for (n in c(0L, 7L, 9L)) {
     expect_error(counter_value(as.raw(seq_len(n))), class = "dazcache_codec_error")
   }
@@ -281,8 +281,9 @@ test_that("a counter row that is not 8 bytes is a codec error (#100)", {
   cache_incr(s, "c")
   e <- s$engine
   engine_write(e, function(txn) engine_put(txn, engine_db(e, "values"), "c", as.raw(1:3)))
-  expect_error(cache_get(s, "c"), class = "dazcache_codec_error")
-  expect_error(cache_incr(s, "c"), class = "dazcache_codec_error")
+  # Through the cache it is damage, as for any inline value (#113).
+  expect_error(cache_get(s, "c"), class = "dazcache_blob_corrupt")
+  expect_error(cache_incr(s, "c"), class = "dazcache_blob_corrupt")
 })
 
 test_that("counter writes run the cull step like every other write (#117)", {
