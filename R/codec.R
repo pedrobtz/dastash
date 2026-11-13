@@ -35,7 +35,9 @@ reserved_codec_names <- c(
 #' * `codec()` defines your own. Every process that reads its entries must pass
 #'   it to `cache()` in `codecs`.
 #'
-#' @param name A name for the codec, not one of the built-in names.
+#' @param name A name for the codec, not one of the built-in names. An entry
+#'   records only this name, so a cache refuses a second, different codec under
+#'   a name it already knows: give a changed codec a new name or `version`.
 #' @param encode `function(value, path)`: write `value` to the file `path`. It
 #'   may return a small named list, stored with the entry and passed back to
 #'   `decode()`; anything else it returns is ignored.
@@ -48,7 +50,8 @@ reserved_codec_names <- c(
 #' @param supports `function(value)` returning `TRUE` for values the codec
 #'   round-trips without loss, or `NULL` for every value.
 #' @param compress Passed to [saveRDS()]. Off by default: compression costs more
-#'   time than a local disk saves.
+#'   time than a local disk saves. A cache created with `compress = TRUE` keeps
+#'   it when reopened.
 #'
 #' @return A codec: a list with class `dazcache_codec`.
 #'
@@ -197,7 +200,7 @@ codec_rds <- function(compress = FALSE) {
   if (!isTRUE(compress) && !isFALSE(compress)) {
     abort_codec_error("`compress` must be TRUE or FALSE.", codec = "rds")
   }
-  new_codec(
+  codec <- new_codec(
     "rds",
     encode = function(value, path) {
       saveRDS(value, path, version = 3L, compress = compress)
@@ -226,6 +229,12 @@ codec_rds <- function(compress = FALSE) {
       unserialize(bytes)
     }
   )
+  # A parameter that changes the bytes is part of the codec: a cache records it
+  # with the codec's name, so a reopened cache writes as it was configured.
+  if (compress) {
+    codec$args <- list(compress = TRUE)
+  }
+  codec
 }
 
 #' @rdname codec
@@ -341,13 +350,14 @@ file_ext <- function(path) {
   if (m < 0L) "" else substring(basename(path), m + 1L)
 }
 
-# The codec a name stands for: a built-in, or one of the user codecs `codecs`;
-# NULL for a name neither knows.
-codec_known <- function(name, codecs = list()) {
+# The codec a name stands for: a built-in, with the parameters `args` a cache
+# recorded for it, or one of the user codecs `codecs`; NULL for a name neither
+# knows.
+codec_known <- function(name, codecs = list(), args = NULL) {
   switch(
     name,
     auto = codec_auto(),
-    rds = codec_rds(),
+    rds = codec_rds(compress = isTRUE(args$compress)),
     raw = codec_raw(),
     file = codec_file(),
     counter = codec_counter(),
@@ -356,18 +366,47 @@ codec_known <- function(name, codecs = list()) {
 }
 
 # Make a user codec readable by the handle that writes with it, so a cache
-# always reads back what it wrote. A codec the handle already knows by that
-# name stays.
-codec_register <- function(s, codec) {
-  if (
-    is.null(codec) ||
-      codec$name %in% reserved_codec_names ||
-      !is.null(s$codecs[[codec$name]])
-  ) {
+# always reads back what it wrote. A record names its codec, and nothing more,
+# so a handle knows one codec per name: a different codec under a name it
+# already knows would be decoded by the first, and is refused.
+codec_register <- function(s, codec, call = rlang::caller_env()) {
+  if (is.null(codec) || codec$name %in% reserved_codec_names) {
+    return(invisible())
+  }
+  known <- s$codecs[[codec$name]]
+  if (!is.null(known)) {
+    if (!codec_same(known, codec)) {
+      abort_codec_error(
+        c(
+          sprintf(
+            "This cache already has a different codec named %s.",
+            encodeString(codec$name, quote = "\"")
+          ),
+          i = "An entry records only its codec's name, so each name must stand for one codec. Give the new codec another name, or a higher `version`."
+        ),
+        codec = codec$name,
+        call = call
+      )
+    }
     return(invisible())
   }
   s$codecs[[codec$name]] <- codec
   invisible()
+}
+
+# Whether two codecs under one name write and read alike: the same version,
+# extension and functions. Functions are compared by their code, not their
+# environments, so a codec built again by the same code is the same codec.
+codec_same <- function(a, b) {
+  fns <- c("encode", "decode", "supports", "encode_bytes", "decode_bytes")
+  identical(a$version, b$version) &&
+    identical(a$ext, b$ext) &&
+    identical(a$always_file, b$always_file) &&
+    all(vapply(
+      fns,
+      function(f) identical(a[[f]], b[[f]], ignore.environment = TRUE),
+      logical(1)
+    ))
 }
 
 # The codec that decodes an entry, found by the name and version its record
