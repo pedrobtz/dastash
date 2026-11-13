@@ -13,6 +13,9 @@ KEY_MAX <- 512L
 TAG_MAX <- 256L
 CANON_KEEP_MAX <- 4096L
 KEY_PREVIEW_MAX <- 256L
+# How deep lists may nest in a key: deeper ones are refused before the
+# recursion exhausts the C stack.
+KEY_DEPTH_MAX <- 256L
 
 #' Keys
 #'
@@ -205,7 +208,7 @@ native_to_utf8 <- function(x) {
 }
 
 # The value grammar of spec §3.
-canon_value <- function(x, call = rlang::caller_env()) {
+canon_value <- function(x, call = rlang::caller_env(), depth = 0L) {
   if (is.null(x)) {
     return("~")
   }
@@ -218,13 +221,17 @@ canon_value <- function(x, call = rlang::caller_env()) {
   if (isS4(x)) {
     abort_unkeyable(x, call = call)
   }
-  if (inherits(x, "POSIXlt")) {
-    x <- as.POSIXct(x)
+  if (depth > KEY_DEPTH_MAX) {
+    abort_key_invalid(
+      sprintf("A key cannot nest lists more than %d deep.", KEY_DEPTH_MAX),
+      call = call
+    )
   }
+  x <- key_shape(x, call = call)
   if (is.data.frame(x)) {
     return(paste0(
       "D",
-      canon_named(unclass(x)[seq_along(x)], names(x), call = call)
+      canon_named(unclass(x)[seq_along(x)], names(x), call, depth)
     ))
   }
   if (is.list(x)) {
@@ -233,10 +240,16 @@ canon_value <- function(x, call = rlang::caller_env()) {
       return("()")
     }
     if (is.null(nms)) {
-      parts <- vapply(x, canon_value, character(1), call = call)
+      parts <- vapply(
+        x,
+        canon_value,
+        character(1),
+        call = call,
+        depth = depth + 1L
+      )
       return(paste0("(", paste(parts, collapse = ","), ")"))
     }
-    return(canon_named(x, nms, call = call))
+    return(canon_named(x, nms, call, depth))
   }
   if (is.atomic(x)) {
     return(canon_atomic(x, call = call))
@@ -244,9 +257,63 @@ canon_value <- function(x, call = rlang::caller_env()) {
   abort_unkeyable(x, call = call)
 }
 
+# The classes spec §6 reads, each checked for the shape its encoding relies
+# on; every other class is dropped (spec §6), so no method of it runs: a
+# `numeric_version` is a list whose `[[` returns another `numeric_version`.
+key_classes <- c(
+  "factor",
+  "Date",
+  "POSIXct",
+  "POSIXlt",
+  "difftime",
+  "integer64",
+  "data.frame"
+)
+
+key_shape <- function(x, call) {
+  cls <- oldClass(x)
+  if (is.null(cls)) {
+    return(x)
+  }
+  read <- intersect(cls, key_classes)
+  if (length(read) == 0L) {
+    return(unclass(x))
+  }
+  bad <- function(what) {
+    abort_key_invalid(sprintf("A malformed %s cannot be a key.", what), call = call)
+  }
+  kind <- read[[1L]]
+  ok <- switch(
+    kind,
+    factor = typeof(x) == "integer" &&
+      is.character(attr(x, "levels")) &&
+      all(is.na(unclass(x)) | (unclass(x) >= 1L & unclass(x) <= length(attr(x, "levels")))),
+    Date = ,
+    POSIXct = typeof(x) %in% c("double", "integer"),
+    difftime = typeof(x) %in% c("double", "integer") &&
+      is.character(attr(x, "units")) &&
+      length(attr(x, "units")) == 1L &&
+      attr(x, "units") %in% c("secs", "mins", "hours", "days", "weeks"),
+    integer64 = typeof(x) == "double",
+    POSIXlt = is.list(x),
+    data.frame = is.list(x) &&
+      (length(x) == 0L || (!is.null(names(x)) && length(unique(lengths(unclass(x)))) == 1L))
+  )
+  if (!isTRUE(ok)) {
+    bad(sprintf("`%s`", kind))
+  }
+  if (kind == "POSIXlt") {
+    x <- tryCatch(as.POSIXct(x), error = function(cnd) bad("`POSIXlt`"))
+  }
+  x
+}
+
 # A named list or the columns of a data frame: `{name=value,...}`, sorted by
 # name in the C locale, so argument and column order are not identity.
-canon_named <- function(x, nms, call) {
+canon_named <- function(x, nms, call, depth = 0L) {
+  if (length(x) == 0L) {
+    return("{}")
+  }
   check_names(nms, call = call)
   if (anyDuplicated(nms)) {
     abort_key_invalid(
@@ -262,7 +329,11 @@ canon_named <- function(x, nms, call) {
   parts <- vapply(
     ord,
     function(i) {
-      paste0(escape_payload(nms[[i]]), "=", canon_value(x[[i]], call = call))
+      paste0(
+        escape_payload(nms[[i]]),
+        "=",
+        canon_value(x[[i]], call = call, depth = depth + 1L)
+      )
     },
     character(1)
   )

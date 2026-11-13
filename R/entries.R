@@ -35,7 +35,7 @@ cache_entries <- function(cache, ..., prefix = NULL, tag = NULL, n = Inf) {
   rlang::check_dots_empty()
   check_open(cache)
   if (!is.null(prefix)) {
-    check_string_or_empty(prefix, "prefix")
+    prefix <- key_prefix(prefix)
   }
   if (!is.null(tag)) {
     check_string(tag, "tag")

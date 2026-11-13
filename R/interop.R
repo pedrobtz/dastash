@@ -39,6 +39,7 @@ as_cachem <- function(
   rlang::check_dots_empty()
   check_open(cache)
   check_string(prefix, "prefix")
+  prefix <- key_prefix(prefix)
   if (starts_with_opener(prefix)) {
     abort_key_invalid("`prefix` cannot start like an encoded key.")
   }

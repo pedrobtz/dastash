@@ -189,7 +189,7 @@ cache_forget <- function(f, ...) {
 cache_forget_all <- function(f) {
   info <- memo_info(f)
   check_writable(info$cache)
-  prefix <- paste0(info$name, "/v")
+  prefix <- key_prefix(paste0(info$name, "/v"))
   # Only `<name>/v<digits>/...`: a user's `<name>/video` is not the function's.
   evict_prefix_where(info$cache, prefix, function(text) {
     startsWith(text, prefix) &

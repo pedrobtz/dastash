@@ -369,7 +369,10 @@ live entry exists and returns whether it landed; an expired entry counts as abse
 the write itself is `mdbx_put(overwrite = FALSE)`, which answers `FALSE` on an existing
 key instead of raising. `cache_touch()` moves a deadline without rewriting the value and
 is a no-op on a missing key. `cache_delete()` removes every key given in one transaction.
-`cache_pop()` reads and deletes atomically. The counters are atomic across processes,
+`cache_pop()` reads and deletes atomically, and deletes nothing when the entry's file is
+missing or the wrong size. A `codec_file()` entry's value is a path into the cache, which
+the pop removes, so `cache_pop()` returns a copy in the session's temporary directory that
+the caller owns (#95). The counters are atomic across processes,
 store a signed 64-bit integer, return a double, and raise `dazcache_type_error` on a key
 that holds anything but a counter or a value beyond ±2⁵³ (D6).
 

@@ -208,3 +208,32 @@ test_that("codec_rds(compress = TRUE) round-trips inline and as a file", {
   expect_identical(cache_get(s, "small"), 1:10)
   expect_identical(cache_get(s, "large"), large)
 })
+
+test_that("a second, different codec under a known name is refused (#120)", {
+  s <- local_cache()
+  c1 <- codec("lines", encode = function(v, p) writeLines(v, p), decode = function(p, m) readLines(p))
+  c2 <- codec("lines", encode = function(v, p) writeLines(rev(v), p), decode = function(p, m) rev(readLines(p)))
+  cache_set(s, "k1", c("1", "2"), codec = c1)
+  expect_error(cache_set(s, "k2", c("1", "2"), codec = c2), class = "dazcache_codec_error")
+  expect_false(cache_has(s, "k2"))
+  # The same code built again is the same codec.
+  again <- codec("lines", encode = function(v, p) writeLines(v, p), decode = function(p, m) readLines(p))
+  cache_set(s, "k3", c("3", "4"), codec = again)
+  expect_identical(cache_get(s, "k3"), c("3", "4"))
+  t <- local_cache(codecs = list(c1))
+  expect_error(cache_set(t, "k", "x", codec = c2), class = "dazcache_codec_error")
+})
+
+test_that("a cache keeps its codec's parameters when reopened (#120)", {
+  dir <- withr::local_tempdir()
+  s <- cache(dir, codec = codec_rds(compress = TRUE))
+  cache_close(s)
+  s <- cache(dir)
+  withr::defer(cache_close(s))
+  cache_set(s, "big", rep(1, 1e4))
+  expect_lt(cache_entries(s)$bytes, 1000)
+  expect_identical(cache_get(s, "big"), rep(1, 1e4))
+  cache_close(s)
+  expect_error(cache(dir, codec = codec_rds()), class = "dazcache_config_conflict")
+  s <- cache(dir, codec = codec_rds(compress = TRUE))
+})
