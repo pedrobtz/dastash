@@ -282,7 +282,9 @@ parse_expire <- function(expire, now, call = rlang::caller_env()) {
 #'   make a missing key an error. For the counters, the starting value.
 #'
 #' @return `cache_add()` returns `TRUE` or `FALSE`. `cache_pop()` returns the
-#'   value. `cache_touch()` returns the cache, invisibly. `cache_incr()` and
+#'   value; for an entry written with [codec_file()], whose file leaves the
+#'   cache with it, the path of a copy in the session's temporary directory,
+#'   which the caller owns. `cache_touch()` returns the cache, invisibly. `cache_incr()` and
 #'   `cache_decr()` return the new count, a double.
 #'
 #' @examples
@@ -338,6 +340,7 @@ cache_add <- function(
 #' @rdname cache_add
 #' @export
 cache_pop <- function(cache, key, default) {
+  call <- rlang::current_env()
   check_supplied("key")
   check_writable(cache)
   key <- store_key(key)
@@ -350,13 +353,14 @@ cache_pop <- function(cache, key, default) {
       if (is.null(found)) {
         return(NULL)
       }
-      # Before anything is deleted: an entry no codec here can read stays.
+      # Before anything is deleted: an entry no codec here can read, or whose
+      # file is missing or the wrong size, stays.
       record <- found$record
       codec_lookup(record$codec, record$codec_version, cache$codecs)
-      if (!isTRUE(record$inline) && !identical(record$shape, "file")) {
+      if (!isTRUE(record$inline)) {
+        store_blob_ready(cache, found, key, call = call)
         # The file may be reaped as soon as this commits, by this process or
-        # another; the value is read from a second name for its bytes. (A file
-        # entry's value is the path itself, so there is nothing to hold.)
+        # another; the value is read from a second name for its bytes.
         held <<- blob_hold(cache, found$path)
         found$path <- held
       }
@@ -365,6 +369,11 @@ cache_pop <- function(cache, key, default) {
     },
     timeout = cache$timeout
   )
+  # A file entry's value is a path, and the entry is gone: the caller gets a
+  # copy of its own in the session's temporary directory.
+  if (!is.null(hit) && identical(hit$record$shape, "file")) {
+    hit$path <- pop_file_copy(hit$path, hit$record)
+  }
   value <- if (!is.null(hit)) store_decode_entry(cache, hit, key)
   if (is.null(value)) {
     if (missing(default)) {
@@ -379,6 +388,21 @@ cache_pop <- function(cache, key, default) {
     return(default)
   }
   value[[1L]]
+}
+
+# A popped file entry's file, copied out of the cache to a writable file the
+# caller owns, with the blob's extension.
+pop_file_copy <- function(held, record) {
+  ext <- file_ext(record_blob_name(record))
+  out <- tempfile("dazcache-", fileext = if (nzchar(ext)) paste0(".", ext))
+  if (!file.copy(held, out, copy.mode = FALSE)) {
+    abort_engine_error(
+      sprintf("Could not copy the popped file to %s.", encodeString(out, quote = "\"")),
+      path = out,
+      call = NULL
+    )
+  }
+  out
 }
 
 #' @rdname cache_add
