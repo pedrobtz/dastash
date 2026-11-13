@@ -25,6 +25,9 @@
 #' full or it is read-only, the result is returned anyway, with a warning of
 #' class `dazcache_memoise_unstored`. A codec that cannot store it is an error.
 #'
+#' A result stored as a file, with `codec = codec_file()`, is the path of the
+#' cached file on a miss as on a hit, not the path `f` returned.
+#'
 #' `cache_memoise_key()` returns the key a call would use, `cache_forget()`
 #' deletes one call's entry, and `cache_forget_all()` every entry of the
 #' function.
@@ -249,20 +252,35 @@ memo_call <- function(frame, mc, info) {
   # The result is computed, and a cache may forget (design.md §4): when the
   # cache cannot take it for now, return it anyway. A codec that refuses it is
   # a mistake in the setup, and stays an error.
-  tryCatch(
-    cache_set(
-      info$cache,
-      key,
-      result$value,
-      expire = info$expire,
-      tags = info$tags,
-      codec = info$codec
-    ),
+  stored <- tryCatch(
+    {
+      cache_set(
+        info$cache,
+        key,
+        result$value,
+        expire = info$expire,
+        tags = info$tags,
+        codec = info$codec
+      )
+      TRUE
+    },
     dazcache_busy = function(cnd) memo_unstored(info, cnd),
     dazcache_store_full = function(cnd) memo_unstored(info, cnd),
     dazcache_readonly = function(cnd) memo_unstored(info, cnd)
   )
-  if (result$visible) result$value else invisible(result$value)
+  value <- result$value
+  # A file-backed result is the stored file on a miss as on a hit, not the
+  # producer's own (design.md §3.8); the producer's when it was not stored, or
+  # the entry is gone already.
+  if (isTRUE(stored) && memo_file_backed(info, value)) {
+    value <- cache_get(info$cache, key, default = value)
+  }
+  if (result$visible) value else invisible(value)
+}
+
+memo_file_backed <- function(info, value) {
+  codec <- info$codec %||% info$cache$codec
+  !is.null(codec) && identical(codec_for_value(codec, value)$name, "file")
 }
 
 memo_key_of <- function(frame, mc, info) {
@@ -319,4 +337,5 @@ memo_unstored <- function(info, cnd) {
     sprintf("The result of `%s()` was returned but not stored.", info$name),
     parent = cnd
   )
+  FALSE
 }

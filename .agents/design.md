@@ -533,6 +533,11 @@ returns a lazy scan over that file on a hit. An eager frame comes back eager.
 `codec = codec_parquet()` opts eager frames into the file path; without it, a data frame
 below `inline_max` is stored inline as RDS like any other value.
 
+**A miss returns what a hit would.** A file-backed result (`shape = "file"` or `"lazy"`)
+is read back after `cache_set()`, so a miss and a hit both return the read-only file under
+`blobs/`, never the producer's own path, which may be a temporary file. A result returned
+unstored (D22) is the producer's value; it has no blob.
+
 **Two companions make the cache addressable.** `cache_memoise_key()` returns the key a
 call would use — `diskcache`'s `__cache_key__` — and `cache_forget()` drops it. Without
 them, invalidating one result means clearing the store.
