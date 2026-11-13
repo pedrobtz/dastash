@@ -4,6 +4,14 @@
 with, and `tests/testthat/golden/key-vectors.csv` freezes the examples below and many
 more. A change to any rule here is version 2, never an edit to version 1.
 
+**Amended before the first release (2026-11-13, #101).** No store existed, so these
+changes stay version 1: dates and times are written from a computed calendar for every
+year within 2⁵² days or seconds of 1970 (§3.1), where version 1 had used the platform's
+`strftime()`, which differed between systems below year 1000 and wrote `NA` beyond 9999;
+and the microseconds of a time are rounded on their own, as the rule already said, where
+the code had rounded the whole value scaled by 10⁶ and lost precision. After the first
+release this paragraph is closed.
+
 The encoding maps an R value to a **canonical text**, a UTF-8 string. Two values are the
 same key exactly when their canonical texts are byte-identical. The text is what the
 store orders, prefix-scans and prints; its SHA-256 is the key hash.
@@ -64,8 +72,8 @@ name  := escaped
 `YYYY` is the astronomical year, written with at least four digits and as many as it
 needs: `0000` is 1 BC, `-0001` is 2 BC, `10000-01-01` follows `9999-12-31`. A year below
 `0000` is a `-` and the digits of its magnitude, padded to four. The calendar is computed,
-not taken from the platform's `strftime()`, so the text is the same on every system; within
-years `0000` to `9999` it is what `strftime("%Y-%m-%d")` writes.
+not taken from the platform's `strftime()`, so the text is the same on every system.
+`strftime("%Y")` itself is not: glibc writes the year 438 as `438`, macOS as `0438`.
 
 
 `NA` of any type is `!`. **Doubles**: a whole number within ±2⁵³ is written in decimal,

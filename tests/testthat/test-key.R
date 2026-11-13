@@ -124,19 +124,27 @@ test_that("microseconds are kept and rounded", {
   expect_identical(cache_key_chr(t0 + 0.9999996), "t:2026-08-29T10:00:01.000000Z")
 })
 
-test_that("dates and times in years 0000 to 9999 read as strftime() writes them", {
-  # The encoding computes the calendar itself; within strftime()'s range the
-  # two must agree, which makes the platform a reference implementation.
+test_that("dates and times in years 0000 to 9999 agree with POSIXlt", {
+  # The encoding computes the calendar itself; POSIXlt's fields are an
+  # independent reference. The year is padded here because strftime("%Y")
+  # pads it on macOS and not on glibc.
+  civil <- function(lt) {
+    sprintf("%04d-%02d-%02d", lt$year + 1900L, lt$mon + 1L, lt$mday)
+  }
   set.seed(101)
   days <- c(round(stats::runif(2000, -719528, 2932896)), -719528, 2932896, 0, -1, 59, 60)
   expect_identical(
     unname(vapply(days, function(d) cache_key_chr(structure(d, class = "Date")), "")),
-    paste0("d:", format(structure(days, class = "Date"), "%Y-%m-%d"))
+    paste0("d:", civil(as.POSIXlt(structure(days, class = "Date"))))
   )
   secs <- round(stats::runif(2000, -62167219200, 253402300799))
+  lt <- as.POSIXlt(.POSIXct(secs, tz = "UTC"))
   expect_identical(
     unname(vapply(secs, function(s) cache_key_chr(.POSIXct(s, tz = "UTC")), "")),
-    paste0("t:", format(.POSIXct(secs, tz = "UTC"), "%Y-%m-%dT%H:%M:%S", tz = "UTC"), ".000000Z")
+    paste0(
+      "t:", civil(lt), "T",
+      sprintf("%02d:%02d:%02d", lt$hour, lt$min, as.integer(lt$sec)), ".000000Z"
+    )
   )
 })
 
