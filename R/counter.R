@@ -37,7 +37,17 @@ counter_bytes <- function(x) {
   c(u32_bytes(hi), u32_bytes(lo))
 }
 
-counter_value <- function(bytes) {
+counter_value <- function(bytes, call = rlang::caller_env()) {
+  if (!is.raw(bytes) || length(bytes) != 8L) {
+    abort_codec_error(
+      sprintf(
+        "A counter is stored in 8 bytes; this one has %d.",
+        length(bytes)
+      ),
+      codec = "counter",
+      call = call
+    )
+  }
   hi <- u32_value(bytes[1:4])
   lo <- u32_value(bytes[5:8])
   if (hi >= 2^31) {
@@ -84,6 +94,9 @@ counter_add <- function(cache, key, by, default, call = rlang::caller_env()) {
       call = call
     )
   }
+  # An integer64 `by` or `default` is exact here, and the count is a double.
+  by <- as.double(by)
+  default <- as.double(default)
   key <- store_key(key, call = call)
   codec <- codec_counter()
   engine_write(
@@ -106,16 +119,16 @@ counter_add <- function(cache, key, by, default, call = rlang::caller_env()) {
             call = call
           )
         }
-        current <- counter_value(engine_get(
-          txn,
-          engine_db(cache$engine, "values"),
-          key$stored
-        ))
+        bytes <- engine_get(txn, engine_db(cache$engine, "values"), key$stored)
+        # Damage is raised as cache_get() raises it.
+        store_inline_ready(list(record = record, bytes = bytes), key, call)
+        current <- counter_value(bytes, call = call)
         expire <- record$expire
         tags <- record$tags
       }
-      value <- current + by
-      if (abs(value) > COUNTER_MAX) {
+      # Checked before adding: past 2^53 the sum rounds back into range, and
+      # the counter would stop moving with no error.
+      if (current > COUNTER_MAX - max(by, 0) || current < -COUNTER_MAX - min(by, 0)) {
         abort_type_error(
           sprintf(
             "The counter %s would pass \u00b12^53.",
@@ -125,6 +138,7 @@ counter_add <- function(cache, key, by, default, call = rlang::caller_env()) {
           call = call
         )
       }
+      value <- current + by
       enc <- codec_encode_value(
         codec,
         value,
@@ -132,6 +146,7 @@ counter_add <- function(cache, key, by, default, call = rlang::caller_env()) {
         call = call
       )
       store_put_entry(cache, txn, key, enc, now, expire = expire, tags = tags)
+      store_cull_step(cache, txn, protect = key$stored)
       value
     },
     timeout = cache$timeout,

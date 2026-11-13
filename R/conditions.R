@@ -11,7 +11,7 @@
 #' | `dazcache_not_found` | A read of an absent or expired key without `default`; `cache()` with `create = FALSE` on a missing directory |
 #' | `dazcache_type_error` | A counter operation on a non-counter or past 2^53; a path or lazy read of an entry of the wrong shape; a value a codec cannot store; an `expire` that is `NA` or `NaN` |
 #' | `dazcache_codec_error` | Encoding or decoding failed; a codec's package is not installed; a record names a codec the handle does not know |
-#' | `dazcache_blob_corrupt` | A read finds the file behind a record missing, or not the size its record holds |
+#' | `dazcache_blob_corrupt` | A read finds the bytes behind a record, a file or an inline value, missing or not the size its record holds |
 #' | `dazcache_busy` | The write lock was not acquired within `timeout` |
 #' | `dazcache_store_full` | The database reached its `map_size` |
 #' | `dazcache_readonly` | A write on a read-only handle |
