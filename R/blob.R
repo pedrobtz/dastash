@@ -66,11 +66,13 @@ store_ref_blob <- function(s, txn, blob) {
     size <- file.size(blob_path(s, blob$name))
     if (is.na(size) || size != blob$size) {
       blob_publish(s, blob)
+      blob_reap_on_abort(s, blob$name)
       return(invisible(TRUE))
     }
     return(invisible(FALSE))
   }
   blob_publish(s, blob)
+  blob_reap_on_abort(s, blob$name)
   crash_point("publish")
   engine_put(
     txn,
@@ -149,6 +151,24 @@ blob_defer_reap <- function(s, blob_names) {
   }
   pending <- environment(reap)$pending
   pending$names <- union(pending$names, blob_names)
+  invisible()
+}
+
+# In the open transaction: have the file `blob_name`, just published, reaped if
+# the transaction aborts. Its row goes with the abort, so the file would be an
+# orphan; the reap re-checks under the lock, so a file a surviving row still
+# names (one an earlier entry holds) is kept.
+blob_reap_on_abort <- function(s, blob_name) {
+  e <- s$engine
+  reap <- engine_on_aborted(e, "blob_reap")
+  if (is.null(reap)) {
+    pending <- new.env(parent = emptyenv())
+    pending$names <- character()
+    reap <- function() blob_reap(s, pending$names)
+    engine_on_abort(e, reap, name = "blob_reap")
+  }
+  pending <- environment(reap)$pending
+  pending$names <- union(pending$names, blob_name)
   invisible()
 }
 

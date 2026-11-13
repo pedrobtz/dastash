@@ -465,7 +465,9 @@ ordinary code that can be extracted into a function without changing meaning.
 
 Two rules survive inside a transaction. Blobs are still published *before* the record is
 written and unlinks are still deferred until *after* the commit (§8), so a large
-`cache_set()` inside a block is safe and an aborted block leaves at most orphans. And the
+`cache_set()` inside a block is safe and an aborted block leaves nothing behind: the blobs
+it published are reaped after the abort, by the same re-checking reap as after a commit
+(§8). Only a crash leaves orphans. And the
 transaction blocks every other writer for as long as it is open — **never call a producer
 inside it** (§10).
 
@@ -1124,6 +1126,12 @@ The cache article gets this deliberately wrong and says why: unlinking inside th
 transaction means a later failure rolls the metadata back to an entry whose file has
 already gone. Orphans are recoverable; dangling references are not. If the process dies
 between commit and unlink, the orphan is collected later.
+
+A transaction that aborts instead of committing has published its new blobs and lost
+their rows with the abort. The files it published are reaped after the abort, by
+`blob_reap()` like any other: it re-checks under the lock, so a file a surviving row
+names, one an earlier entry still holds and the abort restored, is kept. Only a crash, or
+a reap that finds the lock busy, leaves an orphan.
 
 **Both file operations happen under the write lock**, and that is a correction of the
 first version of this section, which renamed before taking the lock and unlinked after

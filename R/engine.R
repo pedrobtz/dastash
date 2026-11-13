@@ -95,6 +95,7 @@ engine_open <- function(
   e$txn <- NULL
   e$write <- FALSE
   e$after_commit <- list()
+  e$after_abort <- list()
   e$dbs <- list()
   engine_registry[[key]] <- e
   e
@@ -281,16 +282,24 @@ engine_write <- function(e, fn, timeout = 60, call = rlang::caller_env()) {
   e$txn <- txn
   e$write <- TRUE
   e$after_commit <- list()
+  e$after_abort <- list()
   failed <- FALSE
   committing <- FALSE
   release <- function() {
+    undo <- e$after_abort
     e$txn <- NULL
     e$write <- FALSE
     e$after_commit <- list()
+    e$after_abort <- list()
     # libmdbx has already ended a transaction whose commit failed, and
     # whatever aborting it again says must not replace the error that brought
     # us here.
     try(mdbx::mdbx_txn_abort(txn), silent = TRUE)
+    # Undo what the transaction did outside the database, such as publishing
+    # a blob nothing now refers to. Nothing here may replace the error either.
+    for (action in undo) {
+      try(action(), silent = TRUE)
+    }
   }
   commit <- function() {
     committing <<- TRUE
@@ -313,6 +322,7 @@ engine_write <- function(e, fn, timeout = 60, call = rlang::caller_env()) {
     e$txn <- NULL
     e$write <- FALSE
     e$after_commit <- list()
+    e$after_abort <- list()
     for (action in actions) {
       action()
     }
@@ -425,6 +435,23 @@ engine_defer <- function(e, action, name = NULL) {
 # The action deferred under `name` in the current write transaction, or NULL.
 engine_deferred <- function(e, name) {
   e$after_commit[[name]]
+}
+
+# Run `action` if the open write transaction aborts instead of committing, after
+# the abort; named like engine_defer(), so one action can gather work.
+engine_on_abort <- function(e, action, name) {
+  if (is.null(e$txn) || !e$write) {
+    abort_engine_error(
+      "Internal error: nothing to undo outside a write transaction.",
+      call = NULL
+    )
+  }
+  e$after_abort[[name]] <- action
+  invisible()
+}
+
+engine_on_aborted <- function(e, name) {
+  e$after_abort[[name]]
 }
 
 # Records ----------------------------------------------------------------------

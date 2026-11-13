@@ -340,3 +340,39 @@ test_that("an error only signalled in a block does not abort it (#124)", {
     expect_false(cache_has(s, k), label = k)
   }
 })
+
+test_that("an aborted block reaps the blobs it published, and keeps those a surviving entry holds", {
+  s <- local_cache(inline_max = 100)
+  expect_error(cache_transact(s, {
+    cache_set(s, "a", runif(100))
+    cache_set(s, "b", runif(100))
+    stop("abandoned")
+  }), "abandoned")
+  expect_identical(list.files(file.path(s$dir, "blobs"), recursive = TRUE), character())
+  expect_identical(nrow(cache_check(s)), 0L)
+
+  # The same bytes, deleted and stored again inside the block: the abort brings
+  # the entry back, and with it the file.
+  x <- runif(100)
+  cache_set(s, "keep", x)
+  expect_error(cache_transact(s, {
+    cache_delete(s, "keep")
+    cache_set(s, "again", x)
+    stop("abandoned")
+  }), "abandoned")
+  expect_identical(cache_get(s, "keep"), x)
+  expect_false(cache_has(s, "again"))
+  expect_identical(nrow(cache_check(s, hash = TRUE)), 0L)
+
+  # A block that fails in its own write: a codec error after an earlier write
+  # in the block published a blob.
+  n <- length(list.files(file.path(s$dir, "blobs"), recursive = TRUE))
+  expect_error(
+    cache_transact(s, {
+      cache_set(s, "c", runif(100))
+      cache_set(s, "d", 1, codec = codec("bad", function(v, p) stop("no"), function(p, m) NULL))
+    }),
+    class = "dazcache_codec_error"
+  )
+  expect_identical(length(list.files(file.path(s$dir, "blobs"), recursive = TRUE)), n)
+})
