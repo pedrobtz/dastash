@@ -469,3 +469,44 @@ test_that("every index stays a projection of the records through random mutation
   }
   expect_identical(nrow(cache_check(s)), 0L)
 })
+
+test_that("orphan and stale index rows neither stall the walks nor delete live entries (#115)", {
+  # Bound the walk: on the unfixed code it loops forever.
+  setTimeLimit(elapsed = 30, transient = TRUE)
+  on.exit(setTimeLimit(elapsed = Inf), add = TRUE)
+
+  s <- local_cache(cull_limit = 2)
+  e <- s$engine
+  cache_set(s, "live", 1, expire = 3600)
+  cache_set(s, "due", 2, expire = 0)
+  engine_write(e, function(txn) {
+    db <- engine_db(e, "expiry")
+    for (k in c("gone1", "gone2", "gone3")) engine_put(txn, db, index_key(1, k), raw())
+    # A stale row: an old deadline for an entry whose record expires in an hour.
+    engine_put(txn, db, index_key(2, "live"), raw())
+  })
+  cache_expire(s)
+  expect_identical(cache_get(s, "live"), 1)
+  expect_false(cache_has(s, "due"))
+  expect_identical(cache_stats(s)$expired, 1)
+  expect_identical(
+    engine_read(e, function(txn) length(engine_scan(txn, engine_db(e, "expiry")))),
+    1L
+  )
+
+  s <- local_cache(cull_limit = 2, size_limit = 1000)
+  e <- s$engine
+  engine_write(e, function(txn) {
+    db <- engine_db(e, "stored")
+    for (k in c("gone1", "gone2", "gone3")) engine_put(txn, db, index_key(1, k), raw())
+  })
+  for (i in 1:20) cache_set(s, paste0("k", i), strrep("x", 100))
+  expect_lte(held(s), 1000)
+  cache_cull(s)
+  expect_lte(held(s), 1000)
+  expect_identical(
+    engine_read(e, function(txn) length(engine_scan(txn, engine_db(e, "stored")))),
+    as.integer(cache_count(s))
+  )
+  expect_identical(nrow(cache_check(s)), 0L)
+})
