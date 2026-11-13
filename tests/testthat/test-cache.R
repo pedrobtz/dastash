@@ -89,14 +89,14 @@ test_that("with_cache() passes the cache to a function and closes it", {
 
 test_that("arguments are checked", {
   dir <- withr::local_tempdir()
-  expect_error(cache(dir, "extra"), class = "rlib_error_dots_nonempty")
+  expect_error(cache(dir, "extra"), class = "dazcache_type_error")
   expect_error(cache(1), class = "dazcache_type_error")
   expect_error(cache(dir, size_limit = -1), class = "dazcache_type_error")
   expect_error(cache(dir, inline_max = 1.5), class = "dazcache_type_error")
   expect_error(cache(dir, timeout = NA), class = "dazcache_type_error")
   expect_error(cache(dir, readonly = "no"), class = "dazcache_type_error")
   expect_error(cache(dir, codec = "rds"), class = "dazcache_codec_error")
-  expect_error(cache(dir, eviction = "random"), class = "rlang_error")
+  expect_error(cache(dir, eviction = "random"), class = "dazcache_type_error")
   expect_error(cache(dir, eviction = "least-recently-used"), class = "dazcache_unsupported")
 })
 
@@ -423,4 +423,67 @@ test_that("a forked worker opens a directory its parent has open (#96)", {
   got <- parallel::mccollect(jobs)
   expect_identical(unname(unlist(got)), c("v", "v"))
   expect_identical(cache_get(s, "k"), "v")
+})
+
+test_that("every numeric and choice argument is refused in the taxonomy (#94, #112)", {
+  s <- local_cache()
+  dir <- withr::local_tempdir()
+  f <- function(x) x
+  bad <- list(
+    quote(cache(dir, cull_limit = 3e9)),
+    quote(cache(dir, cull_limit = .Machine$integer.max + 1)),
+    quote(cache(dir, cull_limit = 0.5)),
+    quote(cache(dir, cull_limit = NA)),
+    quote(cache(dir, map_size = 4096)),
+    quote(cache(dir, map_size = 1e6 + 0.5)),
+    quote(cache(dir, map_size = Inf)),
+    quote(cache(dir, timeout = -1)),
+    quote(cache(dir, timeout = NA)),
+    quote(cache(dir, inline_max = -1)),
+    quote(cache(dir, inline_max = Inf)),
+    quote(cache(dir, size_limit = -1)),
+    quote(cache(dir, size_limit = "1")),
+    quote(cache(dir, eviction = "lru")),
+    quote(cache(dir, eviction = c("none", "least-recently-stored"))),
+    quote(cache(dir, durability = 1)),
+    quote(cache(dir, durability = NA_character_)),
+    quote(cache_incr(s, "c", 5)),
+    quote(cache_keys(s, n = -1)),
+    quote(cache_keys(s, n = 0.5)),
+    quote(cache_memoise(f, s, version = 2^53 + 2)),
+    quote(cache_memoise(f, s, version = -1)),
+    quote(cache_set(s, "k", 1, expire = NA)),
+    quote(cache_set(s, "k", 1, expire = "1h"))
+  )
+  for (call in bad) {
+    expect_error(eval(call), class = "dazcache_type_error", label = deparse(call))
+  }
+  expect_true(cache_is_open(local_cache(cull_limit = .Machine$integer.max)))
+  expect_true(cache_is_open(local_cache(map_size = 2^18)))
+  t <- local_cache(timeout = Inf)
+  cache_set(t, "k", 1)
+  expect_identical(cache_get(t, "k"), 1)
+})
+
+test_that("a memoised version past the integer range keys exactly (#112)", {
+  s <- local_cache()
+  f <- function(x) x
+  a <- cache_memoise(f, s, version = 20261113120000)
+  b <- cache_memoise(f, s, version = 20261113120001)
+  a(1)
+  b(1)
+  expect_setequal(
+    cache_keys(s),
+    c("f/v20261113120000/{x=i:1}", "f/v20261113120001/{x=i:1}")
+  )
+})
+
+test_that("print() reads the same in a hostile session (#111)", {
+  s <- local_cache()
+  for (i in 1:1500) cache_set(s, paste0("k", i), i)
+  plain <- format(s)
+  withr::local_options(OutDec = ",", scipen = -5, digits = 3, warn = 2)
+  expect_identical(format(s), plain)
+  expect_match(plain[[2]], "entries 1500 ", fixed = TRUE)
+  expect_error(cache(withr::local_tempdir(), timeout = -1), "at least 0,", class = "dazcache_type_error")
 })

@@ -40,7 +40,8 @@
 #' @param key `NULL`, or a function of the list of matched arguments returning
 #'   a key, to key calls on something else than every argument.
 #' @param omit Names of arguments to leave out of the key.
-#' @param version A whole number, part of every key.
+#' @param version A whole number, part of every key, up to `2^53`: a date
+#'   stamp such as `20261113120000` will do.
 #' @param name The function's name in its keys. Defaults to the name `f` was
 #'   passed as; an anonymous function needs one.
 #'
@@ -82,7 +83,7 @@ cache_memoise <- function(
   version = 1L,
   name = NULL
 ) {
-  rlang::check_dots_empty()
+  check_dots()
   check_supplied(c("f", "cache"))
   call <- rlang::current_env()
   if (!is.function(f)) {
@@ -109,7 +110,7 @@ cache_memoise <- function(
       call = call
     )
   }
-  check_number(version, "version", min = 0, whole = TRUE)
+  check_number(version, "version", min = 0, whole = TRUE, max = 2^53)
   if (!is.null(key) && !is.function(key)) {
     abort_type_error(
       "`key` must be NULL or a function of the matched arguments.",
@@ -135,7 +136,9 @@ cache_memoise <- function(
     f = f,
     cache = cache,
     name = name,
-    version = as.integer(version),
+    # A double, written as whole digits: a date-stamp version such as
+    # 20261113120000 is past the integer range.
+    version = sprintf("%.0f", version),
     formals = fmls,
     key = key,
     omit = omit,
@@ -250,9 +253,10 @@ memo_default_name <- function(expr) {
 memo_call <- function(frame, mc, info) {
   args <- memo_collect(frame, mc, info)
   key <- memo_key_text(info, args$key, call = sys.call(-1L))
-  hit <- cache_get(info$cache, key, default = memo_miss)
-  if (!identical(hit, memo_miss)) {
-    return(hit)
+  hit <- memo_lookup(info$cache, key)
+  if (!is.null(hit)) {
+    # As visible as the producer's result was when it was stored (#109).
+    return(if (hit$visible) hit$value else invisible(hit$value))
   }
   result <- withVisible(do.call(info$f, args$call, quote = TRUE))
   # The result is computed, and a cache may forget (design.md §4): when the
@@ -260,13 +264,14 @@ memo_call <- function(frame, mc, info) {
   # a mistake in the setup, and stays an error.
   stored <- tryCatch(
     {
-      cache_set(
+      cache_set_entry(
         info$cache,
         key,
         result$value,
         expire = info$expire,
         tags = info$tags,
-        codec = info$codec
+        codec = info$codec,
+        extra = if (!result$visible) list(invisible = TRUE)
       )
       TRUE
     },
@@ -284,6 +289,20 @@ memo_call <- function(frame, mc, info) {
   if (result$visible) value else invisible(value)
 }
 
+# A stored result and whether to return it visibly, or NULL on a miss.
+memo_lookup <- function(cache, key) {
+  check_open(cache)
+  key <- store_key(key)
+  hit <- engine_read(cache$engine, function(txn) {
+    store_read_entry(cache, txn, key)
+  })
+  value <- if (!is.null(hit)) store_decode_entry(cache, hit, key)
+  if (is.null(value)) {
+    return(NULL)
+  }
+  list(value = value[[1L]], visible = !isTRUE(hit$record$invisible))
+}
+
 memo_file_backed <- function(info, value) {
   codec <- info$codec %||% info$cache$codec
   !is.null(codec) && identical(codec_for_value(codec, value)$name, "file")
@@ -293,8 +312,6 @@ memo_key_of <- function(frame, mc, info) {
   memo_key_text(info, memo_collect(frame, mc, info)$key, call = sys.call(-1L))
 }
 
-# Stands for a miss: no stored value can be identical to this environment.
-memo_miss <- new.env(parent = emptyenv())
 
 # The arguments of a call, evaluated once: `call` to pass to the function (as
 # supplied), and `key` to key it by (defaults filled in, `omit` left out).

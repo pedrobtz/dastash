@@ -68,7 +68,7 @@ u32_value <- function(bytes) {
 #' @export
 cache_incr <- function(cache, key, ..., by = 1, default = 0) {
   check_supplied("key")
-  rlang::check_dots_empty()
+  check_dots()
   counter_add(cache, key, by, default)
 }
 
@@ -76,7 +76,7 @@ cache_incr <- function(cache, key, ..., by = 1, default = 0) {
 #' @export
 cache_decr <- function(cache, key, ..., by = 1, default = 0) {
   check_supplied("key")
-  rlang::check_dots_empty()
+  check_dots()
   counter_add(cache, key, -by, default)
 }
 

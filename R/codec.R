@@ -85,7 +85,7 @@ codec <- function(
   supports = NULL,
   always_file = FALSE
 ) {
-  rlang::check_dots_empty()
+  check_dots()
   if (!isTRUE(always_file) && !isFALSE(always_file)) {
     abort_codec_error("`always_file` must be TRUE or FALSE.")
   }

@@ -33,7 +33,7 @@
 #' cache_check(s)
 #' @export
 cache_check <- function(cache, ..., repair = FALSE, hash = FALSE) {
-  rlang::check_dots_empty()
+  check_dots()
   check_flag(repair, "repair")
   check_flag(hash, "hash")
   if (repair) {

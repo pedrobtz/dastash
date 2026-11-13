@@ -204,13 +204,15 @@ store_put_entry <- function(
   enc,
   now,
   expire = Inf,
-  tags = character()
+  tags = character(),
+  extra = NULL
 ) {
   e <- s$engine
   old <- store_get_record(s, txn, key$stored)
   inline <- is.null(enc$blob)
   record <- record_entry(enc, key, now, inline = inline, expire = expire)
   record$tags <- tags
+  record[names(extra)] <- extra
   if (inline) {
     engine_put(txn, engine_db(e, "values"), key$stored, enc$bytes)
     store_counters_add(txn, list(bytes_inline = record$bytes))

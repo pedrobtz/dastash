@@ -1,4 +1,4 @@
-test_that("expire accepts seconds, difftime, POSIXct, NULL and Inf", {
+test_that("expire accepts seconds, difftime, POSIXct, POSIXlt, NULL and Inf", {
   now <- unclass(Sys.time())
   expect_identical(parse_expire(NULL, now), Inf)
   expect_identical(parse_expire(Inf, now), Inf)
@@ -7,7 +7,9 @@ test_that("expire accepts seconds, difftime, POSIXct, NULL and Inf", {
   expect_identical(parse_expire(as.difftime(2, units = "hours"), now), now + 7200)
   at <- as.POSIXct("2030-01-01", tz = "UTC")
   expect_identical(parse_expire(at, now), as.double(unclass(at)))
-  for (bad in list(NA, NaN, NA_real_, c(1, 2), "1h", as.POSIXlt(Sys.time()), factor(1), list(1))) {
+  # A POSIXlt is the same moment (#112).
+  expect_identical(parse_expire(as.POSIXlt(at), now), as.double(unclass(at)))
+  for (bad in list(NA, NaN, NA_real_, c(1, 2), "1h", factor(1), list(1))) {
     expect_error(parse_expire(bad, now), class = "dazcache_type_error")
   }
 })

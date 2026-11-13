@@ -40,7 +40,7 @@
       cache_set(s, "k", 1, expire = NA)
     Condition <dazcache_type_error>
       Error in `cache_set()`:
-      ! `expire` must be NULL, a number of seconds, a difftime, or a POSIXct; not NA or NaN.
+      ! `expire` must be NULL, a number of seconds, a difftime, or a POSIXct or POSIXlt; not NA or NaN.
 
 # an unknown codec says how to pass it
 
