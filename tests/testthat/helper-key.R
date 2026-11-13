@@ -23,3 +23,27 @@ golden <- function() {
     colClasses = "character", encoding = "UTF-8", na.strings = character()
   )
 }
+
+# Every golden vector against the encoding, in whatever session this runs in.
+expect_golden_vectors <- function() {
+  g <- golden()
+  expect_gt(nrow(g), 100)
+  for (i in seq_len(nrow(g))) {
+    row <- g[i, ]
+    # A missing bit64 skips its own rows, not every row after them.
+    if (grepl("bit64::", row$expr, fixed = TRUE) && !requireNamespace("bit64", quietly = TRUE)) next
+    value <- eval(parse(text = row$expr, encoding = "UTF-8"))
+    if (name_reread_by_locale(value)) next
+    text <- cache_key_chr(value)
+    if (startsWith(row$canon, "<") && endsWith(row$canon, " bytes>")) {
+      expect_identical(
+        paste0("<", nchar(text, type = "bytes"), " bytes>"), row$canon,
+        label = row$expr
+      )
+    } else {
+      expect_identical(text, enc2utf8(row$canon), label = row$expr)
+    }
+    expect_identical(cache_key_hash(value), row$hash, label = row$expr)
+    expect_identical(key_storage(text)$stored, enc2utf8(row$stored), label = row$expr)
+  }
+}
