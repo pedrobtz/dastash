@@ -39,9 +39,10 @@ cache_check(cache, ..., repair = FALSE, hash = FALSE)
 
 A data frame with columns `kind`, `key`, `path`, `detail` and
 `repaired`, one row per finding. The kinds are `index_orphan`,
-`index_missing`, `value_orphan`, `value_missing`, `blob_missing`,
-`blob_orphan`, `blob_corrupt`, `refcount_drift`, `counter_drift`,
-`tmp_stale` and `reader_stale`.
+`index_missing`, `record_corrupt`, `value_orphan`, `value_missing`,
+`value_corrupt`, `blob_missing`, `blob_orphan`, `blob_corrupt`,
+`blob_mode`, `refcount_drift`, `counter_drift`, `tmp_stale` and
+`reader_stale`.
 
 ## Examples
 
