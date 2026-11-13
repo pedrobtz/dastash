@@ -47,7 +47,9 @@ codec_file()
 
 - name:
 
-  A name for the codec, not one of the built-in names.
+  A name for the codec, not one of the built-in names. An entry records
+  only this name, so a cache refuses a second, different codec under a
+  name it already knows: give a changed codec a new name or `version`.
 
 - encode:
 
@@ -81,7 +83,8 @@ codec_file()
 - compress:
 
   Passed to [`saveRDS()`](https://rdrr.io/r/base/readRDS.html). Off by
-  default: compression costs more time than a local disk saves.
+  default: compression costs more time than a local disk saves. A cache
+  created with `compress = TRUE` keeps it when reopened.
 
 ## Value
 

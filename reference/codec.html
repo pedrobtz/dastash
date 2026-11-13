@@ -105,7 +105,9 @@ it to <code><a href="cache.html">cache()</a></code> in <code>codecs</code>.</p><
 
 
 <dl><dt id="arg-name">name<a class="anchor" aria-label="anchor" href="#arg-name"></a></dt>
-<dd><p>A name for the codec, not one of the built-in names.</p></dd>
+<dd><p>A name for the codec, not one of the built-in names. An entry
+records only this name, so a cache refuses a second, different codec under
+a name it already knows: give a changed codec a new name or <code>version</code>.</p></dd>
 
 
 <dt id="arg-encode">encode<a class="anchor" aria-label="anchor" href="#arg-encode"></a></dt>
@@ -139,7 +141,8 @@ round-trips without loss, or <code>NULL</code> for every value.</p></dd>
 
 <dt id="arg-compress">compress<a class="anchor" aria-label="anchor" href="#arg-compress"></a></dt>
 <dd><p>Passed to <code><a href="https://rdrr.io/r/base/readRDS.html" class="external-link">saveRDS()</a></code>. Off by default: compression costs more
-time than a local disk saves.</p></dd>
+time than a local disk saves. A cache created with <code>compress = TRUE</code> keeps
+it when reopened.</p></dd>
 
 </dl></div>
     <div class="section level2">
