@@ -327,10 +327,16 @@ check_tmp <- function(s, repair) {
       max(info$mtime, info$ctime),
       units = "secs"
     ))
-    if (is.na(pid) || pid == Sys.getpid() || is.na(age)) {
+    if (is.na(pid) || is.na(age)) {
       next
     }
-    if (!pid_known_dead(pid) && (age < 3600 || pid_alive(pid))) {
+    if (pid == Sys.getpid()) {
+      # This process's own files are in use; another with its PID is from an
+      # earlier process the PID was reused from, and is stale.
+      if (startsWith(basename(path), stage_prefix())) {
+        next
+      }
+    } else if (!pid_known_dead(pid) && (age < 3600 || pid_alive(pid))) {
       next
     }
     if (repair) {

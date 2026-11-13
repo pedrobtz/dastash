@@ -950,7 +950,7 @@ Rules:
 <root>/cache.mdbx                    the environment: metadata and every index
 <root>/cache.mdbx-lck                libmdbx's lock file
 <root>/blobs/<aa>/<hash>[.<ext>]     values above inline_max, content-addressed, mode 0444
-<root>/tmp/<pid>-<n>                 staging on the same device, for atomic rename
+<root>/tmp/<pid>-<token>-<n>         staging on the same device, for atomic rename
 <root>/tree/…                        the derived view of §6.6, when materialised
 ```
 
@@ -1079,7 +1079,7 @@ every instant** (`cache-model.md` §11.3).
 **Writing: blob first, commit second.**
 
 ```text
-encode  -> <root>/tmp/<pid>-<n>          same device as blobs/; no lock held
+encode  -> <root>/tmp/<pid>-<token>-<n>  same device as blobs/; no lock held
         -> hash
                         then one write transaction:
                           if blobs[name] exists: increment its refs,

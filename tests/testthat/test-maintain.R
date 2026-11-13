@@ -510,3 +510,19 @@ test_that("orphan and stale index rows neither stall the walks nor delete live e
   )
   expect_identical(nrow(cache_check(s)), 0L)
 })
+
+test_that("a staging file left by an earlier process with this PID neither blocks writes nor survives a check (#127)", {
+  s <- local_cache(inline_max = 0)
+  stale <- file.path(s$dir, "tmp", sprintf("%d-%d", Sys.getpid(), 1:5))
+  stale <- c(stale, file.path(s$dir, "tmp", sprintf("%d-1-%d", Sys.getpid(), 1:5)))
+  for (p in stale) {
+    writeLines("old", p)
+    Sys.chmod(p, "0444")
+  }
+  cache_set(s, "k", runif(10))
+  cache_set(s, "j", "text")
+  expect_identical(cache_pop(s, "k", default = NULL) |> length(), 10L)
+  found <- cache_check(s, repair = TRUE)
+  expect_setequal(found$path[found$kind == "tmp_stale"], stale)
+  expect_identical(list.files(file.path(s$dir, "tmp")), character())
+})
