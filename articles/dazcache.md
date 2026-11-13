@@ -12,7 +12,7 @@ library(dazcache)
 dir <- file.path(tempdir(), "getting-started")
 s <- cache(dir)
 s
-#> <dazcache_cache> /tmp/RtmprjM6V1/getting-started
+#> <dazcache_cache> /tmp/RtmpPVfuP5/getting-started
 #>   entries 0 · eviction least-recently-stored · durability safe
 ```
 
@@ -201,7 +201,7 @@ cache_entries(s)[, c("key", "bytes", "inline", "expires")]
 #> 3                             numbers    133   TRUE                <NA>
 #> 4                         prices/XNYS     39   TRUE                <NA>
 #> 5                         prices/XSWX     39   TRUE                <NA>
-#> 6                       session-token      6   TRUE 2026-11-13 21:58:54
+#> 6                       session-token      6   TRUE 2026-11-13 22:00:50
 #> 7 {date=d:2026-08-29,exchange=s:XSWX}      6   TRUE                <NA>
 cache_stats(s)[, c("count", "bytes_inline", "bytes_blob", "volume")]
 #>   count bytes_inline bytes_blob  volume
