@@ -38,21 +38,34 @@ cache_expire <- function(cache, ..., n = Inf) {
       },
       timeout = cache$timeout
     )
-    removed <- removed + done
-    if (done < batch) break
+    removed <- removed + done$removed
+    if (done$rows < batch) break
   }
   invisible(cache)
 }
 
 # Delete up to `n` entries whose deadline has passed, earliest first, in the
-# open transaction. Returns how many.
+# open transaction. Returns how many index rows it consumed (`rows`, the
+# walk's progress) and how many entries it removed (`removed`).
+#
+# Every index is a projection of `meta` (design.md §7.2), so a row is acted on
+# only when the record agrees with it. A row whose entry is gone, or whose
+# record now holds another deadline, is damage: it is deleted, or the walk
+# would find it at the front of every batch and never end, and the entry is
+# left alone.
 store_expire_batch <- function(s, txn, n, now) {
-  rows <- engine_scan(txn, engine_db(s$engine, "expiry"), n = n)
+  db <- engine_db(s$engine, "expiry")
+  rows <- engine_scan(txn, db, n = n)
+  consumed <- 0
   done <- 0
   for (row in rows) {
     parts <- index_key_parts(row)
     if (parts$value > now) {
       break
+    }
+    consumed <- consumed + 1
+    if (!store_index_row_current(s, txn, db, row, parts, "expire")) {
+      next
     }
     store_delete_entry(s, txn, parts$stored)
     done <- done + 1
@@ -60,7 +73,18 @@ store_expire_batch <- function(s, txn, n, now) {
   if (done > 0) {
     store_counters_add(txn, list(expired = done))
   }
-  done
+  list(rows = consumed, removed = done)
+}
+
+# Whether an index row agrees with its entry's record on `field`. A row that
+# does not is deleted here.
+store_index_row_current <- function(s, txn, db, row, parts, field) {
+  record <- store_get_record(s, txn, parts$stored)
+  if (!is.null(record) && identical(as.numeric(record[[field]]), parts$value)) {
+    return(TRUE)
+  }
+  engine_del(txn, db, row)
+  FALSE
 }
 
 #' Keep a cache under its size limit
@@ -115,7 +139,7 @@ cache_cull <- function(cache) {
       },
       timeout = cache$timeout
     )
-    if (done < cache$cull_limit) break
+    if (done$rows < cache$cull_limit) break
   }
   invisible(cache)
 }
@@ -212,27 +236,35 @@ store_cull_step <- function(s, txn, protect = character()) {
 }
 
 # Evict up to `n` entries from the front of the eviction index while the cache
-# holds more than `limit`. Returns how many.
+# holds more than `limit`. Returns the rows consumed and the entries removed,
+# as store_expire_batch() does, and like it deletes rows that disagree with
+# their record.
 store_evict_batch <- function(s, txn, n, limit, protect = character()) {
   index <- eviction_index(s$config$eviction)
   if (is.null(index) || store_held_bytes(txn) <= limit) {
-    return(0)
+    return(list(rows = 0, removed = 0))
   }
-  rows <- engine_scan(txn, engine_db(s$engine, index), n = n + length(protect))
+  db <- engine_db(s$engine, index)
+  rows <- engine_scan(txn, db, n = n + length(protect))
+  consumed <- 0
   done <- 0
   for (row in rows) {
-    if (done >= n || store_held_bytes(txn) <= limit) {
+    if (consumed >= n || store_held_bytes(txn) <= limit) {
       break
     }
-    stored <- index_key_parts(row)$stored
-    if (stored %in% protect) {
+    parts <- index_key_parts(row)
+    if (parts$stored %in% protect) {
       next
     }
-    store_delete_entry(s, txn, stored)
+    consumed <- consumed + 1
+    if (!store_index_row_current(s, txn, db, row, parts, index)) {
+      next
+    }
+    store_delete_entry(s, txn, parts$stored)
     done <- done + 1
   }
   if (done > 0) {
     store_counters_add(txn, list(evictions = done))
   }
-  done
+  list(rows = consumed, removed = done)
 }
