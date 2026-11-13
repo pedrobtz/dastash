@@ -9,6 +9,7 @@ test_that("every golden vector encodes, hashes and stores as recorded", {
     # A missing bit64 skips its own rows, not every row after them.
     if (grepl("bit64::", row$expr, fixed = TRUE) && !requireNamespace("bit64", quietly = TRUE)) next
     value <- eval(parse(text = row$expr, encoding = "UTF-8"))
+    if (name_reread_by_locale(value)) next
     text <- cache_key_chr(value)
     if (startsWith(row$canon, "<") && endsWith(row$canon, " bytes>")) {
       expect_identical(
@@ -157,6 +158,24 @@ test_that("strings that are not UTF-8 are refused", {
   native <- "caf\xe9"
   expect_identical(Encoding(native), "unknown")
   expect_error(cache_key_chr(native), class = "dazcache_key_invalid")
+})
+
+test_that("unmarked UTF-8 text keys the same in a session whose locale cannot hold it", {
+  utf8 <- "été"
+  unmarked <- rawToChar(charToRaw(utf8))
+  expect_identical(Encoding(unmarked), "unknown")
+  named <- TRUE
+  names(named) <- unmarked
+  withr::local_locale(c(LC_CTYPE = "C"))
+  skip_if(l10n_info()$`UTF-8`, "the C locale is UTF-8 here")
+  expect_identical(cache_key_chr(unmarked), utf8)
+  expect_identical(cache_key_chr(named), paste0("l{", utf8, "=T}"))
+  expect_identical(cache_key_chr(list(x = unmarked)), cache_key_chr(list(x = utf8)))
+  # Never the text R prints for bytes it cannot show, which is another key.
+  shown <- c(`<c3><a9>t<c3><a9>` = TRUE)
+  expect_false(identical(cache_key_chr(named), cache_key_chr(shown)))
+  # Bytes that are neither native text nor UTF-8 are still refused.
+  expect_error(cache_key_chr("caf\xe9"), class = "dazcache_key_invalid")
 })
 
 test_that("an S4 object cannot be a key", {

@@ -168,11 +168,30 @@ utf8_text <- function(x, call = rlang::caller_env()) {
       call = call
     )
   }
+  if (!l10n_info()$`UTF-8`) {
+    native <- !is.na(x) & Encoding(x) == "unknown"
+    x[native] <- native_to_utf8(x[native])
+  }
   x <- enc2utf8(x)
   if (!all(validUTF8(x[!is.na(x)]))) {
     abort_key_invalid("A key string is not valid UTF-8.", call = call)
   }
   x
+}
+
+# Unmarked strings in a session whose native encoding is not UTF-8: converted
+# from that encoding, and where they are not text in it (the UTF-8 bytes of a
+# script parsed in a C locale, say), read as UTF-8. enc2utf8() would instead
+# write R's display of the bytes, "<c3><a9>", into the key: a different key in
+# every such locale, and the same key as the literal text "<c3><a9>". Bytes
+# that are neither are left for utf8_text() to refuse.
+native_to_utf8 <- function(x) {
+  out <- iconv(x, from = "", to = "UTF-8")
+  failed <- is.na(out)
+  as_utf8 <- x[failed]
+  Encoding(as_utf8) <- "UTF-8"
+  out[failed] <- as_utf8
+  out
 }
 
 # The value grammar of spec §3.
