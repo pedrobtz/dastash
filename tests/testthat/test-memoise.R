@@ -256,6 +256,31 @@ test_that("a result the cache cannot store is returned, with a warning", {
   expect_identical(calls, 2)
 })
 
+test_that("a file-backed result is the same path on a miss and a hit", {
+  s <- local_cache()
+  produce <- function(x) {
+    p <- withr::local_tempfile(fileext = ".csv", .local_envir = globalenv())
+    writeLines(as.character(x), p)
+    p
+  }
+  m <- cache_memoise(produce, s, codec = codec_file(), name = "produce")
+  p1 <- m(1)
+  p2 <- m(1)
+  expect_identical(p1, p2)
+  expect_identical(p1, cache_path(s, cache_memoise_key(m, 1)))
+  expect_identical(readLines(p1), "1")
+})
+
+test_that("a file-backed result the cache cannot store is the producer's path", {
+  dir <- withr::local_tempdir()
+  cache_close(cache(dir))
+  ro <- local_cache(dir, readonly = TRUE)
+  p <- withr::local_tempfile(fileext = ".txt", lines = "x")
+  m <- cache_memoise(function(x) p, ro, codec = codec_file(), name = "ro_file")
+  expect_warning(out <- m(1), class = "dazcache_memoise_unstored")
+  expect_identical(out, p)
+})
+
 test_that("a codec that refuses a result stays an error", {
   s <- local_cache()
   m <- cache_memoise(function(x) list(x), s, codec = codec_raw(), name = "listed")

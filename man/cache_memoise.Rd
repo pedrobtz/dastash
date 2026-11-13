@@ -75,6 +75,9 @@ If the cache cannot store a result because its write lock stayed busy, it is
 full or it is read-only, the result is returned anyway, with a warning of
 class \code{dazcache_memoise_unstored}. A codec that cannot store it is an error.
 
+A result stored as a file, with \code{codec = codec_file()}, is the path of the
+cached file on a miss as on a hit, not the path \code{f} returned.
+
 \code{cache_memoise_key()} returns the key a call would use, \code{cache_forget()}
 deletes one call's entry, and \code{cache_forget_all()} every entry of the
 function.
