@@ -45,7 +45,9 @@ group entries for \code{\link[=cache_evict]{cache_evict()}} and \code{\link[=cac
 }
 \value{
 \code{cache_add()} returns \code{TRUE} or \code{FALSE}. \code{cache_pop()} returns the
-value. \code{cache_touch()} returns the cache, invisibly. \code{cache_incr()} and
+value; for an entry written with \code{\link[=codec_file]{codec_file()}}, whose file leaves the
+cache with it, the path of a copy in the session's temporary directory,
+which the caller owns. \code{cache_touch()} returns the cache, invisibly. \code{cache_incr()} and
 \code{cache_decr()} return the new count, a double.
 }
 \description{
