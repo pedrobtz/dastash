@@ -1,0 +1,35 @@
+source("h.R")
+cat("counter saturation\n")
+s <- newc(); print(cache_incr(s, "c", default = 2^53 - 1)); print(try_(cache_incr(s, "c"))); print(try_(cache_incr(s, "c"))); print(try_(cache_incr(s, "c", by = 2)))
+held <- function(s) { c <- ctr(s); c$bytes_inline + c$bytes_blob }
+show <- function(s) cat(sprintf("  keys=[%s] held=%g ev=%g exp=%g files=%d check=%d\n", paste(cache_keys(s), collapse=","), held(s), ctr(s)$evictions, ctr(s)$expired, length(blobs(s)), nrow(cache_check(s, hash=TRUE))))
+cat("size_limit straddle inline\n")
+s <- newc(size_limit = 30, inline_max = 1000)
+cache_set(s, "a", raw(10)); Sys.sleep(.01); cache_set(s, "b", raw(10)); Sys.sleep(.01); cache_set(s, "c", raw(10)); show(s)   # exactly 30: all stay
+cache_set(s, "d", raw(1)); show(s)  # 31 > 30: evict a
+cat("value larger than size_limit\n")
+cache_set(s, "huge", raw(100)); show(s); cache_set(s, "after", raw(1)); show(s); cache_cull(s); show(s)
+cat("cull_limit bound + mix blob/inline + dedup\n")
+s <- newc(size_limit = 1000, inline_max = 50, cull_limit = 2)
+big <- as.raw(rep(3, 400))
+for (k in paste0("d", 1:5)) { cache_set(s, k, big); Sys.sleep(.01) }; show(s)   # dedup: 400 held
+for (k in paste0("i", 1:5)) { cache_set(s, k, raw(40)); Sys.sleep(.01) }; show(s)  # 600
+cache_set(s, "n", as.raw(rep(4, 450))); show(s)  # 1050 > 1000: evicts up to 2 (d1, d2 free nothing)
+cache_set(s, "n2", raw(1)); show(s)
+cache_cull(s); show(s); stopifnot(identical(cache_get(s, "n"), as.raw(rep(4,450))))
+cat("overwriting own key when over limit; protect\n")
+s <- newc(size_limit = 10, inline_max = 1000); cache_set(s, "a", raw(20)); show(s); cache_set(s, "a", raw(20)); show(s); cache_set(s, "b", raw(5)); show(s)
+cat("mset over limit\n")
+s <- newc(size_limit = 25, inline_max = 1000); cache_mset(s, list(a = raw(10), b = raw(10), c = raw(10), d = raw(10))); show(s)
+cat("expired first\n")
+s <- newc(size_limit = 25, inline_max = 1000); cache_set(s, "old", raw(10)); Sys.sleep(.01); cache_set(s, "x", raw(10), expire = -1); cache_set(s, "y", raw(10)); show(s); print(cache_count(s))
+cat("size_limit 0\n")
+s <- newc(size_limit = 0); cache_set(s, "a", 1); show(s); cache_set(s, "b", 2); show(s); print(try_(cache_get(s, "b"))); cache_set(s, "e", raw(0)); show(s)
+cat("add / memoise / cachem culling\n")
+s <- newc(size_limit = 15, inline_max = 1000); cache_add(s, "a", raw(10)); Sys.sleep(.01); cache_add(s, "b", raw(10)); show(s); cache_incr(s, "c"); cache_incr(s, "c2"); show(s)
+cat("eviction=none\n")
+s <- newc(size_limit = 15, inline_max = 1000, eviction = "none"); cache_set(s, "a", raw(10)); cache_set(s, "b", raw(10), expire = -1); cache_set(s, "c", raw(10)); show(s); print(cache_count(s)); cache_cull(s); show(s)
+cat("same stored timestamp order / overwrite reindex\n")
+s <- newc(size_limit = 25, inline_max = 1000); cache_set(s, "a", raw(10)); Sys.sleep(.01); cache_set(s, "b", raw(10)); Sys.sleep(.01); cache_set(s, "a", raw(10)); Sys.sleep(.01); cache_set(s, "c", raw(10)); show(s)  # b is oldest stored now
+cat("touch does not refresh stored\n")
+cat("volume/stats\n"); st <- cache_stats(s); print(st[, c("count","bytes_inline","bytes_blob","volume","size_limit","evictions","expired")]); print(cache_volume(s) == file.size(file.path(cache_dir(s), "cache.mdbx")) + ctr(s)$bytes_blob)

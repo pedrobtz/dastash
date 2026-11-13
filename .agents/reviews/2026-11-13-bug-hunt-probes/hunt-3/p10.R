@@ -1,0 +1,15 @@
+source("common.R")
+args <- commandArgs(TRUE); writes_after <- args[1] == "w"
+d <- tempfile("c"); s <- cache(d, timeout = 0); cache_set(s, "a", 1)
+flag <- tempfile("flag")
+holder <- function(d, flag) { library(dazcache); s <- cache(d); cache_transact(s, { cache_set(s, "a", 2); file.create(flag); Sys.sleep(60) }) }
+bg <- callr::r_bg(holder, list(d, flag), libpath = LP); while (!file.exists(flag)) Sys.sleep(0.01)
+tools::pskill(bg$get_pid(), tools::SIGKILL); bg$wait()
+if (writes_after) show("write attempt", tr(cache_set(s, "k", 1)))
+show("read", tr(cache_get(s, "a")))
+show("close 1", tr({cache_close(s); "ok"}))
+show("is_open", cache_is_open(s)); show("refs", s$engine$refs); show("reg", length(ls(dazcache:::engine_registry)))
+show("use", tr(cache_get(s, "a")))
+show("close 2", tr({cache_close(s); "ok"})); show("is_open", cache_is_open(s)); show("refs", s$engine$refs); show("reg", length(ls(dazcache:::engine_registry)))
+show("reopen", tr({ s2 <- cache(d, timeout = 1); cache_set(s2, "k", 1); cache_keys(s2) }))
+show("other proc", tr(callr::r(function(d) { library(dazcache); x <- cache(d, timeout = 1); cache_set(x, "k2", 1); cache_keys(x) }, list(d), libpath = LP)))

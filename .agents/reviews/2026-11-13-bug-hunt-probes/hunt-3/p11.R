@@ -1,0 +1,11 @@
+source("common.R")
+d <- tempfile("c"); s <- cache(d, timeout = 0); cache_set(s, "a", 1)
+flag <- tempfile("flag")
+holder <- function(d, flag) { library(dazcache); s <- cache(d); cache_transact(s, { cache_set(s, "a", 2); file.create(flag); Sys.sleep(60) }) }
+bg <- callr::r_bg(holder, list(d, flag), libpath = LP); while (!file.exists(flag)) Sys.sleep(0.01)
+tools::pskill(bg$get_pid(), tools::SIGKILL); bg$wait()
+show("close 1", tr({cache_close(s); "ok"}))
+show("reopen w/o second close", tr({ s2 <- cache(d, timeout = 1); cache_get(s2, "a") }))
+show("again", tr({ s2 <- cache(d, timeout = 1); cache_get(s2, "a") }))
+show("refs", s$engine$refs)
+show("with_cache", tr(with_cache(d, function(x) cache_get(x, "a"))))

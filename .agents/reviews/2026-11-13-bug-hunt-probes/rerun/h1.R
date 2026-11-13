@@ -1,0 +1,13 @@
+.libPaths(c("<W>/lib", .libPaths())); suppressMessages(library(dazcache))
+t <- function(label, expr) { r <- tryCatch(expr, error = function(e) paste("ERR", class(e)[1], conditionMessage(e))); cat(label, ": ", paste(format(r), collapse=" "), "\n", sep="") }
+s <- cache(tempfile())
+long <- strrep("k", 600); g <- structure(long, note = "x")
+cache_set(s, g, "G"); t("F1 get plain", cache_get(s, long, default = "MISS")); t("F1 add plain", cache_add(s, long, "second")); t("F1 get attr", cache_get(s, g, default="MISS"))
+t("F2 version", cache_key_chr(numeric_version("1.2")))
+cache_set(s, structure(1e12, class = "Date"), "first"); t("F3 far date", cache_get(s, structure(-5e15, class = "Date"), default="MISS")); t("F3 text", cache_key_chr(structure(1e12, class="Date")))
+t("F5 version 2^31", { m <- suppressWarnings(cache_memoise(function(x) x, s, version = 2^31, name="vv")); cache_memoise_key(m, 1) })
+ma <- cache_memoise(function(x) x, s, name = "q"); cache_set(s, "q/video", 1); cache_forget_all(ma); t("F7 q/video survives", cache_has(s, "q/video"))
+m <- cache_memoise(function(x) invisible(x), s, name="inv"); t("F8 vis", c(withVisible(m(1))$visible, withVisible(m(1))$visible))
+t("F9 class", class(cache_incr(s, "c", by = bit64::as.integer64(3))))
+options(OutDec=","); t("F10 print", capture.output(print(s))[1:2]); options(OutDec=".")
+t("F11 dots", cache_incr(s, "c", 5)); t("F11 evict", cache(tempfile(), eviction="lru")); t("F11 factor", cache_key_chr(structure(5L, class="factor", levels=c("a","b"))))

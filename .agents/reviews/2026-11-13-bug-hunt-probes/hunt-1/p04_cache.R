@@ -1,0 +1,41 @@
+source("lib.R")
+p <- function(label, x) cat(sprintf("%-28s %s\n", label, substr(paste(capture.output(print(x)), collapse=" / "), 1, 330)))
+op <- function(...) tr({s <- cache(tempfile("c-"), ...); on.exit(cache_close(s)); cache_set(s,"a",1:10); cache_set(s, "b", as.raw(1:100)); st <- cache_stats(s); e <- cache_entries(s); paste("ok count", st$count, "inline", paste(e$inline, collapse=","), "size_limit", st$size_limit, "cull", s$cull_limit, "timeout", s$timeout)})
+A <- list(
+ size0 = list(size_limit=0), sizeNeg = list(size_limit=-1), sizeNA = list(size_limit=NA), sizeInf=list(size_limit=Inf), sizeFrac=list(size_limit=1.5), sizeChr=list(size_limit="1e6"), size2=list(size_limit=c(1,2)), sizeNULL=list(size_limit=NULL), sizeBig=list(size_limit=2^60),
+ in0=list(inline_max=0), in1=list(inline_max=1), inFrac=list(inline_max=10.5), inInf=list(inline_max=Inf), inNeg=list(inline_max=-1), inBig=list(inline_max=2^31), inHuge=list(inline_max=2^53), inNA=list(inline_max=NA_integer_), in50=list(inline_max=50),
+ map1=list(map_size=1), mapFrac=list(map_size=1e6+0.5), mapSmall=list(map_size=4096), mapInf=list(map_size=Inf), mapBig=list(map_size=2^62), mapNeg=list(map_size=-1), map0=list(map_size=0),mapBig2=list(map_size=2^40),
+ cull0=list(cull_limit=0), cullFrac=list(cull_limit=1.5), cullBig=list(cull_limit=2^31), cullInf=list(cull_limit=Inf), cull1=list(cull_limit=1),
+ to0=list(timeout=0), toNeg=list(timeout=-1), toInf=list(timeout=Inf), toNA=list(timeout=NA), toFrac=list(timeout=0.001),
+ roNA=list(readonly=NA), ro1=list(readonly=1), crNo=list(create=FALSE), ev=list(eviction="none"), evbad=list(eviction="lru"), evpartial=list(eviction="least"), ev2=list(eviction=c("none","least-recently-stored")), evNA=list(eviction=NA),
+ dur=list(durability="fast"), durbad=list(durability=1), codecbad=list(codec="rds"), codecs_bad=list(codecs=codec_rds()), dots=list(1)
+)
+for (n in names(A)) p(n, do.call(op, A[[n]]))
+p("dir NA", tr(cache(NA_character_))); p("dir 2", tr(cache(c("a","b")))); p("dir empty", tr(cache(""))); p("dir num", tr(cache(1))); p("dir missing", tr(cache()))
+d <- tempfile("c-"); s <- cache(d, size_limit=1e6, inline_max=100)
+p("reopen same", tr({s2 <- cache(d); c(s2$config$size_limit, s2$config$inline_max)}))
+p("reopen conflict", tr(cache(d, inline_max=200)))
+p("reopen conflict size", tr(cache(d, size_limit=2e6)))
+p("reopen same explicit int", tr({s3 <- cache(d, size_limit=1000000L, inline_max=100L); "ok"}))
+p("reopen relative", tr({owd <- setwd(dirname(d)); on.exit(setwd(owd)); s4 <- cache(basename(d)); cache_set(s4, "rel", 1); cache_get(s, "rel")}))
+p("close one handle; other", tr({cache_close(s2); c(cache_is_open(s), tr(cache_get(s, "rel")))}))
+p("closed use", tr(cache_get(s2, "rel")))
+p("close twice", tr({cache_close(s2); "ok"}))
+p("print closed", tr(capture.output(print(s2))))
+p("non-cache", tr(cache_get(list(), "a")))
+p("missing key", tr(cache_get(s)))
+p("missing value", tr(cache_set(s, "a")))
+p("readonly", tr({cache_close(s); cache_close(s3); cache_close(s4); r <- cache(d, readonly=TRUE); c(cache_get(r,"rel"), tr(cache_set(r,"x",1)), tr(cache_incr(r,"x")), tr(cache_delete(r,"x")))}))
+p("readonly nonexist", tr(cache(tempfile(), readonly=TRUE)))
+p("with_cache", tr(with_cache(tempfile(), function(s) {cache_set(s,"a",1); cache_get(s,"a")})))
+p("with_cache nonfn", tr(with_cache(tempfile(), 1)))
+p("local_cache", tr({f <- function() {s <- local_cache(); cache_set(s,"a",1); s}; s <- f(); c(cache_is_open(s), dir.exists(cache_dir(s)))}))
+p("tilde dir", tr({s <- cache("~/../../tmp/dz-hunt1-tilde-nonexist/../x", create=FALSE)}))
+old <- options(OutDec=",", warn=2)
+s <- cache(tempfile()); for (i in 1:3) cache_set(s, paste0("k",i), i)
+p("print OutDec warn2", capture.output(print(s)))
+options(old); options(OutDec=","); p("print OutDec", tr(capture.output(print(s))))
+options(OutDec=".")
+s <- cache(tempfile()); for (i in 1:1200) cache_set(s, sprintf("k%04d", i), i)
+p("print 1200", capture.output(print(s)))
+p("as.list 1200", tr(length(as.list(s))))

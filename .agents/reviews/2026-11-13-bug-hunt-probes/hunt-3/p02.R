@@ -1,0 +1,6 @@
+source("common.R")
+d <- tempfile("c"); s <- cache(d); cache_set(s, "p", 1)
+j <- parallel::mcparallel({ tr({ rm(list = ls(dazcache:::engine_registry), envir = dazcache:::engine_registry); s2 <- cache(d); cache_set(s2, "child", 1); r <- cache_get(s2, "child"); cache_close(s2); r }) })
+show("child fresh open after clearing registry", parallel::mccollect(j))
+show("parent after", tr({cache_set(s, "p2", 1); cache_keys(s)}))
+show("check", tr(cache_check(s)))
