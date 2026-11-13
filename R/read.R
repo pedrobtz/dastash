@@ -319,6 +319,7 @@ store_decode_entry <- function(s, hit, key, call = rlang::caller_env()) {
     call = call
   )
   if (isTRUE(record$inline)) {
+    store_inline_ready(hit, key, call)
     return(list(codec_decode_bytes(
       codec,
       hit$bytes,
@@ -370,6 +371,24 @@ store_decode_entry <- function(s, hit, key, call = rlang::caller_env()) {
     return(NULL)
   }
   rlang::cnd_signal(failure)
+}
+
+# Inline bytes get the check a blob gets: present, and the size the record
+# holds. Anything else is damage, never a value.
+store_inline_ready <- function(hit, key, call) {
+  if (is.raw(hit$bytes) && length(hit$bytes) == hit$record$bytes) {
+    return(invisible(TRUE))
+  }
+  abort_blob_corrupt(
+    sprintf(
+      "The value of key %s is %s where %s bytes were written.",
+      display_key(key$text),
+      if (is.raw(hit$bytes)) sprintf("%d bytes", length(hit$bytes)) else "missing",
+      format(hit$record$bytes)
+    ),
+    key = key$text,
+    call = call
+  )
 }
 
 # TRUE when the blob's file is there at the size its record holds; FALSE when

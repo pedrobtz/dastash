@@ -357,7 +357,9 @@ cache_pop <- function(cache, key, default) {
       # file is missing or the wrong size, stays.
       record <- found$record
       codec_lookup(record$codec, record$codec_version, cache$codecs)
-      if (!isTRUE(record$inline)) {
+      if (isTRUE(record$inline)) {
+        store_inline_ready(found, key, call = call)
+      } else {
         store_blob_ready(cache, found, key, call = call)
         # The file may be reaped as soon as this commits, by this process or
         # another; the value is read from a second name for its bytes.
