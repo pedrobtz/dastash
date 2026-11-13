@@ -32,7 +32,7 @@
 #' cache_stats(s)
 #' @export
 cache_entries <- function(cache, ..., prefix = NULL, tag = NULL, n = Inf) {
-  rlang::check_dots_empty()
+  check_dots()
   check_open(cache)
   if (!is.null(prefix)) {
     prefix <- key_prefix(prefix)

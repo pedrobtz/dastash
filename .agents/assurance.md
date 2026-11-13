@@ -155,8 +155,8 @@ One row per limit the package enforces. "Straddled by" is the test of
 | `inline_max`                                  | encoded value bytes (codec output), `>=` makes a file   | gap #87                                                                                                   |
 | `size_limit`                                  | encoded bytes held: inline values plus each blob once   | gap #88                                                                                                   |
 | `size_limit` on counter writes                | encoded bytes held                                      | tests/testthat/test-expire.R |
-| `cull_limit`                                  | entries per transaction                                 | gap #94                                                                                                   |
-| memoise `version`                             | whole number, up to `.Machine$integer.max`              | gap #112                                                                                                    |
+| `cull_limit`                                  | entries per transaction                                 | tests/testthat/test-cache.R |
+| memoise `version`                             | whole number, up to 2^53                                | tests/testthat/test-cache.R |
 | `COUNTER_MAX` (2^53)                          | absolute counter value                                  | tests/testthat/test-expire.R |
 | ordered count, `[0, 2^53]`                    | whole doubles                                           | tests/testthat/test-encode.R: `2^53` accepted, `2^53 + 2` and `-1` refused                                  |
 | `CODEC_META_MAX` (4096)                       | bytes of the encoded codec meta                         | gap #89                                                                                                   |

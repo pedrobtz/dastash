@@ -25,7 +25,7 @@
 #' cache_count(s)
 #' @export
 cache_expire <- function(cache, ..., n = Inf) {
-  rlang::check_dots_empty()
+  check_dots()
   check_writable(cache)
   check_number(n, "n", min = 0, whole = TRUE, allow_inf = TRUE)
   removed <- 0
@@ -147,7 +147,7 @@ cache_cull <- function(cache) {
 #' @rdname cache_cull
 #' @export
 cache_evict <- function(cache, ..., tag = NULL, prefix = NULL) {
-  rlang::check_dots_empty()
+  check_dots()
   check_writable(cache)
   if (is.null(tag) == is.null(prefix)) {
     abort_type_error("Give exactly one of `tag` and `prefix`.")

@@ -110,7 +110,7 @@ test_that("codec() validates what it is given", {
   expect_error(codec("x", enc, dec, ext = ".txt"), class = "dazcache_codec_error")
   expect_error(codec("x", enc, dec, version = 1.5), class = "dazcache_codec_error")
   expect_error(codec("x", enc, dec, supports = TRUE), class = "dazcache_codec_error")
-  expect_error(codec("x", enc, dec, "extra"), class = "rlib_error_dots_nonempty")
+  expect_error(codec("x", enc, dec, "extra"), class = "dazcache_type_error")
   expect_error(codec_registry(list(codec_rds())), class = "dazcache_codec_error")
   expect_error(codec_registry(list(1)), class = "dazcache_codec_error")
 })

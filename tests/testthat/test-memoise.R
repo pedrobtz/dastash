@@ -157,7 +157,7 @@ test_that("cache_memoise() checks what it is given", {
   expect_error(cache_memoise(identity, s, name = "{x"), class = "dazcache_key_invalid")
   expect_error(cache_memoise(identity, s, key = "x"), class = "dazcache_type_error")
   expect_error(cache_memoise(identity, s, expire = NA), class = "dazcache_type_error")
-  expect_error(cache_memoise(identity, s, "extra"), class = "rlib_error_dots_nonempty")
+  expect_error(cache_memoise(identity, s, "extra"), class = "dazcache_type_error")
   mf <- cache_memoise(identity, s)
   expect_error(cache_memoise(mf, s), class = "dazcache_type_error")
   expect_error(cache_memoise_key(identity, 1), class = "dazcache_type_error")
@@ -299,4 +299,14 @@ test_that("cache_forget_all() takes only the function's versions, not keys that 
   for (k in users) cache_set(s, k, k)
   cache_forget_all(m1)
   expect_identical(sort(cache_keys(s)), sort(users))
+})
+
+test_that("a hit is as visible as the producer's result was on the miss (#109)", {
+  s <- local_cache()
+  quiet <- cache_memoise(function(x) invisible(x), s, name = "quiet")
+  loud <- cache_memoise(function(x) x, s, name = "loud")
+  for (i in 1:2) {
+    expect_false(withVisible(quiet(1))$visible)
+    expect_true(withVisible(loud(1))$visible)
+  }
 })

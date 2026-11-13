@@ -36,7 +36,7 @@ as_cachem <- function(
   expire = NULL,
   codec = NULL
 ) {
-  rlang::check_dots_empty()
+  check_dots()
   check_open(cache)
   check_string(prefix, "prefix")
   prefix <- key_prefix(prefix)
@@ -160,14 +160,14 @@ length.dazcache_cache <- function(x) {
 #' @rdname cache-generics
 #' @export
 `[[.dazcache_cache` <- function(x, i, ...) {
-  rlang::check_dots_empty()
+  check_dots()
   cache_get(x, i)
 }
 
 #' @rdname cache-generics
 #' @export
 `[[<-.dazcache_cache` <- function(x, i, ..., value) {
-  rlang::check_dots_empty()
+  check_dots()
   cache_set(x, i, value)
   x
 }
@@ -175,7 +175,7 @@ length.dazcache_cache <- function(x) {
 #' @rdname cache-generics
 #' @export
 as.list.dazcache_cache <- function(x, ...) {
-  rlang::check_dots_empty()
+  check_dots()
   keys <- cache_keys(x)
   if (length(keys) > 1e5) {
     abort_unsupported(

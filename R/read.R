@@ -151,7 +151,7 @@ cache_has <- function(cache, keys) {
 #' cache_count(s)
 #' @export
 cache_keys <- function(cache, ..., prefix = NULL, start = NULL, n = Inf) {
-  rlang::check_dots_empty()
+  check_dots()
   check_open(cache)
   if (!is.null(prefix)) {
     prefix <- key_prefix(prefix)

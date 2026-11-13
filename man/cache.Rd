@@ -64,12 +64,15 @@ never damages the cache. \code{"unsafe"} can damage it in a crash. The first
 process to open a cache sets this for everyone who opens it while it is
 open.}
 
-\item{map_size}{The most the database file may grow to, in bytes.}
+\item{map_size}{The most the database file may grow to, in bytes: a whole
+number of at least 256 KiB (\code{2^18}).}
 
-\item{cull_limit}{How many entries one eviction step removes at most.}
+\item{cull_limit}{How many entries one eviction step removes at most, up
+to \code{.Machine$integer.max}.}
 
 \item{timeout}{How long, in seconds, a write waits for another process's
-write to finish before raising \code{dazcache_busy}.}
+write to finish before raising \code{dazcache_busy}. \code{Inf} waits for as long
+as it takes.}
 
 \item{readonly}{Open for reading only.}
 

@@ -44,7 +44,8 @@ a key, to key calls on something else than every argument.}
 
 \item{omit}{Names of arguments to leave out of the key.}
 
-\item{version}{A whole number, part of every key.}
+\item{version}{A whole number, part of every key, up to \code{2^53}: a date
+stamp such as \code{20261113120000} will do.}
 
 \item{name}{The function's name in its keys. Defaults to the name \code{f} was
 passed as; an anonymous function needs one.}

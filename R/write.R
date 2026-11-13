@@ -45,9 +45,25 @@ cache_set <- function(
   codec = NULL
 ) {
   check_supplied(c("key", "value"))
-  rlang::check_dots_empty()
+  check_dots()
   check_writable(cache)
-  entry <- cache_prepare(cache, key, value, expire, tags, codec)
+  cache_set_entry(cache, key, value, expire, tags, codec)
+  invisible(cache)
+}
+
+# cache_set() itself, with `extra` fields for the record: the memoised path
+# records an invisible result this way.
+cache_set_entry <- function(
+  cache,
+  key,
+  value,
+  expire = NULL,
+  tags = NULL,
+  codec = NULL,
+  extra = NULL,
+  call = rlang::caller_env()
+) {
+  entry <- cache_prepare(cache, key, value, expire, tags, codec, call = call)
   on.exit(unstage(list(entry)))
   engine_write(
     cache$engine,
@@ -59,11 +75,13 @@ cache_set <- function(
         entry$enc,
         unclass(Sys.time()),
         expire = entry$expire,
-        tags = entry$tags
+        tags = entry$tags,
+        extra = extra
       )
       store_cull_step(cache, txn, protect = entry$key$stored)
     },
-    timeout = cache$timeout
+    timeout = cache$timeout,
+    call = call
   )
   invisible(cache)
 }
@@ -79,7 +97,7 @@ cache_mset <- function(
   codec = NULL
 ) {
   check_supplied("values")
-  rlang::check_dots_empty()
+  check_dots()
   check_writable(cache)
   if (!is_named_list(values)) {
     abort_type_error(
@@ -239,9 +257,12 @@ parse_expire <- function(expire, now, call = rlang::caller_env()) {
   if (is.null(expire)) {
     return(Inf)
   }
+  if (inherits(expire, "POSIXlt")) {
+    expire <- as.POSIXct(expire)
+  }
   if (length(expire) != 1L || !is.numeric(unclass(expire)) || is.na(expire)) {
     abort_type_error(
-      "`expire` must be NULL, a number of seconds, a difftime, or a POSIXct; not NA or NaN.",
+      "`expire` must be NULL, a number of seconds, a difftime, or a POSIXct or POSIXlt; not NA or NaN.",
       call = call
     )
   }
@@ -251,7 +272,7 @@ parse_expire <- function(expire, now, call = rlang::caller_env()) {
     now + as.double(expire, units = "secs")
   } else if (is.object(expire)) {
     abort_type_error(
-      "`expire` must be NULL, a number of seconds, a difftime, or a POSIXct.",
+      "`expire` must be NULL, a number of seconds, a difftime, or a POSIXct or POSIXlt.",
       call = call
     )
   } else {
@@ -310,7 +331,7 @@ cache_add <- function(
   codec = NULL
 ) {
   check_supplied(c("key", "value"))
-  rlang::check_dots_empty()
+  check_dots()
   check_writable(cache)
   entry <- cache_prepare(cache, key, value, expire, tags, codec)
   on.exit(unstage(list(entry)))

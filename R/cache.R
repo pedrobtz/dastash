@@ -1,5 +1,9 @@
 # The cache handle and its opening and closing (design.md §3.1).
 
+# The smallest map libmdbx opens here; below it the engine refuses the
+# geometry with "Invalid argument".
+MAP_SIZE_MIN <- 2^18
+
 dazcache_state <- new.env(parent = emptyenv())
 dazcache_state$stage <- 0L
 
@@ -61,10 +65,13 @@ dazcache_state$stage <- 0L
 #'   never damages the cache. `"unsafe"` can damage it in a crash. The first
 #'   process to open a cache sets this for everyone who opens it while it is
 #'   open.
-#' @param map_size The most the database file may grow to, in bytes.
-#' @param cull_limit How many entries one eviction step removes at most.
+#' @param map_size The most the database file may grow to, in bytes: a whole
+#'   number of at least 256 KiB (`2^18`).
+#' @param cull_limit How many entries one eviction step removes at most, up
+#'   to `.Machine$integer.max`.
 #' @param timeout How long, in seconds, a write waits for another process's
-#'   write to finish before raising `dazcache_busy`.
+#'   write to finish before raising `dazcache_busy`. `Inf` waits for as long
+#'   as it takes.
 #' @param readonly Open for reading only.
 #' @param create Create the directory and the cache if they do not exist.
 #'
@@ -108,7 +115,7 @@ cache <- function(
   readonly = FALSE,
   create = TRUE
 ) {
-  rlang::check_dots_empty()
+  check_dots()
   check_supplied("dir")
   explicit <- list(
     size_limit = !missing(size_limit),
@@ -120,7 +127,11 @@ cache <- function(
   call <- rlang::current_env()
   check_string(dir, "dir")
   check_number(size_limit, "size_limit", min = 0, allow_inf = TRUE)
-  eviction <- rlang::arg_match(eviction)
+  eviction <- match_choice(
+    eviction,
+    c("least-recently-stored", "least-recently-used", "least-frequently-used", "none"),
+    "eviction"
+  )
   if (eviction %in% c("least-recently-used", "least-frequently-used")) {
     abort_unsupported(
       sprintf(
@@ -138,10 +149,16 @@ cache <- function(
     )
   }
   codecs <- codec_registry(codecs, call = call)
-  durability <- rlang::arg_match(durability)
-  check_number(map_size, "map_size", min = 1)
-  check_number(cull_limit, "cull_limit", min = 1, whole = TRUE)
-  check_number(timeout, "timeout", min = 0)
+  durability <- match_choice(durability, c("safe", "fast", "unsafe"), "durability")
+  check_number(map_size, "map_size", min = MAP_SIZE_MIN, whole = TRUE)
+  check_number(
+    cull_limit,
+    "cull_limit",
+    min = 1,
+    whole = TRUE,
+    max = .Machine$integer.max
+  )
+  check_number(timeout, "timeout", min = 0, allow_inf = TRUE)
   check_flag(readonly, "readonly")
   check_flag(create, "create")
 
@@ -265,13 +282,15 @@ with_cache <- function(dir, fn, ...) {
 #' @export
 format.dazcache_cache <- function(x, ...) {
   header <- paste0("<dazcache_cache> ", x$dir)
-  if (x$closed) {
+  if (!cache_is_open(x)) {
     return(c(header, "  closed"))
   }
-  # Printing must not fail, whatever stops the count.
-  n <- tryCatch(format(cache_count(x), big.mark = ","), error = function(cnd) {
-    "unavailable"
-  })
+  # Printing must not fail when the cache cannot be read; anything else is a
+  # bug to see. The count is written the same in every session (#111).
+  n <- tryCatch(
+    sprintf("%.0f", cache_count(x)),
+    dazcache_error = function(cnd) "unavailable"
+  )
   c(
     header,
     paste0(
@@ -369,25 +388,74 @@ check_number <- function(
   call = rlang::caller_env(),
   min = -Inf,
   whole = FALSE,
-  allow_inf = FALSE
+  allow_inf = FALSE,
+  max = Inf
 ) {
   ok <- is.numeric(x) &&
+    !is.object(x) &&
     length(x) == 1L &&
     !is.na(x) &&
     x >= min &&
+    x <= max &&
     (allow_inf || is.finite(x)) &&
     (!whole || !is.finite(x) || x == trunc(x))
   if (!ok) {
+    bounds <- if (is.finite(max)) {
+      sprintf("between %s and %s", format_bound(min), format_bound(max))
+    } else {
+      sprintf("of at least %s", format_bound(min))
+    }
     abort_type_error(
       sprintf(
-        "`%s` must be a single %s of at least %s.",
+        "`%s` must be a single %s %s%s.",
         arg,
         if (whole) "whole number" else "number",
-        format(min)
+        bounds,
+        if (allow_inf) ", or `Inf`" else ""
       ),
       call = call
     )
   }
+}
+
+# A bound in a message, written the same in every session: no scientific
+# notation, no OutDec.
+format_bound <- function(x) {
+  if (x == trunc(x)) sprintf("%.0f", x) else sprintf("%.15g", x)
+}
+
+# rlang::check_dots_empty() and a choice match, raising
+# dazcache_type_error rather than rlang's own classes (design.md §13).
+check_dots <- function(env = rlang::caller_env(), call = rlang::caller_env()) {
+  tryCatch(
+    rlang::check_dots_empty(env = env, call = call),
+    rlib_error_dots = function(cnd) {
+      abort_type_error(
+        c(
+          "Arguments after `...` must be named.",
+          i = "Use `name = value` for arguments such as `by` or `expire`."
+        ),
+        call = call
+      )
+    }
+  )
+}
+
+match_choice <- function(x, choices, arg, call = rlang::caller_env()) {
+  if (identical(x, choices)) {
+    return(choices[[1L]])
+  }
+  if (!is.character(x) || length(x) != 1L || is.na(x) || !x %in% choices) {
+    abort_type_error(
+      sprintf(
+        "`%s` must be one of %s.",
+        arg,
+        paste(encodeString(choices, quote = "\""), collapse = ", ")
+      ),
+      call = call
+    )
+  }
+  x
 }
 
 # Run `expr` when `envir`'s function returns. At the top level there is no such
