@@ -221,6 +221,34 @@ test_that("cache_pop() reads a shared file it releases, and leaves nothing stage
   expect_identical(store_violations(s), character())
 })
 
+test_that("cache_pop() of a file entry returns a copy the caller owns (#95)", {
+  s <- local_cache()
+  f <- withr::local_tempfile(fileext = ".txt")
+  writeLines("hi", f)
+  for (inside in c(FALSE, TRUE)) {
+    cache_set(s, "k", f, codec = codec_file())
+    path <- if (inside) cache_transact(s, cache_pop(s, "k")) else cache_pop(s, "k")
+    expect_identical(readLines(path), "hi")
+    expect_identical(tools::file_ext(path), "txt")
+    expect_false(startsWith(normalizePath(path), s$dir))
+    expect_true(file.access(path, 2L) == 0L)
+    expect_false(cache_has(s, "k"))
+    expect_identical(list.files(file.path(s$dir, "tmp")), character())
+    unlink(path)
+  }
+  expect_identical(nrow(cache_check(s)), 0L)
+})
+
+test_that("cache_pop() of a damaged blob raises and keeps the entry (#95)", {
+  s <- local_cache(inline_max = 100)
+  cache_set(s, "b", runif(100))
+  path <- cache_path(s, "b")
+  Sys.chmod(path, "0644")
+  writeBin(as.raw(1:5), path)
+  expect_error(cache_pop(s, "b"), class = "dazcache_blob_corrupt")
+  expect_true(cache_has(s, "b"))
+})
+
 test_that("a counter stops with an error at ±2^53, one step from the limit (#93)", {
   s <- local_cache()
   expect_identical(cache_incr(s, "n", default = 2^53 - 1), 2^53)
@@ -265,32 +293,4 @@ test_that("counter writes run the cull step like every other write (#117)", {
   expect_lte(held(s), 15)
   expect_true(cache_has(s, "d"))
   expect_gt(cache_stats(s)$evictions, 0)
-||||||| f463e92
-
-test_that("cache_pop() of a file entry returns a copy the caller owns (#95)", {
-  s <- local_cache()
-  f <- withr::local_tempfile(fileext = ".txt")
-  writeLines("hi", f)
-  for (inside in c(FALSE, TRUE)) {
-    cache_set(s, "k", f, codec = codec_file())
-    path <- if (inside) cache_transact(s, cache_pop(s, "k")) else cache_pop(s, "k")
-    expect_identical(readLines(path), "hi")
-    expect_identical(tools::file_ext(path), "txt")
-    expect_false(startsWith(normalizePath(path), s$dir))
-    expect_true(file.access(path, 2L) == 0L)
-    expect_false(cache_has(s, "k"))
-    expect_identical(list.files(file.path(s$dir, "tmp")), character())
-    unlink(path)
-  }
-  expect_identical(nrow(cache_check(s)), 0L)
-})
-
-test_that("cache_pop() of a damaged blob raises and keeps the entry (#95)", {
-  s <- local_cache(inline_max = 100)
-  cache_set(s, "b", runif(100))
-  path <- cache_path(s, "b")
-  Sys.chmod(path, "0644")
-  writeBin(as.raw(1:5), path)
-  expect_error(cache_pop(s, "b"), class = "dazcache_blob_corrupt")
-  expect_true(cache_has(s, "b"))
 })
