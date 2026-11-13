@@ -195,9 +195,12 @@ values. The other settings belong to this handle only.</p>
 <p>A second <code>cache()</code> on a directory this process already has open shares the
 same underlying database; each handle is closed separately. While a
 read-only handle is open, the same process cannot open the directory for
-writing: close it first.</p>
+writing: close it first. A handle that is dropped without being closed
+releases its share when it is garbage-collected; <code>cache_close()</code> releases it
+at once.</p>
 <p>A handle cannot be used from a forked child process, such as a
-<code><a href="https://rdrr.io/r/parallel/mclapply.html" class="external-link">parallel::mclapply()</a></code> worker; open the cache inside the worker instead.</p>
+<code><a href="https://rdrr.io/r/parallel/mclapply.html" class="external-link">parallel::mclapply()</a></code> worker; open the cache inside the worker instead,
+which works whether or not the parent has it open.</p>
 <p>Opening a cache that exists only reads it, so it never waits for another
 process's write. Writes take the cache's one write lock in turn, waiting up
 to <code>timeout</code> seconds. On Linux and Windows the lock of a process killed

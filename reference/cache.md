@@ -143,11 +143,14 @@ handle only.
 A second `cache()` on a directory this process already has open shares
 the same underlying database; each handle is closed separately. While a
 read-only handle is open, the same process cannot open the directory for
-writing: close it first.
+writing: close it first. A handle that is dropped without being closed
+releases its share when it is garbage-collected; `cache_close()`
+releases it at once.
 
 A handle cannot be used from a forked child process, such as a
 [`parallel::mclapply()`](https://rdrr.io/r/parallel/mclapply.html)
-worker; open the cache inside the worker instead.
+worker; open the cache inside the worker instead, which works whether or
+not the parent has it open.
 
 Opening a cache that exists only reads it, so it never waits for another
 process's write. Writes take the cache's one write lock in turn, waiting
