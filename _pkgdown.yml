@@ -1,47 +1,47 @@
-url: https://pedrobtz.github.io/dastash/
+url: https://pedrobtz.github.io/dazcache/
 template:
   bootstrap: 5
 
 articles:
 - title: Articles
   contents:
-  - dastash
+  - dazcache
   - caching-slow-work
-  - shared-stash
+  - shared-cache
 
 reference:
 - title: Open and close
   contents:
-  - stash
+  - cache
 - title: Keys and codecs
   contents:
-  - stash_key
+  - cache_key
   - codec
 - title: Read
   contents:
-  - stash_get
-  - stash_path
+  - cache_get
+  - cache_path
 - title: Write
   contents:
-  - stash_set
-  - stash_add
+  - cache_set
+  - cache_add
 - title: List and describe
   contents:
-  - stash_keys
-  - stash_entries
+  - cache_keys
+  - cache_entries
 - title: Maintain
   contents:
-  - stash_expire
-  - stash_cull
-  - stash_check
+  - cache_expire
+  - cache_cull
+  - cache_check
 - title: Compose
   contents:
-  - stash_transact
-  - stash_memoise
+  - cache_transact
+  - cache_memoise
 - title: Interoperate
   contents:
   - as_cachem
-  - stash-generics
+  - cache-generics
 - title: Conditions
   contents:
-  - dastash-conditions
+  - dazcache-conditions

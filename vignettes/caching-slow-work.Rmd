@@ -16,9 +16,9 @@ with arguments it has seen before, by more than one session. This article walks 
 that case, from a function that calls a web service to the files it downloads.
 
 ```{r}
-library(dastash)
+library(dazcache)
 dir <- file.path(tempdir(), "slow-work")
-s <- stash(dir)
+s <- cache(dir)
 ```
 
 ## A slow function
@@ -39,11 +39,11 @@ fetch_rates <- function(base, date) {
 }
 ```
 
-`stash_memoise()` wraps it. Rates for a past date do not change, but give them a day's
+`cache_memoise()` wraps it. Rates for a past date do not change, but give them a day's
 expiry anyway, and a tag to drop them all by:
 
 ```{r}
-rates <- stash_memoise(
+rates <- cache_memoise(
   fetch_rates,
   s,
   expire = as.difftime(1, units = "days"),
@@ -55,24 +55,24 @@ system.time(rates("CHF", as.Date("2026-10-30")))
 calls
 ```
 
-The second call is read from the stash. Each call is one entry, under a key made from
+The second call is read from the cache. Each call is one entry, under a key made from
 the function's name and its arguments:
 
 ```{r}
 rates("CHF", as.Date("2026-10-29"))
-stash_keys(s, prefix = "fetch_rates/")
+cache_keys(s, prefix = "fetch_rates/")
 ```
 
 ## Results outlive the session
 
-The entries are on disk, not in this session. Close the stash, open it again, and
+The entries are on disk, not in this session. Close the cache, open it again, and
 memoise the function again under the same name, as a new session or a scheduled job
 would: the answers are already there.
 
 ```{r}
-stash_close(s)
-s <- stash(dir)
-rates <- stash_memoise(fetch_rates, s, name = "fetch_rates")
+cache_close(s)
+s <- cache(dir)
+rates <- cache_memoise(fetch_rates, s, name = "fetch_rates")
 
 rates("CHF", as.Date("2026-10-30"))
 calls
@@ -88,19 +88,19 @@ There are three ways to throw results away, from narrow to wide.
 
 ```{r}
 # One call.
-stash_forget(rates, "CHF", as.Date("2026-10-30"))
+cache_forget(rates, "CHF", as.Date("2026-10-30"))
 
 # Everything tagged when it was stored.
-stash_evict(s, tag = "rates")
-stash_keys(s, prefix = "fetch_rates/")
+cache_evict(s, tag = "rates")
+cache_keys(s, prefix = "fetch_rates/")
 ```
 
 When the function itself changes meaning, a new `version` gives it new keys. The old
 entries are no longer read, and leave as they expire or as the size limit evicts them.
 
 ```{r}
-rates <- stash_memoise(fetch_rates, s, name = "fetch_rates", version = 2)
-stash_memoise_key(rates, "CHF", as.Date("2026-10-30"))
+rates <- cache_memoise(fetch_rates, s, name = "fetch_rates", version = 2)
+cache_memoise_key(rates, "CHF", as.Date("2026-10-30"))
 ```
 
 ## Files you download
@@ -118,12 +118,12 @@ download <- function(url) {
 }
 
 cached_download <- function(s, url) {
-  path <- stash_get(s, url, default = NULL)
+  path <- cache_get(s, url, default = NULL)
   if (is.null(path)) {
     tmp <- download(url)
-    stash_set(s, url, tmp, codec = codec_file(), expire = 7 * 24 * 3600)
+    cache_set(s, url, tmp, codec = codec_file(), expire = 7 * 24 * 3600)
     unlink(tmp)
-    path <- stash_get(s, url)
+    path <- cache_get(s, url)
   }
   path
 }
@@ -139,7 +139,7 @@ original.
 ## Code written for cachem
 
 Packages that take a cachem cache, such as memoise and Shiny's `bindCache()`, can store
-in a stash through `as_cachem()`:
+in a cache through `as_cachem()`:
 
 ```{r, eval = requireNamespace("memoise", quietly = TRUE)}
 cache <- as_cachem(s)
@@ -154,6 +154,6 @@ system.time(fast_square(12))
 ```
 
 ```{r}
-stash_close(s)
+cache_close(s)
 unlink(dir, recursive = TRUE)
 ```

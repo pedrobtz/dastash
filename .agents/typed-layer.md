@@ -1,4 +1,4 @@
-# dastash — the typed dataset layer
+# dazcache — the typed dataset layer
 
 **Status:** deferred design. Nothing here is in the cache's v1. This layer sits above the
 cache of `design.md` (§20 there) and is built after it ships.
@@ -7,7 +7,7 @@ A layer that resolves a declared, typed identity to a stored value, producing it
 demand when absent.
 
 ```text
-Dataset × Key  ->  stash key  ->  record in mdbx  ->  value inline, or a blob
+Dataset × Key  ->  cache key  ->  record in mdbx  ->  value inline, or a blob
 ```
 
 The cache answers "keep this value under this key, within these limits". This layer
@@ -54,7 +54,7 @@ them rather than annotated:
 # 1. What this is
 
 ```r
-s <- stash("~/.cache/market")
+s <- cache("~/.cache/market")
 
 prices <- dataset(
   "prices", s,
@@ -80,7 +80,7 @@ filename or function arguments.
 | `pins` | A good store and a poor identity layer: names are strings, no key schema, no query over key components, no producer contract, no verification |
 | `targets` | Identity *derived from implementation* — a dependency graph keyed by code and upstream results. Here identity is *declared by the domain*, which is what lets the producer change without invalidating anything |
 | `storr` | `key(string) -> value`; stores anything under any key, with no notion of what the value represents |
-| `stash_memoise()` | Keys on a function's arguments. A dataset keys on what the value *is*, so two producers of the same thing share entries |
+| `cache_memoise()` | Keys on a function's arguments. A dataset keys on what the value *is*, so two producers of the same thing share entries |
 | Dagster, Kedro, Intake, DVC, Quilt, LakeFS | They do model typed dataset identity (Dagster's `MultiPartitionsDefinition` over `(date, exchange)` is structurally this design). Every one is an orchestrator or a platform: a runtime, a DAG model, a config format and a deployment story. None is an in-process library callable from one R session with no infrastructure |
 
 That last row is the defensible claim, and the one that survives a reviewer who knows
@@ -95,7 +95,7 @@ rediscovering it.
 
 A key is a **complete assignment of values to a dataset's key schema** — total, because
 the key space of a dataset is a product type (`cache-model.md` §9). Fields may declare
-defaults; a field with no default and no supplied value is `dastash_key_invalid` at key
+defaults; a field with no default and no supplied value is `dazcache_key_invalid` at key
 construction, never a silent `NULL`.
 
 Each field type validates and coerces a value before the cache's canonical encoding sees
@@ -111,7 +111,7 @@ it. The encoding is the cache's; the types decide what reaches it:
 | `key_timestamp()` | UTC; `tzone` is never identity | `t:` |
 | `key_enum(levels)` | The level string; unknown levels rejected at construction | `e:` |
 | `key_hashed(inner)` | Validated as `inner`, stored only as its hash (§6.1) | `s:` of the digest |
-| `key_factor()` | Exists only to raise `dastash_key_invalid` pointing at `key_enum()` | — |
+| `key_factor()` | Exists only to raise `dazcache_key_invalid` pointing at `key_enum()` | — |
 
 `NA` is a legitimate value, distinct from every other value of its type (D4); it encodes
 as the cache's `!` payload. Absence is an error.
@@ -121,7 +121,7 @@ do not (`design.md` D12): a cache keyed on memoised arguments must accept `0.1` 
 while a dataset declares what its identity means. NFC normalisation needs `utf8` or
 `stringi`; which one, and whether it becomes an import of the layer, is open.
 
-**Domain separation.** A dataset's entries live under stash keys
+**Domain separation.** A dataset's entries live under cache keys
 `<dataset>/` ‖ canon(named list of fields), so the same field values under two datasets
 never collide, and every dataset is a prefix scan.
 
@@ -184,7 +184,7 @@ identify(produce())   is a complete key
 identify(produce(k))  ==  k
 ```
 
-`ds_discover()` on a dataset with a partial identifier is `dastash_definition_invalid` at
+`ds_discover()` on a dataset with a partial identifier is `dazcache_definition_invalid` at
 definition time, not at call time. Discovery has no requested key, so `on_mismatch` does
 not apply to it; its only contract is that the identifier returns a complete, valid key.
 
@@ -196,7 +196,7 @@ What happens when `identify(produce(k)) ⋢ k` is a per-dataset decision:
 on_mismatch = c("error", "warn", "adopt", "quarantine")
 ```
 
-- **`error`** — default. Nothing is stored. Raises `dastash_identity_mismatch`.
+- **`error`** — default. Nothing is stored. Raises `dazcache_identity_mismatch`.
 - **`warn`** — store under the requested key, record the discrepancy in provenance.
 - **`adopt`** — store under the *identified* key and return the value once; the requested
   key stays a miss, so a later `ds_get()` on it produces again. Adoption does not recurse:
@@ -220,22 +220,22 @@ not identical **values** (`cache-model.md` Results 11.3–11.4). Two consequence
 - A codec used by a dataset with an identifier must round-trip losslessly for the types
   that dataset produces, because `identify()` runs on a decoded value (`cache-model.md`
   Result 11.2). The cache's codecs declare `supports()`; the layer checks it at definition
-  time and raises `dastash_definition_invalid` for a lossy codec on an identifier-bearing
+  time and raises `dazcache_definition_invalid` for a lossy codec on an identifier-bearing
   dataset.
 
 ## 2.7 Failure taxonomy
 
-The cache's classes (`design.md` §13) apply unchanged — `dastash_key_invalid`,
-`dastash_not_found`, `dastash_codec_error`, `dastash_blob_corrupt`, `dastash_readonly` —
-and the layer adds five, each with `dastash_error` as parent:
+The cache's classes (`design.md` §13) apply unchanged — `dazcache_key_invalid`,
+`dazcache_not_found`, `dazcache_codec_error`, `dazcache_blob_corrupt`, `dazcache_readonly` —
+and the layer adds five, each with `dazcache_error` as parent:
 
 | Class | Raised when |
 |---|---|
-| `dastash_producer_error` | The producer raised; wraps the original condition as `parent` |
-| `dastash_identity_mismatch` | `⊑` violated under `on_mismatch = "error"` |
-| `dastash_definition_invalid` | A dataset definition is inconsistent: an identifier naming fields outside the schema, `total = TRUE` on a partial field set, discovery without a total identifier, a lossy codec on an identifier-bearing dataset |
-| `dastash_schema_drift` | The definition no longer matches the stored schema; carries a field-level diff |
-| `dastash_lease_timeout` | A single-flight lease was not acquired within the timeout |
+| `dazcache_producer_error` | The producer raised; wraps the original condition as `parent` |
+| `dazcache_identity_mismatch` | `⊑` violated under `on_mismatch = "error"` |
+| `dazcache_definition_invalid` | A dataset definition is inconsistent: an identifier naming fields outside the schema, `total = TRUE` on a partial field set, discovery without a total identifier, a lossy codec on an identifier-bearing dataset |
+| `dazcache_schema_drift` | The definition no longer matches the stored schema; carries a field-level diff |
+| `dazcache_lease_timeout` | A single-flight lease was not acquired within the timeout |
 
 ---
 
@@ -244,11 +244,11 @@ and the layer adds five, each with `dastash_error` as parent:
 Functional, with the dataset first, following the cache's conventions (`design.md` §2).
 
 ```r
-dataset(name, stash, ..., keys, produce = NULL, identify = NULL, codec = NULL,
+dataset(name, cache, ..., keys, produce = NULL, identify = NULL, codec = NULL,
         on_mismatch = c("error", "warn", "adopt", "quarantine"))
 
 ds_get(ds, ...)          # resolve: peek -> lease -> produce -> identify -> verify -> store
-ds_peek(ds, ...)         # cache only; dastash_not_found on a miss
+ds_peek(ds, ...)         # cache only; dazcache_not_found on a miss
 ds_has(ds, ...)          # logical
 ds_put(ds, value, ...)   # store under an explicit key, verifying where an identifier exists
 ds_discover(ds)          # list(key =, value =); needs a total identifier
@@ -295,10 +295,10 @@ fields           <dataset> 0x00 <field> 0x00 sort(v) ‖ key    empty
   correctness does not depend on it.
 - **The fingerprint** covers the name, the canonical schema form, the identifier's fields
   and totality, the codec name and version, and the key encoding version. A definition
-  whose fingerprint differs from the stored one is `dastash_schema_drift`. The record
+  whose fingerprint differs from the stored one is `dazcache_schema_drift`. The record
   stores the schema and fingerprint, never the producer closure.
 - **Leases** for single-flight are the cache's v1.x lease records (`design.md` §19),
-  keyed by the entry's stash key.
+  keyed by the entry's cache key.
 
 ---
 
@@ -331,7 +331,7 @@ implement it. `pins` versions at the name level with its own directory layout an
 metadata; content addressing wants a flat immutable namespace keyed by hash.
 
 **D6 — Functions, not objects.** A dataset is a plain classed list holding its definition
-and its stash; the verbs are `ds_*()` functions. Reverses the original draft's R6
+and its cache; the verbs are `ds_*()` functions. Reverses the original draft's R6
 `d$get()`, for `design.md` D1's reasons.
 
 **D7 — `key_hashed()` is in the layer's first release.** §6.1 is a governance
@@ -430,7 +430,7 @@ The last matters most. Matching each specialist individually produces an enormou
 unfocused project. The target is: **match enough of each specialist's behaviour to make
 resolution robust, and add a semantic identity layer that none of them makes central.**
 
-> dastash's typed layer is in-process dataset resolution for R: Pooch-style integrity,
+> dazcache's typed layer is in-process dataset resolution for R: Pooch-style integrity,
 > diskcache-style persistence and joblib-style resolution, organised around typed
 > semantic datasets, with remote I/O left to a lower layer.
 
@@ -494,7 +494,7 @@ After the cache's v1. Each stage ends with its tests green and `R CMD check` cle
 | Stage | Delivers | Freezes |
 |---|---|---|
 | A | Key types of §2.1, schemas, `key_hashed()`, an addendum to `inst/spec/key-encoding-v1.md` for typed fields, golden vectors per type | how typed values reach the encoding |
-| B | `dataset()`, the `datasets` database, fingerprint, `dastash_schema_drift`, `dastash_definition_invalid` | the definition record |
+| B | `dataset()`, the `datasets` database, fingerprint, `dazcache_schema_drift`, `dazcache_definition_invalid` | the definition record |
 | C | `ds_put()`, `ds_peek()`, `ds_has()`, `ds_remove()`, the `fields` index, `ds_find()`, `ds_entries()` | the field index shape |
 | D | Producers, identifiers, `⊑`, `on_mismatch`, `ds_get()`, `ds_discover()`, provenance | the provenance names |
 | E | Leases, shared with the cache's v1.x single-flight | the lease record |

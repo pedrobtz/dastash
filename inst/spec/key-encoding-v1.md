@@ -1,4 +1,4 @@
-# dastash key encoding, version 1
+# dazcache key encoding, version 1
 
 `KEY_ENCODING_VERSION = 1`. Normative. Every store records the version it was written
 with, and `tests/testthat/golden/key-vectors.csv` freezes the examples below and many
@@ -12,11 +12,11 @@ store orders, prefix-scans and prints; its SHA-256 is the key hash.
 
 | Input | Canonical text |
 |---|---|
-| A `dastash_key` | the text it carries |
+| A `dazcache_key` | the text it carries |
 | A character vector of length 1, not `NA`, without names, whose UTF-8 text does not start with an opener (§5) | that text, unchanged |
 | Anything else | the value encoding of §2 |
 
-`stash_key(...)` with one unnamed argument is that argument's key. With several
+`cache_key(...)` with one unnamed argument is that argument's key. With several
 arguments, or any named ones, it is the key of `list(...)` — which must then be all
 named or all unnamed.
 
@@ -41,7 +41,7 @@ name  := escaped
 - A list of length 0, named or not, is `()`.
 - A **data frame** is its columns, as a named list, behind `D`. Row names and the row
   count are not written; each column is a value.
-- A `dastash_key` inside a value is invalid: nest its values instead.
+- A `dazcache_key` inside a value is invalid: nest its values instead.
 
 ## 3. Atomic types
 
@@ -107,7 +107,7 @@ attribute and class is ignored: a matrix is its elements, and `I(1:3)` is `1:3`.
 
 Functions, environments, symbols and calls, external pointers, S4 objects, complex
 numbers, and strings that are not valid UTF-8 (or are marked `"bytes"`) raise
-`dastash_key_invalid`.
+`dazcache_key_invalid`.
 
 ## 8. Storage form and hash
 

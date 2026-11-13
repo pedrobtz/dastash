@@ -1,42 +1,42 @@
 # Writing (design.md §3.4). A value is encoded before the write transaction
 # begins, so the transaction holds the lock only while it updates records.
 
-#' Write to a stash
+#' Write to a cache
 #'
 #' @description
-#' `stash_set()` stores a value under a key, replacing any entry there.
-#' `stash_mset()` stores every element of a named list, in one transaction.
-#' `stash_delete()` removes the entries for the keys given, in one transaction;
+#' `cache_set()` stores a value under a key, replacing any entry there.
+#' `cache_mset()` stores every element of a named list, in one transaction.
+#' `cache_delete()` removes the entries for the keys given, in one transaction;
 #' keys with no entry are ignored.
 #'
-#' All three return the stash invisibly, so they chain with `|>`.
+#' All three return the cache invisibly, so they chain with `|>`.
 #'
-#' @inheritParams stash_get
+#' @inheritParams cache_get
 #' @param value The value to store.
 #' @param values A named list: each name is a key, each element its value.
 #' @param ... Must be empty.
 #' @param expire When the entry expires: `NULL` or `Inf` for never; a number of
 #'   seconds from now (zero or less means already expired); a [difftime] from
 #'   now; or a [POSIXct] for an absolute time. An expired entry is absent to
-#'   every read at once, and [stash_expire()] reclaims its space.
+#'   every read at once, and [cache_expire()] reclaims its space.
 #' @param tags A character vector of up to 16 tags, each at most 256 bytes, to
-#'   group entries for [stash_evict()] and [stash_entries()].
-#' @param codec The codec to write with, or `NULL` for the stash's default. See
+#'   group entries for [cache_evict()] and [cache_entries()].
+#' @param codec The codec to write with, or `NULL` for the cache's default. See
 #'   [codec()].
 #'
-#' @return The stash, invisibly.
+#' @return The cache, invisibly.
 #'
 #' @examples
-#' s <- local_stash()
+#' s <- local_cache()
 #' s |>
-#'   stash_set("a", 1) |>
-#'   stash_mset(list(b = "two", c = 3:5))
-#' stash_keys(s)
-#' stash_delete(s, c("a", "b"))
-#' stash_keys(s)
+#'   cache_set("a", 1) |>
+#'   cache_mset(list(b = "two", c = 3:5))
+#' cache_keys(s)
+#' cache_delete(s, c("a", "b"))
+#' cache_keys(s)
 #' @export
-stash_set <- function(
-  stash,
+cache_set <- function(
+  cache,
   key,
   value,
   ...,
@@ -46,14 +46,14 @@ stash_set <- function(
 ) {
   check_supplied(c("key", "value"))
   rlang::check_dots_empty()
-  check_writable(stash)
-  entry <- stash_prepare(stash, key, value, expire, tags, codec)
+  check_writable(cache)
+  entry <- cache_prepare(cache, key, value, expire, tags, codec)
   on.exit(unstage(list(entry)))
   engine_write(
-    stash$engine,
+    cache$engine,
     function(txn) {
       store_put_entry(
-        stash,
+        cache,
         txn,
         entry$key,
         entry$enc,
@@ -61,17 +61,17 @@ stash_set <- function(
         expire = entry$expire,
         tags = entry$tags
       )
-      store_cull_step(stash, txn, protect = entry$key$stored)
+      store_cull_step(cache, txn, protect = entry$key$stored)
     },
-    timeout = stash$timeout
+    timeout = cache$timeout
   )
-  invisible(stash)
+  invisible(cache)
 }
 
-#' @rdname stash_set
+#' @rdname cache_set
 #' @export
-stash_mset <- function(
-  stash,
+cache_mset <- function(
+  cache,
   values,
   ...,
   expire = NULL,
@@ -80,7 +80,7 @@ stash_mset <- function(
 ) {
   check_supplied("values")
   rlang::check_dots_empty()
-  check_writable(stash)
+  check_writable(cache)
   if (!is_named_list(values)) {
     abort_type_error(
       "`values` must be a named list: each name a key, each element its value."
@@ -90,8 +90,8 @@ stash_mset <- function(
   on.exit(unstage(entries))
   nms <- names(values)
   for (i in seq_along(values)) {
-    entries[[i]] <- stash_prepare(
-      stash,
+    entries[[i]] <- cache_prepare(
+      cache,
       nms[[i]],
       values[[i]],
       expire,
@@ -100,14 +100,14 @@ stash_mset <- function(
     )
   }
   engine_write(
-    stash$engine,
+    cache$engine,
     function(txn) {
       now <- unclass(Sys.time())
-      # One cull step per entry, as a run of stash_set() calls would take, so a
-      # batch larger than the limit cannot leave the stash far over it.
+      # One cull step per entry, as a run of cache_set() calls would take, so a
+      # batch larger than the limit cannot leave the cache far over it.
       for (entry in entries) {
         store_put_entry(
-          stash,
+          cache,
           txn,
           entry$key,
           entry$enc,
@@ -115,30 +115,30 @@ stash_mset <- function(
           expire = entry$expire,
           tags = entry$tags
         )
-        store_cull_step(stash, txn, protect = entry$key$stored)
+        store_cull_step(cache, txn, protect = entry$key$stored)
       }
     },
-    timeout = stash$timeout
+    timeout = cache$timeout
   )
-  invisible(stash)
+  invisible(cache)
 }
 
-#' @rdname stash_set
+#' @rdname cache_set
 #' @export
-stash_delete <- function(stash, keys) {
+cache_delete <- function(cache, keys) {
   check_supplied("keys")
-  check_writable(stash)
+  check_writable(cache)
   infos <- store_keys(keys)
   engine_write(
-    stash$engine,
+    cache$engine,
     function(txn) {
       for (key in infos) {
-        store_delete_entry(stash, txn, key$stored)
+        store_delete_entry(cache, txn, key$stored)
       }
     },
-    timeout = stash$timeout
+    timeout = cache$timeout
   )
-  invisible(stash)
+  invisible(cache)
 }
 
 # A list whose every element has a name; an empty list is one.
@@ -150,7 +150,7 @@ is_named_list <- function(x) {
 
 # Encode one value for writing, outside any transaction: the key, the codec
 # that will write it, and its bytes.
-stash_prepare <- function(
+cache_prepare <- function(
   s,
   key,
   value,
@@ -167,10 +167,10 @@ stash_prepare <- function(
     abort_codec_error(
       c(
         sprintf(
-          "This stash's default codec is %s, which this handle does not know.",
+          "This cache's default codec is %s, which this handle does not know.",
           encodeString(s$config$codec, quote = "\"")
         ),
-        i = "Pass it to `stash()` in `codecs =`, or give `codec =` here."
+        i = "Pass it to `cache()` in `codecs =`, or give `codec =` here."
       ),
       codec = s$config$codec,
       call = call
@@ -234,7 +234,7 @@ parse_tags <- function(tags, call = rlang::caller_env()) {
 
 # An `expire` argument as an absolute deadline in epoch seconds: Inf for never.
 # A deadline of -Inf is now: already expired, like any other past deadline, and
-# finite, so the entry has an expiry row and stash_expire() reclaims it.
+# finite, so the entry has an expiry row and cache_expire() reclaims it.
 parse_expire <- function(expire, now, call = rlang::caller_env()) {
   if (is.null(expire)) {
     return(Inf)
@@ -264,42 +264,42 @@ parse_expire <- function(expire, now, call = rlang::caller_env()) {
 #'
 #' @description
 #' Each of these is one transaction, so it is atomic across processes: eight
-#' processes calling `stash_incr()` on one key produce eight increments.
+#' processes calling `cache_incr()` on one key produce eight increments.
 #'
-#' * `stash_add()` writes only if the key has no entry, and returns whether it
+#' * `cache_add()` writes only if the key has no entry, and returns whether it
 #'   did. An expired entry counts as none.
-#' * `stash_pop()` returns an entry's value and deletes it.
-#' * `stash_touch()` gives an entry a new deadline without rewriting its value.
+#' * `cache_pop()` returns an entry's value and deletes it.
+#' * `cache_touch()` gives an entry a new deadline without rewriting its value.
 #'   It does nothing to a missing key.
-#' * `stash_incr()` and `stash_decr()` add to or subtract from a counter and
+#' * `cache_incr()` and `cache_decr()` add to or subtract from a counter and
 #'   return its new value. A missing key starts at `default`. Counters hold
 #'   whole numbers within ±2^53; a key holding anything else is a
-#'   `dastash_type_error`.
+#'   `dazcache_type_error`.
 #'
-#' @inheritParams stash_set
+#' @inheritParams cache_set
 #' @param by The amount to add or subtract, a whole number.
-#' @param default For `stash_pop()`, returned for a missing key; leave it out to
+#' @param default For `cache_pop()`, returned for a missing key; leave it out to
 #'   make a missing key an error. For the counters, the starting value.
 #'
-#' @return `stash_add()` returns `TRUE` or `FALSE`. `stash_pop()` returns the
-#'   value. `stash_touch()` returns the stash, invisibly. `stash_incr()` and
-#'   `stash_decr()` return the new count, a double.
+#' @return `cache_add()` returns `TRUE` or `FALSE`. `cache_pop()` returns the
+#'   value. `cache_touch()` returns the cache, invisibly. `cache_incr()` and
+#'   `cache_decr()` return the new count, a double.
 #'
 #' @examples
-#' s <- local_stash()
-#' stash_add(s, "lock", Sys.getpid(), expire = 30)
-#' stash_add(s, "lock", Sys.getpid())
+#' s <- local_cache()
+#' cache_add(s, "lock", Sys.getpid(), expire = 30)
+#' cache_add(s, "lock", Sys.getpid())
 #'
-#' stash_incr(s, "hits")
-#' stash_incr(s, "hits", by = 10)
-#' stash_decr(s, "hits")
+#' cache_incr(s, "hits")
+#' cache_incr(s, "hits", by = 10)
+#' cache_decr(s, "hits")
 #'
-#' stash_set(s, "job", "payload")
-#' stash_pop(s, "job")
-#' stash_has(s, "job")
+#' cache_set(s, "job", "payload")
+#' cache_pop(s, "job")
+#' cache_has(s, "job")
 #' @export
-stash_add <- function(
-  stash,
+cache_add <- function(
+  cache,
   key,
   value,
   ...,
@@ -309,18 +309,18 @@ stash_add <- function(
 ) {
   check_supplied(c("key", "value"))
   rlang::check_dots_empty()
-  check_writable(stash)
-  entry <- stash_prepare(stash, key, value, expire, tags, codec)
+  check_writable(cache)
+  entry <- cache_prepare(cache, key, value, expire, tags, codec)
   on.exit(unstage(list(entry)))
   engine_write(
-    stash$engine,
+    cache$engine,
     function(txn) {
       now <- unclass(Sys.time())
-      if (!is.null(store_live_record(stash, txn, entry$key, now))) {
+      if (!is.null(store_live_record(cache, txn, entry$key, now))) {
         return(FALSE)
       }
       store_put_entry(
-        stash,
+        cache,
         txn,
         entry$key,
         entry$enc,
@@ -328,44 +328,44 @@ stash_add <- function(
         expire = entry$expire,
         tags = entry$tags
       )
-      store_cull_step(stash, txn, protect = entry$key$stored)
+      store_cull_step(cache, txn, protect = entry$key$stored)
       TRUE
     },
-    timeout = stash$timeout
+    timeout = cache$timeout
   )
 }
 
-#' @rdname stash_add
+#' @rdname cache_add
 #' @export
-stash_pop <- function(stash, key, default) {
+cache_pop <- function(cache, key, default) {
   check_supplied("key")
-  check_writable(stash)
+  check_writable(cache)
   key <- store_key(key)
   held <- NULL
   on.exit(if (!is.null(held)) unlink(held))
   hit <- engine_write(
-    stash$engine,
+    cache$engine,
     function(txn) {
-      found <- store_read_entry(stash, txn, key)
+      found <- store_read_entry(cache, txn, key)
       if (is.null(found)) {
         return(NULL)
       }
       # Before anything is deleted: an entry no codec here can read stays.
       record <- found$record
-      codec_lookup(record$codec, record$codec_version, stash$codecs)
+      codec_lookup(record$codec, record$codec_version, cache$codecs)
       if (!isTRUE(record$inline) && !identical(record$shape, "file")) {
         # The file may be reaped as soon as this commits, by this process or
         # another; the value is read from a second name for its bytes. (A file
         # entry's value is the path itself, so there is nothing to hold.)
-        held <<- blob_hold(stash, found$path)
+        held <<- blob_hold(cache, found$path)
         found$path <- held
       }
-      store_delete_entry(stash, txn, key$stored)
+      store_delete_entry(cache, txn, key$stored)
       found
     },
-    timeout = stash$timeout
+    timeout = cache$timeout
   )
-  value <- if (!is.null(hit)) store_decode_entry(stash, hit, key)
+  value <- if (!is.null(hit)) store_decode_entry(cache, hit, key)
   if (is.null(value)) {
     if (missing(default)) {
       abort_not_found(
@@ -381,26 +381,26 @@ stash_pop <- function(stash, key, default) {
   value[[1L]]
 }
 
-#' @rdname stash_add
+#' @rdname cache_add
 #' @export
-stash_touch <- function(stash, key, expire) {
+cache_touch <- function(cache, key, expire) {
   check_supplied(c("key", "expire"))
-  check_writable(stash)
+  check_writable(cache)
   key <- store_key(key)
   deadline <- parse_expire(expire, unclass(Sys.time()))
   engine_write(
-    stash$engine,
+    cache$engine,
     function(txn) {
-      old <- store_live_record(stash, txn, key)
+      old <- store_live_record(cache, txn, key)
       if (!is.null(old)) {
         record <- old
         record$expire <- deadline
-        store_update_record(stash, txn, key$stored, old, record)
+        store_update_record(cache, txn, key$stored, old, record)
       }
     },
-    timeout = stash$timeout
+    timeout = cache$timeout
   )
-  invisible(stash)
+  invisible(cache)
 }
 
 # Remove whatever staging files these prepared entries left: those whose blob

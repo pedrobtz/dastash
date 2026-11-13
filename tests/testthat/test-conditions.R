@@ -1,6 +1,6 @@
 test_that("every class in the taxonomy has a constructor", {
-  ns <- asNamespace("dastash")
-  for (class in dastash_conditions) {
+  ns <- asNamespace("dazcache")
+  for (class in dazcache_conditions) {
     expect_true(
       exists(paste0("abort_", class), envir = ns, inherits = FALSE),
       label = paste0("abort_", class, "()")
@@ -8,15 +8,15 @@ test_that("every class in the taxonomy has a constructor", {
   }
 })
 
-test_that("every constructor raises its class under dastash_error", {
-  ns <- asNamespace("dastash")
-  for (class in dastash_conditions) {
+test_that("every constructor raises its class under dazcache_error", {
+  ns <- asNamespace("dazcache")
+  for (class in dazcache_conditions) {
     ctor <- get(paste0("abort_", class), envir = ns)
     cnd <- rlang::catch_cnd(ctor("Something went wrong."), "error")
-    expect_s3_class(cnd, paste0("dastash_", class))
+    expect_s3_class(cnd, paste0("dazcache_", class))
     expect_identical(
       class(cnd),
-      c(paste0("dastash_", class), "dastash_error", "rlang_error", "error", "condition")
+      c(paste0("dazcache_", class), "dazcache_error", "rlang_error", "error", "condition")
     )
     expect_identical(conditionMessage(cnd), "Something went wrong.")
   }
@@ -41,11 +41,11 @@ test_that("a parent condition is chained", {
 })
 
 test_that("the error names the verb that raised it", {
-  verb <- function() abort_readonly("This stash is read-only.")
+  verb <- function() abort_readonly("This cache is read-only.")
   cnd <- rlang::catch_cnd(verb(), "error")
   expect_identical(rlang::call_name(cnd$call), "verb")
 })
 
 test_that("an unknown class is refused", {
-  expect_error(dastash_abort("nope", "x"), "unknown dastash condition class")
+  expect_error(dazcache_abort("nope", "x"), "unknown dazcache condition class")
 })

@@ -24,9 +24,9 @@ test_that("-0 and 0 sort together at zero", {
 })
 
 test_that("enc_f64() refuses NA and NaN", {
-  expect_error(enc_f64(NaN), class = "dastash_type_error")
-  expect_error(enc_f64(NA_real_), class = "dastash_type_error")
-  expect_error(enc_f64(c(1, 2)), class = "dastash_type_error")
+  expect_error(enc_f64(NaN), class = "dazcache_type_error")
+  expect_error(enc_f64(NA_real_), class = "dazcache_type_error")
+  expect_error(enc_f64(c(1, 2)), class = "dazcache_type_error")
 })
 
 test_that("enc_u64() sorts and round-trips", {
@@ -38,6 +38,6 @@ test_that("enc_u64() sorts and round-trips", {
 
 test_that("enc_u64() refuses what is not a count", {
   for (bad in list(-1, 0.5, 2^53 + 2, NA_real_, c(1, 2))) {
-    expect_error(enc_u64(bad), class = "dastash_type_error")
+    expect_error(enc_u64(bad), class = "dazcache_type_error")
   }
 })

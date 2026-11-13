@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 300" width="680" height="300" role="img" aria-labelledby="title desc" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13">
-  <title id="title">Where a stash keeps a value</title>
+  <title id="title">Where a cache keeps a value</title>
   <desc id="desc">A small value is stored inside the record in cache.mdbx. A large value is stored as a read-only file in blobs/, named by the hash of its content, and the record points at it.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -11,9 +11,9 @@
   <!-- calls -->
   <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1f2933">
     <rect x="12" y="62" width="226" height="36" rx="6" fill="#f5f7fa" stroke="#cbd2d9"/>
-    <text x="21" y="84">stash_set(s, "price", 101.2)</text>
+    <text x="21" y="84">cache_set(s, "price", 101.2)</text>
     <rect x="12" y="190" width="226" height="36" rx="6" fill="#f5f7fa" stroke="#cbd2d9"/>
-    <text x="21" y="212">stash_set(s, "big", runif(1e5))</text>
+    <text x="21" y="212">cache_set(s, "big", runif(1e5))</text>
   </g>
   <line x1="238" y1="80" x2="276" y2="80" stroke="#52606d" stroke-width="1.5" marker-end="url(#arrow)"/>
   <line x1="238" y1="208" x2="276" y2="208" stroke="#52606d" stroke-width="1.5" marker-end="url(#arrow)"/>

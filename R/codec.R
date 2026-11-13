@@ -1,7 +1,7 @@
 # Codecs: how a value becomes bytes and back (design.md §6.2). A codec is a
 # plain classed list and never sees the store: it writes a value to a path and
 # reads one back from a path. The record keeps the codec's name and version, and
-# decoding dispatches on those, never on the stash's current default.
+# decoding dispatches on those, never on the cache's current default.
 
 # Names only the package defines; a user codec cannot take one.
 reserved_codec_names <- c(
@@ -17,7 +17,7 @@ reserved_codec_names <- c(
 #' Codecs
 #'
 #' @description
-#' A codec turns a value into a file and back. The stash records which codec
+#' A codec turns a value into a file and back. The cache records which codec
 #' wrote each entry and always decodes with that one, so changing the default
 #' never makes stored entries unreadable.
 #'
@@ -33,7 +33,7 @@ reserved_codec_names <- c(
 #' * `codec_file()` stores a copy of an existing file; reading the entry back
 #'   gives the path of the stored copy, which is read-only. Always file-backed.
 #' * `codec()` defines your own. Every process that reads its entries must pass
-#'   it to `stash()` in `codecs`.
+#'   it to `cache()` in `codecs`.
 #'
 #' @param name A name for the codec, not one of the built-in names.
 #' @param encode `function(value, path)`: write `value` to the file `path`. It
@@ -50,7 +50,7 @@ reserved_codec_names <- c(
 #' @param compress Passed to [saveRDS()]. Off by default: compression costs more
 #'   time than a local disk saves.
 #'
-#' @return A codec: a list with class `dastash_codec`.
+#' @return A codec: a list with class `dazcache_codec`.
 #'
 #' @examples
 #' codec_auto()
@@ -178,7 +178,7 @@ new_codec <- function(
       encode_bytes = encode_bytes,
       decode_bytes = decode_bytes
     ),
-    class = "dastash_codec"
+    class = "dazcache_codec"
   )
 }
 
@@ -187,7 +187,7 @@ new_codec <- function(
 codec_auto <- function() {
   structure(
     list(name = "auto"),
-    class = c("dastash_codec_auto", "dastash_codec")
+    class = c("dazcache_codec_auto", "dazcache_codec")
   )
 }
 
@@ -291,14 +291,14 @@ codec_file <- function() {
 }
 
 #' @export
-format.dastash_codec <- function(x, ...) {
-  if (inherits(x, "dastash_codec_auto")) {
+format.dazcache_codec <- function(x, ...) {
+  if (inherits(x, "dazcache_codec_auto")) {
     return(
-      "<dastash_codec> auto: raw for raw vectors and single strings, rds otherwise"
+      "<dazcache_codec> auto: raw for raw vectors and single strings, rds otherwise"
     )
   }
   paste0(
-    "<dastash_codec> ",
+    "<dazcache_codec> ",
     x$name,
     " v",
     x$version,
@@ -308,16 +308,16 @@ format.dastash_codec <- function(x, ...) {
 }
 
 #' @export
-print.dastash_codec <- function(x, ...) {
+print.dazcache_codec <- function(x, ...) {
   cat(format(x), "\n", sep = "")
   invisible(x)
 }
 
-is_codec <- function(x) inherits(x, "dastash_codec")
+is_codec <- function(x) inherits(x, "dazcache_codec")
 
 # The concrete codec to write `value` with: `codec_auto()` resolves by value.
 codec_for_value <- function(codec, value) {
-  if (!inherits(codec, "dastash_codec_auto")) {
+  if (!inherits(codec, "dazcache_codec_auto")) {
     return(codec)
   }
   if (is_bare_raw(value) || is_bare_string(value)) codec_raw() else codec_rds()
@@ -355,7 +355,7 @@ codec_known <- function(name, codecs = list()) {
   )
 }
 
-# Make a user codec readable by the handle that writes with it, so a stash
+# Make a user codec readable by the handle that writes with it, so a cache
 # always reads back what it wrote. A codec the handle already knows by that
 # name stays.
 codec_register <- function(s, codec) {
@@ -386,7 +386,7 @@ codec_lookup <- function(
           "This entry was written with the codec %s, which this handle does not know.",
           encodeString(name, quote = "\"")
         ),
-        i = "Pass the codec to `stash()` in `codecs =`."
+        i = "Pass the codec to `cache()` in `codecs =`."
       ),
       codec = name,
       call = call
@@ -407,7 +407,7 @@ codec_lookup <- function(
   codec
 }
 
-# A named list of user codecs, as `stash(codecs =)` takes them, by name.
+# A named list of user codecs, as `cache(codecs =)` takes them, by name.
 codec_registry <- function(codecs, call = rlang::caller_env()) {
   if (is_codec(codecs)) {
     codecs <- list(codecs)
@@ -557,12 +557,12 @@ codec_check_supports <- function(codec, value, call) {
   }
 }
 
-# Evaluate a codec's own code, turning its failures into dastash_codec_error.
+# Evaluate a codec's own code, turning its failures into dazcache_codec_error.
 # Fields in `...`, such as `path`, go on the condition.
 codec_guard <- function(codec, what, call, expr, ...) {
   tryCatch(
     expr,
-    dastash_error = function(cnd) rlang::cnd_signal(cnd),
+    dazcache_error = function(cnd) rlang::cnd_signal(cnd),
     error = function(cnd) {
       abort_codec_error(
         sprintf(

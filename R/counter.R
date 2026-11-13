@@ -54,24 +54,24 @@ u32_value <- function(bytes) {
   sum(as.integer(bytes) * c(2^24, 2^16, 2^8, 1))
 }
 
-#' @rdname stash_add
+#' @rdname cache_add
 #' @export
-stash_incr <- function(stash, key, ..., by = 1, default = 0) {
+cache_incr <- function(cache, key, ..., by = 1, default = 0) {
   check_supplied("key")
   rlang::check_dots_empty()
-  counter_add(stash, key, by, default)
+  counter_add(cache, key, by, default)
 }
 
-#' @rdname stash_add
+#' @rdname cache_add
 #' @export
-stash_decr <- function(stash, key, ..., by = 1, default = 0) {
+cache_decr <- function(cache, key, ..., by = 1, default = 0) {
   check_supplied("key")
   rlang::check_dots_empty()
-  counter_add(stash, key, -by, default)
+  counter_add(cache, key, -by, default)
 }
 
-counter_add <- function(stash, key, by, default, call = rlang::caller_env()) {
-  check_writable(stash, call)
+counter_add <- function(cache, key, by, default, call = rlang::caller_env()) {
+  check_writable(cache, call)
   if (!is_counter_value(by)) {
     abort_type_error(
       "`by` must be a whole number within \u00b12^53.",
@@ -87,10 +87,10 @@ counter_add <- function(stash, key, by, default, call = rlang::caller_env()) {
   key <- store_key(key, call = call)
   codec <- codec_counter()
   engine_write(
-    stash$engine,
+    cache$engine,
     function(txn) {
       now <- unclass(Sys.time())
-      record <- store_live_record(stash, txn, key, now)
+      record <- store_live_record(cache, txn, key, now)
       if (is.null(record)) {
         current <- as.double(default)
         expire <- Inf
@@ -108,7 +108,7 @@ counter_add <- function(stash, key, by, default, call = rlang::caller_env()) {
         }
         current <- counter_value(engine_get(
           txn,
-          engine_db(stash$engine, "values"),
+          engine_db(cache$engine, "values"),
           key$stored
         ))
         expire <- record$expire
@@ -131,10 +131,10 @@ counter_add <- function(stash, key, by, default, call = rlang::caller_env()) {
         stage = function() NULL,
         call = call
       )
-      store_put_entry(stash, txn, key, enc, now, expire = expire, tags = tags)
+      store_put_entry(cache, txn, key, enc, now, expire = expire, tags = tags)
       value
     },
-    timeout = stash$timeout,
+    timeout = cache$timeout,
     call = call
   )
 }

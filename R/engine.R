@@ -12,7 +12,7 @@ engine_registry <- new.env(parent = emptyenv())
 
 # Stands for a named database that a read-only handle found absent: it reads as
 # empty. Distinct from NULL, which mdbx takes to mean the main database.
-engine_missing_db <- structure(list(), class = "dastash_missing_db")
+engine_missing_db <- structure(list(), class = "dazcache_missing_db")
 
 ENGINE_SCAN_CHUNK <- 1000L
 
@@ -45,7 +45,7 @@ engine_open <- function(
     if (e$readonly && !readonly) {
       abort_readonly(
         c(
-          "This stash is already open read-only in this process.",
+          "This cache is already open read-only in this process.",
           i = "Close every handle on it before opening it for writing."
         ),
         dir = dirname(key),
@@ -118,11 +118,11 @@ engine_check_pid <- function(e, call = rlang::caller_env()) {
     abort_forked(
       c(
         sprintf(
-          "This stash was opened by process %d and cannot be used from process %d.",
+          "This cache was opened by process %d and cannot be used from process %d.",
           e$pid,
           Sys.getpid()
         ),
-        i = "It was inherited across a fork. Open the stash inside the worker instead."
+        i = "It was inherited across a fork. Open the cache inside the worker instead."
       ),
       call = call
     )
@@ -163,7 +163,7 @@ engine_ensure_dbs <- function(
     found,
     inherits,
     logical(1),
-    "dastash_missing_db"
+    "dazcache_missing_db"
   )]
   if (!e$readonly && length(absent) > 0L) {
     created <- engine_write(
@@ -224,13 +224,13 @@ engine_read <- function(e, fn, call = rlang::caller_env()) {
 # dropped if the transaction aborts.
 #
 # An error or an interrupt in `fn` aborts. Any other way out of `fn` commits:
-# stash_transact()'s block is a promise forced inside `fn`, so a return(),
+# cache_transact()'s block is a promise forced inside `fn`, so a return(),
 # break or next in it leaves `fn` without reaching the commit below, and that
 # is the block finishing, not failing.
 engine_write <- function(e, fn, timeout = 60, call = rlang::caller_env()) {
   engine_check_pid(e, call)
   if (e$readonly) {
-    abort_readonly("This stash is read-only.", call = call)
+    abort_readonly("This cache is read-only.", call = call)
   }
   if (!is.null(e$txn)) {
     if (!e$write) {
@@ -304,14 +304,14 @@ engine_begin_write <- function(e, timeout, call) {
       abort_busy(
         c(
           sprintf(
-            "Could not write: another process held the stash's write lock for %s seconds.",
+            "Could not write: another process held the cache's write lock for %s seconds.",
             format(timeout)
           ),
-          i = "Raise `timeout` in `stash()` to wait longer.",
+          i = "Raise `timeout` in `cache()` to wait longer.",
           i = if (engine_dead_writer_wedges()) {
             paste(
               "If a process was killed while writing, this platform never releases its lock:",
-              "close every handle on this stash, in every process, to recover it."
+              "close every handle on this cache, in every process, to recover it."
             )
           }
         ),
@@ -359,7 +359,7 @@ engine_deferred <- function(e, name) {
 # Records ----------------------------------------------------------------------
 
 engine_get <- function(txn, db, key, as = "raw") {
-  if (inherits(db, "dastash_missing_db")) {
+  if (inherits(db, "dazcache_missing_db")) {
     return(NULL)
   }
   engine_try(mdbx::mdbx_get(txn, key, as = as, db = db))
@@ -370,7 +370,7 @@ engine_put <- function(txn, db, key, value, overwrite = TRUE) {
 }
 
 engine_del <- function(txn, db, key) {
-  if (inherits(db, "dastash_missing_db")) {
+  if (inherits(db, "dazcache_missing_db")) {
     return(FALSE)
   }
   engine_try(mdbx::mdbx_del(txn, key, db = db))
@@ -378,7 +378,7 @@ engine_del <- function(txn, db, key) {
 
 # Remove every record from a named database, keeping the database.
 engine_clear_db <- function(txn, db) {
-  if (inherits(db, "dastash_missing_db")) {
+  if (inherits(db, "dazcache_missing_db")) {
     return(invisible())
   }
   engine_try(mdbx::mdbx_dbi_drop(txn, db, delete = FALSE))
@@ -386,7 +386,7 @@ engine_clear_db <- function(txn, db) {
 }
 
 engine_count <- function(txn, db) {
-  if (inherits(db, "dastash_missing_db")) {
+  if (inherits(db, "dazcache_missing_db")) {
     return(0)
   }
   engine_try(mdbx::mdbx_env_stat(txn, db = db))$entries
@@ -410,7 +410,7 @@ engine_scan <- function(
   empty <- if (as == "raw") list() else character()
   out_keys <- empty
   out_values <- list()
-  if (inherits(db, "dastash_missing_db") || n <= 0) {
+  if (inherits(db, "dazcache_missing_db") || n <= 0) {
     return(if (values) list(keys = out_keys, values = out_values) else out_keys)
   }
   if (!is.null(prefix) && reverse) {
@@ -498,20 +498,20 @@ engine_flags <- function(e) {
 # Errors -----------------------------------------------------------------------
 
 # Evaluate one mdbx call, translating its failure by class (design.md §13).
-# dastash's own conditions pass through untouched.
+# dazcache's own conditions pass through untouched.
 engine_try <- function(expr, call = NULL) {
   tryCatch(expr, error = function(cnd) engine_translate(cnd, call))
 }
 
 engine_translate <- function(cnd, call) {
-  if (inherits(cnd, "dastash_error")) {
+  if (inherits(cnd, "dazcache_error")) {
     rlang::cnd_signal(cnd)
   }
   if (inherits(cnd, "mdbx_map_full")) {
     abort_store_full(
       c(
-        "The stash's database is full: it reached its `map_size`.",
-        i = "Reopen it with a larger `map_size` in `stash()`."
+        "The cache's database is full: it reached its `map_size`.",
+        i = "Reopen it with a larger `map_size` in `cache()`."
       ),
       parent = cnd,
       call = call

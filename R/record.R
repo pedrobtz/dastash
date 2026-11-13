@@ -21,7 +21,7 @@ record_format <- function() {
     key_encoding_version = KEY_ENCODING_VERSION,
     index_encoding_version = INDEX_ENCODING_VERSION,
     created_at = unclass(Sys.time()),
-    created_by = paste("dastash", getNamespaceVersion("dastash"))
+    created_by = paste("dazcache", getNamespaceVersion("dazcache"))
   )
 }
 

@@ -1,9 +1,9 @@
-# stash_check() (design.md §11.3). Indexes, refcounts and counters are all
+# cache_check() (design.md §11.3). Indexes, refcounts and counters are all
 # projections of the meta records, so almost any damage is found by comparing
 # what the records imply with what is there, and repaired by making the
 # projections agree again.
 
-#' Check a stash, and repair it
+#' Check a cache, and repair it
 #'
 #' @description
 #' Compares every index, reference count and counter with what the entries
@@ -12,11 +12,11 @@
 #' index rows, recounting, removing entries whose file is gone or damaged, and
 #' deleting files and staging leftovers nothing refers to.
 #'
-#' A crash leaves at most unreferenced files; `stash_check(repair = TRUE)` is
+#' A crash leaves at most unreferenced files; `cache_check(repair = TRUE)` is
 #' how they are reclaimed. `hash = TRUE` also reads every stored file and
-#' checks its bytes against its name, which is slow on a large stash.
+#' checks its bytes against its name, which is slow on a large cache.
 #'
-#' @inheritParams stash_expire
+#' @inheritParams cache_expire
 #' @param repair Fix what is found.
 #' @param hash Verify the content of every stored file.
 #'
@@ -27,46 +27,46 @@
 #'   `tmp_stale` and `reader_stale`.
 #'
 #' @examples
-#' s <- local_stash()
-#' stash_set(s, "a", runif(1e4))
-#' stash_check(s)
+#' s <- local_cache()
+#' cache_set(s, "a", runif(1e4))
+#' cache_check(s)
 #' @export
-stash_check <- function(stash, ..., repair = FALSE, hash = FALSE) {
+cache_check <- function(cache, ..., repair = FALSE, hash = FALSE) {
   rlang::check_dots_empty()
   check_flag(repair, "repair")
   check_flag(hash, "hash")
   if (repair) {
-    check_writable(stash)
+    check_writable(cache)
   } else {
-    check_open(stash)
+    check_open(cache)
   }
-  e <- stash$engine
+  e <- cache$engine
 
   corrupt <- character()
   if (hash) {
-    snap <- engine_read(e, function(txn) check_snapshot(stash, txn))
-    corrupt <- check_hashes(stash, snap)
+    snap <- engine_read(e, function(txn) check_snapshot(cache, txn))
+    corrupt <- check_hashes(cache, snap)
   }
   if (!repair) {
-    snap <- engine_read(e, function(txn) check_snapshot(stash, txn))
-    findings <- check_findings(stash, snap, corrupt)
-    return(rbind(findings, check_tmp(stash, repair = FALSE)))
+    snap <- engine_read(e, function(txn) check_snapshot(cache, txn))
+    findings <- check_findings(cache, snap, corrupt)
+    return(rbind(findings, check_tmp(cache, repair = FALSE)))
   }
 
   findings <- engine_write(
     e,
     function(txn) {
-      snap <- check_snapshot(stash, txn)
-      findings <- check_findings(stash, snap, corrupt)
-      reap <- check_repair(stash, txn, snap, findings)
+      snap <- check_snapshot(cache, txn)
+      findings <- check_findings(cache, snap, corrupt)
+      reap <- check_repair(cache, txn, snap, findings)
       # Unlinked once the deletes are durable: after this commit, or inside
-      # stash_transact() after the outer one, never while they can still abort.
+      # cache_transact() after the outer one, never while they can still abort.
       if (length(reap) > 0L) {
-        blob_defer_reap(stash, reap)
+        blob_defer_reap(cache, reap)
       }
       findings
     },
-    timeout = stash$timeout
+    timeout = cache$timeout
   )
   findings$repaired <- rep(TRUE, nrow(findings))
   readers <- engine_reader_check(e)
@@ -80,7 +80,7 @@ stash_check <- function(stash, ..., repair = FALSE, hash = FALSE) {
       )
     )
   }
-  rbind(findings, check_tmp(stash, repair = TRUE))
+  rbind(findings, check_tmp(cache, repair = TRUE))
 }
 
 # Everything the check compares, read in one transaction.

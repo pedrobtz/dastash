@@ -10,7 +10,7 @@
 # the tests are skipped rather than failing.
 if (requireNamespace("testthat", quietly = TRUE)) {
   library(testthat)
-  library(dastash)
+  library(dazcache)
 
-  test_check("dastash")
+  test_check("dazcache")
 }

@@ -17,10 +17,10 @@ KEY_PREVIEW_MAX <- 256L
 #' Keys
 #'
 #' @description
-#' Every function that takes a `key` accepts a string, a `dastash_key`, or any
-#' value the canonical encoding covers. `stash_key()` builds a key from values;
-#' `stash_key_chr()` returns the canonical text a key is stored under, and
-#' `stash_key_hash()` its SHA-256.
+#' Every function that takes a `key` accepts a string, a `dazcache_key`, or any
+#' value the canonical encoding covers. `cache_key()` builds a key from values;
+#' `cache_key_chr()` returns the canonical text a key is stored under, and
+#' `cache_key_hash()` its SHA-256.
 #'
 #' A single string is its own text: `"XSWX/2026-08-29"` is stored under exactly
 #' those bytes. Anything else — numbers, dates, vectors, lists, data frames, or
@@ -31,107 +31,107 @@ KEY_PREVIEW_MAX <- 256L
 #' collide.
 #'
 #' Functions, environments, connections, S4 objects and external pointers have
-#' no encoding and raise `dastash_key_invalid`.
+#' no encoding and raise `dazcache_key_invalid`.
 #'
-#' [stash_keys()] lists keys as their text. A plain string key's text is the
+#' [cache_keys()] lists keys as their text. A plain string key's text is the
 #' string itself and can be passed back as it is, but a structured key's text,
-#' such as `"{n=i:1}"`, would be taken as a string. `stash_key_text()` turns a
+#' such as `"{n=i:1}"`, would be taken as a string. `cache_key_text()` turns a
 #' listed text back into the key it lists.
 #'
-#' @param text One key's text, as [stash_keys()] or `stash_key_chr()` gives it.
+#' @param text One key's text, as [cache_keys()] or `cache_key_chr()` gives it.
 #' @param ... Values that make up the key: one unnamed value, or several values
 #'   that are either all named or all unnamed. Named values are ordered by name,
 #'   so their order does not matter. Supports `!!!` to splice a list.
-#' @param key A string, a `dastash_key`, or a value the encoding covers.
+#' @param key A string, a `dazcache_key`, or a value the encoding covers.
 #'
-#' @return `stash_key()` and `stash_key_text()` return a `dastash_key`.
-#'   `stash_key_chr()` returns the canonical text as a string, and
-#'   `stash_key_hash()` the SHA-256 of that text as 64 lower-case hex
+#' @return `cache_key()` and `cache_key_text()` return a `dazcache_key`.
+#'   `cache_key_chr()` returns the canonical text as a string, and
+#'   `cache_key_hash()` the SHA-256 of that text as 64 lower-case hex
 #'   characters.
 #'
 #' @examples
-#' stash_key("XSWX/2026-08-29")
+#' cache_key("XSWX/2026-08-29")
 #'
-#' k <- stash_key(exchange = "XSWX", date = as.Date("2026-08-29"))
+#' k <- cache_key(exchange = "XSWX", date = as.Date("2026-08-29"))
 #' k
-#' identical(k, stash_key(date = as.Date("2026-08-29"), exchange = "XSWX"))
+#' identical(k, cache_key(date = as.Date("2026-08-29"), exchange = "XSWX"))
 #'
-#' stash_key_chr(list(n = 1L, p = 0.1))
-#' stash_key_hash("XSWX/2026-08-29")
+#' cache_key_chr(list(n = 1L, p = 0.1))
+#' cache_key_hash("XSWX/2026-08-29")
 #'
 #' # A listed structured key, used again.
-#' s <- local_stash()
-#' stash_set(s, list(n = 1), "one")
-#' listed <- stash_keys(s)
+#' s <- local_cache()
+#' cache_set(s, list(n = 1), "one")
+#' listed <- cache_keys(s)
 #' listed
-#' stash_get(s, stash_key_text(listed))
+#' cache_get(s, cache_key_text(listed))
 #' @export
-stash_key <- function(...) {
+cache_key <- function(...) {
   values <- rlang::list2(...)
   if (length(values) == 0L) {
     abort_key_invalid("A key needs at least one value.")
   }
   nms <- names(values)
   if (length(values) == 1L && (is.null(nms) || !nzchar(nms))) {
-    return(as_dastash_key(values[[1L]]))
+    return(as_dazcache_key(values[[1L]]))
   }
-  new_dastash_key(key_canon(values))
+  new_dazcache_key(key_canon(values))
 }
 
-#' @rdname stash_key
+#' @rdname cache_key
 #' @export
-stash_key_chr <- function(key) {
+cache_key_chr <- function(key) {
   check_supplied("key")
   key_canon(key)
 }
 
-#' @rdname stash_key
+#' @rdname cache_key
 #' @export
-stash_key_text <- function(text) {
+cache_key_text <- function(text) {
   check_supplied("text")
   if (!is.character(text) || length(text) != 1L || is.na(text)) {
     abort_key_invalid("`text` must be one key's text, a single string.")
   }
-  new_dastash_key(utf8_text(text))
+  new_dazcache_key(utf8_text(text))
 }
 
-#' @rdname stash_key
+#' @rdname cache_key
 #' @export
-stash_key_hash <- function(key) {
+cache_key_hash <- function(key) {
   check_supplied("key")
   hash_text(key_canon(key))
 }
 
-new_dastash_key <- function(text) {
-  structure(list(text = text), class = "dastash_key")
+new_dazcache_key <- function(text) {
+  structure(list(text = text), class = "dazcache_key")
 }
 
-as_dastash_key <- function(x) {
-  if (inherits(x, "dastash_key")) x else new_dastash_key(key_canon(x))
+as_dazcache_key <- function(x) {
+  if (inherits(x, "dazcache_key")) x else new_dazcache_key(key_canon(x))
 }
 
-is_dastash_key <- function(x) inherits(x, "dastash_key")
+is_dazcache_key <- function(x) inherits(x, "dazcache_key")
 
 #' @export
-format.dastash_key <- function(x, ...) {
+format.dazcache_key <- function(x, ...) {
   x$text
 }
 
 #' @export
-as.character.dastash_key <- function(x, ...) {
+as.character.dazcache_key <- function(x, ...) {
   x$text
 }
 
 #' @export
-print.dastash_key <- function(x, ...) {
-  cat("<dastash_key> ", x$text, "\n", sep = "")
+print.dazcache_key <- function(x, ...) {
+  cat("<dazcache_key> ", x$text, "\n", sep = "")
   invisible(x)
 }
 
-# The canonical text of any key: a dastash_key carries it; a plain string is
+# The canonical text of any key: a dazcache_key carries it; a plain string is
 # itself unless it starts with an opener; anything else is a value.
 key_canon <- function(x, call = rlang::caller_env()) {
-  if (is_dastash_key(x)) {
+  if (is_dazcache_key(x)) {
     return(x$text)
   }
   if (is_plain_string(x)) {
@@ -180,9 +180,9 @@ canon_value <- function(x, call = rlang::caller_env()) {
   if (is.null(x)) {
     return("~")
   }
-  if (is_dastash_key(x)) {
+  if (is_dazcache_key(x)) {
     abort_key_invalid(
-      "A `dastash_key` cannot be nested inside another key; use its values instead.",
+      "A `dazcache_key` cannot be nested inside another key; use its values instead.",
       call = call
     )
   }

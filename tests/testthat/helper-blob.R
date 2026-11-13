@@ -5,11 +5,11 @@ blob_files <- function(s) {
 crash_writer <- function(dir, point, fn) {
   callr::r(
     function(dir, fn) {
-      s <- dastash::stash(dir, inline_max = 100)
+      s <- dazcache::cache(dir, inline_max = 100)
       fn(s)
     },
     args = list(dir = dir, fn = fn),
-    env = c(callr::rcmd_safe_env(), DASTASH_CRASH = point),
+    env = c(callr::rcmd_safe_env(), DAZCACHE_CRASH = point),
     error = "error"
   )
 }

@@ -78,7 +78,7 @@ store_ref_blob <- function(s, txn, blob) {
 # staged bytes were just hashed, while an orphan may be what a crash left.
 #
 # The rename replaces the old file in one step, never unlinking it first:
-# inside stash_transact() the "orphan" can be the file of an entry this
+# inside cache_transact() the "orphan" can be the file of an entry this
 # transaction deleted, and if the process dies before the commit that entry
 # comes back and needs its file. Windows will not replace a read-only file,
 # hence the chmod.
@@ -146,12 +146,12 @@ blob_defer_reap <- function(s, blob_names) {
 
 # How long a reap waits for the write lock. The write that released the files
 # has already committed, and a reap that gives up only leaves orphans, so it
-# need not wait the stash's full `timeout`.
+# need not wait the cache's full `timeout`.
 BLOB_REAP_TIMEOUT <- 5
 
 # After a commit: unlink the files of blobs that are still unreferenced, under
 # the write lock. If the lock is busy the files stay, as orphans for
-# stash_check() to find; that is never unsafe.
+# cache_check() to find; that is never unsafe.
 blob_reap <- function(s, blob_names) {
   crash_point("unlink")
   e <- s$engine
@@ -168,7 +168,7 @@ blob_reap <- function(s, blob_names) {
       },
       timeout = min(s$timeout, BLOB_REAP_TIMEOUT)
     ),
-    dastash_busy = function(cnd) NULL
+    dazcache_busy = function(cnd) NULL
   )
   invisible()
 }
@@ -203,14 +203,14 @@ blob_unlink <- function(path) {
   invisible()
 }
 
-# Crash injection for the tests of design.md §16: DASTASH_CRASH names a point,
+# Crash injection for the tests of design.md §16: DAZCACHE_CRASH names a point,
 # and the process dies there without cleaning up, exactly as a crash would.
-# Only the crash-window tests set DASTASH_CRASH, in a child process they
+# Only the crash-window tests set DAZCACHE_CRASH, in a child process they
 # spawn; nothing else does, so in ordinary use this is one Sys.getenv() and
 # never ends the session. quit() is the fallback where SIGKILL is unavailable
 # (Windows), with runLast = FALSE so no cleanup runs, as in a real crash.
 crash_point <- function(name) {
-  if (identical(Sys.getenv("DASTASH_CRASH"), name)) {
+  if (identical(Sys.getenv("DAZCACHE_CRASH"), name)) {
     if (.Platform$OS.type == "unix") {
       tools::pskill(Sys.getpid(), tools::SIGKILL)
     }

@@ -45,7 +45,7 @@ call_pkg <- function(call) {
 }
 
 # Named list of the functions in a namespace.
-namespace_functions <- function(pkg = "dastash") {
+namespace_functions <- function(pkg = "dazcache") {
   ns <- asNamespace(pkg)
   fns <- mget(ls(ns, all.names = TRUE), envir = ns)
   Filter(is.function, fns)
@@ -81,8 +81,8 @@ guard_violations <- function(fns) {
       if (fn == "stop" && (is.na(pkg) || pkg == "base")) {
         hits <- c(hits, sprintf("%s: bare stop()", name))
       }
-      if (fn == "abort" && !identical(name, "dastash_abort")) {
-        hits <- c(hits, sprintf("%s: rlang::abort() outside dastash_abort()", name))
+      if (fn == "abort" && !identical(name, "dazcache_abort")) {
+        hits <- c(hits, sprintf("%s: rlang::abort() outside dazcache_abort()", name))
       }
     }
   }

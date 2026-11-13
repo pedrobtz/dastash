@@ -1,7 +1,7 @@
 # A formal model of a cache
 
 An abstract model of the class of systems that `diskcache`, `polars-diskcache`, `storr`,
-`requests-cache` and `dastash` all belong to. The point is not formality for its own sake:
+`requests-cache` and `dazcache` all belong to. The point is not formality for its own sake:
 it is that once the model is written down, most of the design rules in `design.md` stop
 being advice and become **theorems**, and the places where the implementations differ
 become **choices of parameter** rather than differences of kind.
@@ -304,7 +304,7 @@ live_t^stale_ok(w)  ≡  t < w.usable_until
 
 | System | Instance |
 |---|---|
-| `diskcache`, `dastash` | `fresh_until = usable_until`; the modes coincide |
+| `diskcache`, `dazcache` | `fresh_until = usable_until`; the modes coincide |
 | `polars-diskcache` | `fresh_until = usable_until = ∞`; nothing ever expires |
 | `requests-cache` | the two differ; `stale_ok` is `stale-if-error` |
 | `storr` | `= ∞`, plus Axiom III |
@@ -595,7 +595,7 @@ Two observations the model makes sharp:
 Every system in `prior-art-diskcache.md` and `design.md` is this model with the parameters
 filled in.
 
-| | `diskcache` | `polars-diskcache` | `dastash` | `storr` |
+| | `diskcache` | `polars-diskcache` | `dazcache` | `storr` |
 |---|---|---|---|---|
 | `K` | picklable objects | `sha256(repr(bound args))` | UTF-8 text; the canonical encoding of an R value | strings |
 | `V` | any picklable | `DataFrame`/`LazyFrame` | any R object | any R object |
@@ -616,7 +616,7 @@ Three readings fall out:
   limit. Its distinctive choice is `B`'s addressing: hashing the *call* rather than the
   *content* means Result 11.4 does not apply, so it cannot deduplicate and its blob names
   carry no integrity claim.
-- **`dastash` differs from `diskcache`** in four parameters: `≈` is declared per codec
+- **`dazcache` differs from `diskcache`** in four parameters: `≈` is declared per codec
   rather than fixed by pickle, `B` is content-addressed with transactional refcounts
   (Result 11.6), `K` is a specified injective encoding rather than an opaque pickle, and
   `T` is a set of tags per write rather than one. The typed layer of `typed-layer.md` is
@@ -639,7 +639,7 @@ Stated so the model is not over-trusted.
 - **Partial reads.** Result 12.2 treats a value as atomic. `polars-diskcache`'s real
   selling point is that a cached `LazyFrame` is *queried in place*, which means the
   observation is not `get(k)` but `q(B(M(k)))` for a query `q`. That is a different and
-  richer model. `dastash` handles it outside the model, by recording laziness as a
+  richer model. `dazcache` handles it outside the model, by recording laziness as a
   `shape` on the record (`design.md` §6.4) — a query over a cached file is sound exactly
   when the file is, which Invariant 11.5 already guarantees.
 - **Nondeterministic and effectful producers.** The moment `produce` is not a function,

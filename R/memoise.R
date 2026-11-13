@@ -3,12 +3,12 @@
 # defaults filled in, so the key is specified text: it survives R upgrades,
 # prefix-scans, and never depends on the function's body.
 
-#' Memoise a function in a stash
+#' Memoise a function in a cache
 #'
 #' @description
-#' `stash_memoise()` returns a function that looks each call up in the stash
+#' `cache_memoise()` returns a function that looks each call up in the cache
 #' first, and on a miss calls `f` and stores what it returns. The cache outlives
-#' the session and is shared by every process using the stash.
+#' the session and is shared by every process using the cache.
 #'
 #' The key of a call is the function's `name`, `version` and its arguments,
 #' matched to `f`'s formals with defaults filled in: `f(1)` and
@@ -21,19 +21,19 @@
 #' Two processes missing the same call at once both run `f`, and one result
 #' is kept. That is duplicated work, never a wrong result.
 #'
-#' If the stash cannot store a result because its write lock stayed busy, it is
+#' If the cache cannot store a result because its write lock stayed busy, it is
 #' full or it is read-only, the result is returned anyway, with a warning of
-#' class `dastash_memoise_unstored`. A codec that cannot store it is an error.
+#' class `dazcache_memoise_unstored`. A codec that cannot store it is an error.
 #'
-#' `stash_memoise_key()` returns the key a call would use, `stash_forget()`
-#' deletes one call's entry, and `stash_forget_all()` every entry of the
+#' `cache_memoise_key()` returns the key a call would use, `cache_forget()`
+#' deletes one call's entry, and `cache_forget_all()` every entry of the
 #' function.
 #'
-#' @inheritParams stash_get
+#' @inheritParams cache_get
 #' @param f A function.
-#' @param ... For `stash_memoise()`, must be empty. For the others, the
+#' @param ... For `cache_memoise()`, must be empty. For the others, the
 #'   arguments of a call to the memoised function.
-#' @param expire,tags,codec Passed to [stash_set()] when a result is stored.
+#' @param expire,tags,codec Passed to [cache_set()] when a result is stored.
 #' @param key `NULL`, or a function of the list of matched arguments returning
 #'   a key, to key calls on something else than every argument.
 #' @param omit Names of arguments to leave out of the key.
@@ -41,35 +41,35 @@
 #' @param name The function's name in its keys. Defaults to the name `f` was
 #'   passed as; an anonymous function needs one.
 #'
-#' @return `stash_memoise()` returns the memoised function.
-#'   `stash_memoise_key()` returns a key's text. `stash_forget()` and
-#'   `stash_forget_all()` return the memoised function, invisibly.
-#'   `is_stash_memoised()` returns `TRUE` or `FALSE`.
+#' @return `cache_memoise()` returns the memoised function.
+#'   `cache_memoise_key()` returns a key's text. `cache_forget()` and
+#'   `cache_forget_all()` return the memoised function, invisibly.
+#'   `is_cache_memoised()` returns `TRUE` or `FALSE`.
 #'
 #' @examples
-#' s <- local_stash()
+#' s <- local_cache()
 #' slow_square <- function(x, verbose = FALSE) {
 #'   Sys.sleep(0.1)
 #'   x^2
 #' }
-#' fast_square <- stash_memoise(slow_square, s)
+#' fast_square <- cache_memoise(slow_square, s)
 #' fast_square(4)
 #' fast_square(4)
-#' stash_memoise_key(fast_square, 4)
-#' stash_forget(fast_square, 4)
+#' cache_memoise_key(fast_square, 4)
+#' cache_forget(fast_square, 4)
 #'
 #' # Keep an argument out of the key.
-#' fit <- stash_memoise(
+#' fit <- cache_memoise(
 #'   function(data_id, verbose = FALSE) data_id * 2,
 #'   s,
 #'   name = "fit",
 #'   omit = "verbose"
 #' )
-#' identical(stash_memoise_key(fit, 1), stash_memoise_key(fit, 1, verbose = TRUE))
+#' identical(cache_memoise_key(fit, 1), cache_memoise_key(fit, 1, verbose = TRUE))
 #' @export
-stash_memoise <- function(
+cache_memoise <- function(
   f,
-  stash,
+  cache,
   ...,
   expire = NULL,
   tags = NULL,
@@ -80,15 +80,15 @@ stash_memoise <- function(
   name = NULL
 ) {
   rlang::check_dots_empty()
-  check_supplied(c("f", "stash"))
+  check_supplied(c("f", "cache"))
   call <- rlang::current_env()
   if (!is.function(f)) {
     abort_type_error("`f` must be a function.", call = call)
   }
-  if (is_stash_memoised(f)) {
+  if (is_cache_memoised(f)) {
     abort_type_error("`f` is already memoised.", call = call)
   }
-  check_open(stash, call)
+  check_open(cache, call)
   name <- name %||% memo_default_name(substitute(f))
   if (is.null(name)) {
     abort_key_invalid(
@@ -125,12 +125,12 @@ stash_memoise <- function(
     abort_codec_error("`codec` must be NULL or a codec.", call = call)
   }
   # Every call reads what an earlier one stored with it, in any process.
-  codec_register(stash, codec)
+  codec_register(cache, codec)
 
   fmls <- formals(args(f))
   info <- list(
     f = f,
-    stash = stash,
+    cache = cache,
     name = name,
     version = as.integer(version),
     formals = fmls,
@@ -141,14 +141,14 @@ stash_memoise <- function(
     codec = codec
   )
   env <- new.env(parent = environment(f) %||% baseenv())
-  env$`_dastash_memo` <- info
+  env$`_dazcache_memo` <- info
   memoised <- rlang::new_function(
     fmls,
     as.call(list(
       memo_call,
       quote(environment()),
       quote(match.call(expand.dots = FALSE)),
-      quote(`_dastash_memo`)
+      quote(`_dazcache_memo`)
     )),
     env
   )
@@ -159,52 +159,52 @@ stash_memoise <- function(
       memo_key_of,
       quote(environment()),
       quote(match.call(expand.dots = FALSE)),
-      quote(`_dastash_memo`)
+      quote(`_dazcache_memo`)
     )),
     env
   )
-  env$`_dastash_memo` <- info
-  structure(memoised, class = c("dastash_memoised", "function"))
+  env$`_dazcache_memo` <- info
+  structure(memoised, class = c("dazcache_memoised", "function"))
 }
 
-#' @rdname stash_memoise
+#' @rdname cache_memoise
 #' @export
-stash_memoise_key <- function(f, ...) {
+cache_memoise_key <- function(f, ...) {
   memo_info(f)$key_of(...)
 }
 
-#' @rdname stash_memoise
+#' @rdname cache_memoise
 #' @export
-stash_forget <- function(f, ...) {
+cache_forget <- function(f, ...) {
   info <- memo_info(f)
-  stash_delete(info$stash, info$key_of(...))
+  cache_delete(info$cache, info$key_of(...))
   invisible(f)
 }
 
-#' @rdname stash_memoise
+#' @rdname cache_memoise
 #' @export
-stash_forget_all <- function(f) {
+cache_forget_all <- function(f) {
   info <- memo_info(f)
-  stash_evict(info$stash, prefix = paste0(info$name, "/v"))
+  cache_evict(info$cache, prefix = paste0(info$name, "/v"))
   invisible(f)
 }
 
-#' @rdname stash_memoise
+#' @rdname cache_memoise
 #' @export
-is_stash_memoised <- function(f) {
-  inherits(f, "dastash_memoised")
+is_cache_memoised <- function(f) {
+  inherits(f, "dazcache_memoised")
 }
 
 #' @export
-print.dastash_memoised <- function(x, ...) {
+print.dazcache_memoised <- function(x, ...) {
   info <- memo_info(x)
   cat(
-    "<dastash_memoised> ",
+    "<dazcache_memoised> ",
     info$name,
     " v",
     info$version,
     " in ",
-    info$stash$dir,
+    info$cache$dir,
     "\n",
     sep = ""
   )
@@ -213,13 +213,13 @@ print.dastash_memoised <- function(x, ...) {
 }
 
 memo_info <- function(f, call = rlang::caller_env()) {
-  if (!is_stash_memoised(f)) {
+  if (!is_cache_memoised(f)) {
     abort_type_error(
-      "`f` must be a function made by `stash_memoise()`.",
+      "`f` must be a function made by `cache_memoise()`.",
       call = call
     )
   }
-  environment(f)$`_dastash_memo`
+  environment(f)$`_dazcache_memo`
 }
 
 # The symbol `f` was passed as, or NULL for an anonymous function.
@@ -241,26 +241,26 @@ memo_default_name <- function(expr) {
 memo_call <- function(frame, mc, info) {
   args <- memo_collect(frame, mc, info)
   key <- memo_key_text(info, args$key, call = sys.call(-1L))
-  hit <- stash_get(info$stash, key, default = memo_miss)
+  hit <- cache_get(info$cache, key, default = memo_miss)
   if (!identical(hit, memo_miss)) {
     return(hit)
   }
   result <- withVisible(do.call(info$f, args$call, quote = TRUE))
   # The result is computed, and a cache may forget (design.md §4): when the
-  # stash cannot take it for now, return it anyway. A codec that refuses it is
+  # cache cannot take it for now, return it anyway. A codec that refuses it is
   # a mistake in the setup, and stays an error.
   tryCatch(
-    stash_set(
-      info$stash,
+    cache_set(
+      info$cache,
       key,
       result$value,
       expire = info$expire,
       tags = info$tags,
       codec = info$codec
     ),
-    dastash_busy = function(cnd) memo_unstored(info, cnd),
-    dastash_store_full = function(cnd) memo_unstored(info, cnd),
-    dastash_readonly = function(cnd) memo_unstored(info, cnd)
+    dazcache_busy = function(cnd) memo_unstored(info, cnd),
+    dazcache_store_full = function(cnd) memo_unstored(info, cnd),
+    dazcache_readonly = function(cnd) memo_unstored(info, cnd)
   )
   if (result$visible) result$value else invisible(result$value)
 }
