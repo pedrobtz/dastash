@@ -243,6 +243,7 @@ test_that("hash = TRUE finds a file whose bytes changed but not its size", {
   bytes[length(bytes)] <- xor(bytes[length(bytes)], as.raw(1))
   Sys.chmod(path, "0644")
   writeBin(bytes, path)
+  Sys.chmod(path, "0444")
   expect_identical(nrow(cache_check(s)), 0L)
   f <- cache_check(s, hash = TRUE)
   expect_identical(f$kind, "blob_corrupt")
@@ -508,5 +509,103 @@ test_that("orphan and stale index rows neither stall the walks nor delete live e
     engine_read(e, function(txn) length(engine_scan(txn, engine_db(e, "stored")))),
     as.integer(cache_count(s))
   )
+  expect_identical(nrow(cache_check(s)), 0L)
+})
+
+test_that("a torn or garbage record is a finding, and reads raise in the taxonomy (#98)", {
+  s <- local_cache(inline_max = 100)
+  cache_set(s, "g", 1)
+  cache_set(s, "w", 2)
+  cache_set(s, "b", runif(100))
+  cache_set(s, "ok", 3)
+  e <- s$engine
+  engine_write(e, function(txn) {
+    meta <- engine_db(e, "meta")
+    engine_put(txn, meta, "g", as.raw(1:5))
+    engine_put(txn, meta, "w", record_encode(1:3))
+    engine_put(txn, meta, "b", head(engine_get(txn, meta, "b"), 20))
+  })
+  for (k in c("g", "w", "b")) {
+    expect_error(cache_get(s, k), class = "dazcache_engine_error")
+  }
+  found <- cache_check(s)
+  expect_setequal(found$key[found$kind == "record_corrupt"], c("g", "w", "b"))
+  cache_check(s, repair = TRUE)
+  expect_identical(nrow(cache_check(s, hash = TRUE)), 0L)
+  expect_identical(cache_keys(s), "ok")
+  expect_identical(store_violations(s), character())
+
+  # Damaged blobs and counters rows.
+  cache_set(s, "b2", runif(100))
+  name <- basename(cache_path(s, "b2"))
+  engine_write(e, function(txn) {
+    engine_put(txn, engine_db(e, "blobs"), name, as.raw(9))
+    engine_put(txn, NULL, "counters", as.raw(9))
+  })
+  found <- cache_check(s)
+  expect_true(all(c("refcount_drift", "counter_drift") %in% found$kind))
+  cache_check(s, repair = TRUE)
+  expect_identical(nrow(cache_check(s)), 0L)
+  expect_true(cache_has(s, "b2"))
+})
+
+test_that("a blob file in the wrong directory is an orphan, and its entry's file is missing (#99)", {
+  s <- local_cache(inline_max = 100)
+  cache_set(s, "k", runif(100))
+  path <- cache_path(s, "k")
+  moved <- file.path(s$dir, "blobs", basename(path))
+  file.rename(path, moved)
+  found <- cache_check(s)
+  expect_setequal(found$kind, c("blob_missing", "blob_orphan"))
+  expect_identical(found$path[found$kind == "blob_orphan"], moved)
+  cache_check(s, repair = TRUE)
+  expect_false(file.exists(moved))
+  expect_identical(nrow(cache_check(s, hash = TRUE)), 0L)
+})
+
+test_that("one repair suffices when an uncounted file is also damaged (#116)", {
+  for (damage in c("short", "bytes", "gone")) {
+    s <- local_cache(inline_max = 100)
+    cache_set(s, "k", runif(100))
+    cache_set(s, "k2", cache_get(s, "k"))
+    path <- cache_path(s, "k")
+    e <- s$engine
+    engine_write(e, function(txn) engine_del(txn, engine_db(e, "blobs"), basename(path)))
+    Sys.chmod(path, "0644")
+    if (damage == "short") writeBin(as.raw(1), path)
+    if (damage == "bytes") {
+      bytes <- readBin(path, "raw", file.size(path))
+      bytes[1] <- xor(bytes[1], as.raw(1))
+      writeBin(bytes, path)
+    }
+    if (damage == "gone") unlink(path)
+    Sys.chmod(path, "0444")
+    cache_check(s, repair = TRUE, hash = TRUE)
+    expect_identical(nrow(cache_check(s, hash = TRUE)), 0L, label = damage)
+    expect_false(any(cache_has(s, c("k", "k2"))))
+  }
+})
+
+test_that("a writable blob is reported and made read-only again (#125)", {
+  skip_on_os("windows")
+  s <- local_cache(inline_max = 100)
+  cache_set(s, "k", runif(100))
+  path <- cache_path(s, "k")
+  Sys.chmod(path, "0666")
+  found <- cache_check(s)
+  expect_identical(found$kind, "blob_mode")
+  cache_check(s, repair = TRUE)
+  expect_identical(format(file.info(path)$mode), "444")
+  expect_identical(nrow(cache_check(s)), 0L)
+})
+
+test_that("an inline value of the wrong length is a finding that repair removes (#113)", {
+  s <- local_cache()
+  cache_set(s, "r", as.raw(1:5))
+  e <- s$engine
+  engine_write(e, function(txn) engine_put(txn, engine_db(e, "values"), "r", as.raw(1)))
+  expect_identical(cache_check(s)$kind, "value_corrupt")
+  cache_check(s, repair = TRUE)
+  expect_false(cache_has(s, "r"))
   expect_identical(nrow(cache_check(s)), 0L)
 })

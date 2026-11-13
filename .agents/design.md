@@ -1344,13 +1344,16 @@ Because indexes are derived, most damage is repairable:
 | `index_missing` — meta record missing an index row | insert it |
 | `value_orphan` — inline value with no meta record | delete it |
 | `value_missing` — inline record with no value | delete the record |
+| `value_corrupt` — inline value not the length its record holds | delete the record and the value |
+| `record_corrupt` — meta record that does not decode to a record; reads raise `dazcache_engine_error` | delete it and its value; the indexes are rebuilt |
 | `blob_missing` — record whose file is absent | delete the record; count it |
-| `blob_orphan` — file with no referring record | delete the file |
-| `refcount_drift` — `blobs.refs` disagrees with the records | recompute from `meta` |
-| `counter_drift` — `counters` disagrees with a full scan | recompute |
+| `blob_orphan` — file with no referring record, or one not at the path its name implies | delete the file |
+| `blob_mode` — a referenced file that is writable, as a crash during a replace leaves it | make it 0444 |
+| `refcount_drift` — `blobs.refs` disagrees with the records, or the row is missing or unreadable for a file that is right | recompute from `meta` |
+| `counter_drift` — `counters` disagrees with a full scan, or is unreadable | recompute; `hits` and `misses` restart at 0 when unreadable |
 | `tmp_stale` — file in `tmp/` | delete when its PID is known dead; where liveness cannot be asked (Windows), when it is over an hour old |
 | `reader_stale` — reader slot of a dead process | `mdbx_env_reader_check()` |
-| `blob_corrupt` — the file's size differs from its records', or with `hash = TRUE` its bytes do not hash to its name | delete the records and the file |
+| `blob_corrupt` — the file's size differs from its records', or with `hash = TRUE` its bytes do not hash to its name; asked before `refcount_drift`, so a repair never adopts a damaged file | delete the records and the file |
 
 PID liveness is legitimate because the deployment is one host (§0). `hash = TRUE` reads
 every blob and is the only expensive check; `cache_get()` does not verify hashes on the
