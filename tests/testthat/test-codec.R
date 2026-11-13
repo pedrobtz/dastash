@@ -24,6 +24,27 @@ test_that("codec_raw() stores exactly the bytes", {
   expect_identical(readBin(path, "raw", 100), charToRaw(enc2utf8("café")))
 })
 
+test_that("codec_raw() stores unmarked UTF-8 text as itself in a locale that cannot hold it", {
+  utf8 <- "été"
+  unmarked <- rawToChar(charToRaw(utf8))
+  invalid <- "caf\xe9"
+  withr::local_locale(c(LC_CTYPE = "C"))
+  skip_if(l10n_info()$`UTF-8`, "the C locale is UTF-8 here")
+  path <- withr::local_tempfile()
+  codec_encode(codec_raw(), unmarked, path)
+  expect_identical(readBin(path, "raw", 100), charToRaw(utf8))
+  expect_identical(round_trip(codec_raw(), unmarked), utf8)
+  # Through the cache, codec_auto() picks codec_raw() for it.
+  s <- local_cache()
+  cache_set(s, "k", unmarked)
+  expect_identical(cache_get(s, "k"), utf8)
+  # Bytes that are neither native text nor UTF-8 are not text: codec_raw()
+  # refuses them and codec_auto() keeps them exactly with codec_rds().
+  expect_error(round_trip(codec_raw(), invalid), class = "dazcache_type_error")
+  cache_set(s, "bad", invalid)
+  expect_identical(charToRaw(cache_get(s, "bad")), charToRaw(invalid))
+})
+
 test_that("codec_raw() refuses what it would not bring back", {
   for (v in list(c("a", "b"), NA_character_, c(a = "x"), structure(as.raw(1), class = "x"), 1L)) {
     expect_error(round_trip(codec_raw(), v), class = "dazcache_type_error")

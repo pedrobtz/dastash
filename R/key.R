@@ -159,7 +159,7 @@ starts_with_opener <- function(text) {
   grepl("^([~#{(]|D\\{|[sifldrtue][:[{])", text, perl = TRUE)
 }
 
-# enc2utf8(), refusing strings that are not valid UTF-8 afterwards: such a
+# as_utf8(), refusing strings that are not valid UTF-8 afterwards: such a
 # string has no well-defined bytes to be keyed by.
 utf8_text <- function(x, call = rlang::caller_env()) {
   if (any(Encoding(x) == "bytes", na.rm = TRUE)) {
@@ -168,23 +168,32 @@ utf8_text <- function(x, call = rlang::caller_env()) {
       call = call
     )
   }
-  if (!l10n_info()$`UTF-8`) {
-    native <- !is.na(x) & Encoding(x) == "unknown"
-    x[native] <- native_to_utf8(x[native])
-  }
-  x <- enc2utf8(x)
+  x <- as_utf8(x)
   if (!all(validUTF8(x[!is.na(x)]))) {
     abort_key_invalid("A key string is not valid UTF-8.", call = call)
   }
   x
 }
 
+# A character vector as UTF-8, for keys and for text values alike. Strings
+# that are not "bytes"-encoded go through enc2utf8(), except unmarked ones in a
+# session whose native encoding is not UTF-8, which go through
+# native_to_utf8(). Bytes that are neither native text nor UTF-8 come back as
+# they were, for the caller to check with validUTF8() and refuse.
+as_utf8 <- function(x) {
+  if (!l10n_info()$`UTF-8`) {
+    native <- !is.na(x) & Encoding(x) == "unknown"
+    x[native] <- native_to_utf8(x[native])
+  }
+  enc2utf8(x)
+}
+
 # Unmarked strings in a session whose native encoding is not UTF-8: converted
 # from that encoding, and where they are not text in it (the UTF-8 bytes of a
 # script parsed in a C locale, say), read as UTF-8. enc2utf8() would instead
-# write R's display of the bytes, "<c3><a9>", into the key: a different key in
-# every such locale, and the same key as the literal text "<c3><a9>". Bytes
-# that are neither are left for utf8_text() to refuse.
+# write R's display of the bytes, "<c3><a9>", in their place: in a key, a
+# different key in every such locale and the same key as the literal text
+# "<c3><a9>"; in a stored value, different text.
 native_to_utf8 <- function(x) {
   out <- iconv(x, from = "", to = "UTF-8")
   failed <- is.na(out)
