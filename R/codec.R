@@ -238,7 +238,7 @@ codec_raw <- function() {
         writeBin(as.vector(value), path)
         return(list(text = FALSE))
       }
-      writeBin(charToRaw(enc2utf8(value)), path)
+      writeBin(charToRaw(as_utf8(value)), path)
       list(text = TRUE)
     },
     decode = function(path, meta) {
@@ -249,7 +249,7 @@ codec_raw <- function() {
       if (is.raw(value)) {
         return(list(bytes = as.vector(value), meta = list(text = FALSE)))
       }
-      list(bytes = charToRaw(enc2utf8(value)), meta = list(text = TRUE))
+      list(bytes = charToRaw(as_utf8(value)), meta = list(text = TRUE))
     },
     decode_bytes = raw_decode
   )
