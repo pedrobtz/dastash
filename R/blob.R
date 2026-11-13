@@ -60,6 +60,14 @@ store_ref_blob <- function(s, txn, blob) {
     row <- record_decode(row)
     row$refs <- row$refs + 1
     engine_put(txn, db, blob$name, record_encode(row))
+    # A row says the file was published once, not that it is still right: a
+    # file gone or the wrong size is replaced by the staged bytes, which were
+    # just hashed to this name.
+    size <- file.size(blob_path(s, blob$name))
+    if (is.na(size) || size != blob$size) {
+      blob_publish(s, blob)
+      return(invisible(TRUE))
+    }
     return(invisible(FALSE))
   }
   blob_publish(s, blob)

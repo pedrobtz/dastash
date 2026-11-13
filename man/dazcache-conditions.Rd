@@ -12,7 +12,7 @@ it again" apart from "the store is broken":\tabular{ll}{
    \code{dazcache_not_found} \tab A read of an absent or expired key without \code{default}; \code{cache()} with \code{create = FALSE} on a missing directory \cr
    \code{dazcache_type_error} \tab A counter operation on a non-counter or past 2^53; a path or lazy read of an entry of the wrong shape; a value a codec cannot store; an \code{expire} that is \code{NA} or \code{NaN} \cr
    \code{dazcache_codec_error} \tab Encoding or decoding failed; a codec's package is not installed; a record names a codec the handle does not know \cr
-   \code{dazcache_blob_corrupt} \tab A read finds the file behind a record missing, or not the size its record holds \cr
+   \code{dazcache_blob_corrupt} \tab A read finds the bytes behind a record, a file or an inline value, missing or not the size its record holds \cr
    \code{dazcache_busy} \tab The write lock was not acquired within \code{timeout} \cr
    \code{dazcache_store_full} \tab The database reached its \code{map_size} \cr
    \code{dazcache_readonly} \tab A write on a read-only handle \cr
