@@ -134,7 +134,9 @@ group entries for <code><a href="cache_cull.html">cache_evict()</a></code> and <
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
     <p><code>cache_add()</code> returns <code>TRUE</code> or <code>FALSE</code>. <code>cache_pop()</code> returns the
-value. <code>cache_touch()</code> returns the cache, invisibly. <code>cache_incr()</code> and
+value; for an entry written with <code><a href="codec.html">codec_file()</a></code>, whose file leaves the
+cache with it, the path of a copy in the session's temporary directory,
+which the caller owns. <code>cache_touch()</code> returns the cache, invisibly. <code>cache_incr()</code> and
 <code>cache_decr()</code> return the new count, a double.</p>
     </div>
 

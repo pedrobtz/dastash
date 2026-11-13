@@ -85,8 +85,12 @@ cache_touch(cache, key, expire)
 ## Value
 
 `cache_add()` returns `TRUE` or `FALSE`. `cache_pop()` returns the
-value. `cache_touch()` returns the cache, invisibly. `cache_incr()` and
-`cache_decr()` return the new count, a double.
+value; for an entry written with
+[`codec_file()`](https://pedrobtz.github.io/dazcache/reference/codec.md),
+whose file leaves the cache with it, the path of a copy in the session's
+temporary directory, which the caller owns. `cache_touch()` returns the
+cache, invisibly. `cache_incr()` and `cache_decr()` return the new
+count, a double.
 
 ## Examples
 
