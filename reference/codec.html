@@ -89,7 +89,16 @@ it to <code><a href="cache.html">cache()</a></code> in <code>codecs</code>.</p><
 
     <div class="section level2">
     <h2 id="ref-usage">Usage<a class="anchor" aria-label="anchor" href="#ref-usage"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">codec</span><span class="op">(</span><span class="va">name</span>, <span class="va">encode</span>, <span class="va">decode</span>, <span class="va">...</span>, ext <span class="op">=</span> <span class="cn">NULL</span>, version <span class="op">=</span> <span class="fl">1L</span>, supports <span class="op">=</span> <span class="cn">NULL</span><span class="op">)</span></span>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">codec</span><span class="op">(</span></span>
+<span>  <span class="va">name</span>,</span>
+<span>  <span class="va">encode</span>,</span>
+<span>  <span class="va">decode</span>,</span>
+<span>  <span class="va">...</span>,</span>
+<span>  ext <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  version <span class="op">=</span> <span class="fl">1L</span>,</span>
+<span>  supports <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  always_file <span class="op">=</span> <span class="cn">FALSE</span></span>
+<span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu">codec_auto</span><span class="op">(</span><span class="op">)</span></span>
 <span></span>
@@ -113,7 +122,9 @@ a name it already knows: give a changed codec a new name or <code>version</code>
 <dt id="arg-encode">encode<a class="anchor" aria-label="anchor" href="#arg-encode"></a></dt>
 <dd><p><code>function(value, path)</code>: write <code>value</code> to the file <code>path</code>. It
 may return a small named list, stored with the entry and passed back to
-<code>decode()</code>; anything else it returns is ignored.</p></dd>
+<code>decode()</code>; anything else it returns is ignored. An element named exactly
+<code>ext</code> sets this value's file extension in place of the codec's <code>ext</code>, as
+<code>codec_file()</code> does to keep a file's own extension.</p></dd>
 
 
 <dt id="arg-decode">decode<a class="anchor" aria-label="anchor" href="#arg-decode"></a></dt>
@@ -137,6 +148,13 @@ written by a newer version than the handle knows is refused.</p></dd>
 <dt id="arg-supports">supports<a class="anchor" aria-label="anchor" href="#arg-supports"></a></dt>
 <dd><p><code>function(value)</code> returning <code>TRUE</code> for values the codec
 round-trips without loss, or <code>NULL</code> for every value.</p></dd>
+
+
+<dt id="arg-always-file">always_file<a class="anchor" aria-label="anchor" href="#arg-always-file"></a></dt>
+<dd><p><code>TRUE</code> to store every value as a file, however small.
+Needed when <code>decode()</code> returns <code>path</code> itself, or anything that reads it
+later: a small value is otherwise kept in the database and decoded from a
+temporary file that is gone when the value is returned.</p></dd>
 
 
 <dt id="arg-compress">compress<a class="anchor" aria-label="anchor" href="#arg-compress"></a></dt>

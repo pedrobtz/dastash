@@ -32,7 +32,16 @@ default never makes stored entries unreadable.
 ## Usage
 
 ``` r
-codec(name, encode, decode, ..., ext = NULL, version = 1L, supports = NULL)
+codec(
+  name,
+  encode,
+  decode,
+  ...,
+  ext = NULL,
+  version = 1L,
+  supports = NULL,
+  always_file = FALSE
+)
 
 codec_auto()
 
@@ -55,7 +64,9 @@ codec_file()
 
   `function(value, path)`: write `value` to the file `path`. It may
   return a small named list, stored with the entry and passed back to
-  `decode()`; anything else it returns is ignored.
+  `decode()`; anything else it returns is ignored. An element named
+  exactly `ext` sets this value's file extension in place of the codec's
+  `ext`, as `codec_file()` does to keep a file's own extension.
 
 - decode:
 
@@ -79,6 +90,13 @@ codec_file()
 
   `function(value)` returning `TRUE` for values the codec round-trips
   without loss, or `NULL` for every value.
+
+- always_file:
+
+  `TRUE` to store every value as a file, however small. Needed when
+  `decode()` returns `path` itself, or anything that reads it later: a
+  small value is otherwise kept in the database and decoded from a
+  temporary file that is gone when the value is returned.
 
 - compress:
 
