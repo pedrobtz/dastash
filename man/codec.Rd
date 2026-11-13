@@ -19,7 +19,9 @@ codec_raw()
 codec_file()
 }
 \arguments{
-\item{name}{A name for the codec, not one of the built-in names.}
+\item{name}{A name for the codec, not one of the built-in names. An entry
+records only this name, so a cache refuses a second, different codec under
+a name it already knows: give a changed codec a new name or \code{version}.}
 
 \item{encode}{\verb{function(value, path)}: write \code{value} to the file \code{path}. It
 may return a small named list, stored with the entry and passed back to
@@ -39,7 +41,8 @@ written by a newer version than the handle knows is refused.}
 round-trips without loss, or \code{NULL} for every value.}
 
 \item{compress}{Passed to \code{\link[=saveRDS]{saveRDS()}}. Off by default: compression costs more
-time than a local disk saves.}
+time than a local disk saves. A cache created with \code{compress = TRUE} keeps
+it when reopened.}
 }
 \value{
 A codec: a list with class \code{dazcache_codec}.

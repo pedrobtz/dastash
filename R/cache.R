@@ -114,7 +114,8 @@ cache <- function(
     size_limit = !missing(size_limit),
     eviction = !missing(eviction),
     inline_max = !missing(inline_max),
-    codec = !missing(codec)
+    codec = !missing(codec),
+    codec_args = !missing(codec)
   )
   call <- rlang::current_env()
   check_string(dir, "dir")
@@ -183,7 +184,8 @@ cache <- function(
     size_limit = as.double(size_limit),
     eviction = eviction,
     inline_max = as.double(inline_max),
-    codec = codec$name
+    codec = codec$name,
+    codec_args = codec$args
   )
   # The stored configuration, not this call's defaults, says which indexes
   # exist: reopening a store without repeating its settings creates nothing.
@@ -196,7 +198,7 @@ cache <- function(
   )
   # A stored default that is a user codec this handle was not given is NULL:
   # writing with it is then an error, reading is not.
-  s$codec <- if (explicit$codec) codec else codec_known(s$config$codec, codecs)
+  s$codec <- if (explicit$codec) codec else codec_known(s$config$codec, codecs, s$config$codec_args)
   codec_register(s, s$codec)
   opened <- TRUE
   s

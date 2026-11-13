@@ -2,7 +2,13 @@
 # a verb runs inside its transaction (design.md §7, §12).
 
 # Settings every process on a store must agree on (design.md §12).
-store_level_settings <- c("size_limit", "eviction", "inline_max", "codec")
+store_level_settings <- c(
+  "size_limit",
+  "eviction",
+  "inline_max",
+  "codec",
+  "codec_args"
+)
 
 # The named databases this configuration uses (design.md §7.2): one eviction
 # index, the one the policy walks, and none for `eviction = "none"`.
@@ -129,12 +135,20 @@ store_check <- function(found, config, explicit, dir, call) {
     name <- store_level_settings[differ][[1L]]
     abort_config_conflict(
       c(
-        sprintf(
-          "`%s = %s` disagrees with this cache's %s.",
-          name,
-          format_setting(config[[name]]),
-          format_setting(persisted[[name]])
-        ),
+        if (name == "codec_args") {
+          sprintf(
+            "`codec` has %s, and this cache's codec has %s.",
+            format_setting(config[[name]]),
+            format_setting(persisted[[name]])
+          )
+        } else {
+          sprintf(
+            "`%s = %s` disagrees with this cache's %s.",
+            name,
+            format_setting(config[[name]]),
+            format_setting(persisted[[name]])
+          )
+        },
         i = "Store-level settings are fixed when a cache is created; leave the argument out to use the stored value."
       ),
       dir = dir,
@@ -146,6 +160,12 @@ store_check <- function(found, config, explicit, dir, call) {
 }
 
 format_setting <- function(x) {
+  if (is.null(x)) {
+    return("no parameters")
+  }
+  if (is.list(x)) {
+    return(paste0("parameters ", paste(deparse(x), collapse = "")))
+  }
   if (is.character(x)) encodeString(x, quote = "\"") else format(x)
 }
 
