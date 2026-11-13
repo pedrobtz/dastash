@@ -11,8 +11,33 @@ record_encode <- function(record) {
   serialize(record, NULL, version = 3L)
 }
 
-record_decode <- function(bytes) {
-  unserialize(bytes)
+# A record is a named list; anything else, or bytes unserialize() refuses, is
+# damage, raised in the taxonomy with the way to repair it.
+record_decode <- function(bytes, what = "A record", call = NULL) {
+  record <- record_try_decode(bytes)
+  if (is.null(record)) {
+    abort_engine_error(
+      c(
+        sprintf("%s in the cache is damaged and cannot be read.", what),
+        i = "`cache_check(repair = TRUE)` removes it."
+      ),
+      call = call
+    )
+  }
+  record
+}
+
+# The record in `bytes`, or NULL when they do not hold one.
+record_try_decode <- function(bytes) {
+  record <- tryCatch(
+    unserialize(bytes),
+    error = function(cnd) NULL,
+    warning = function(cnd) NULL
+  )
+  if (!is.list(record) || is.object(record) || is.null(names(record))) {
+    return(NULL)
+  }
+  record
 }
 
 record_format <- function() {

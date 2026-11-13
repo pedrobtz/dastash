@@ -18,9 +18,10 @@ cache_check(cache, ..., repair = FALSE, hash = FALSE)
 \value{
 A data frame with columns \code{kind}, \code{key}, \code{path}, \code{detail} and
 \code{repaired}, one row per finding. The kinds are \code{index_orphan},
-\code{index_missing}, \code{value_orphan}, \code{value_missing}, \code{blob_missing},
-\code{blob_orphan}, \code{blob_corrupt}, \code{refcount_drift}, \code{counter_drift},
-\code{tmp_stale} and \code{reader_stale}.
+\code{index_missing}, \code{record_corrupt}, \code{value_orphan}, \code{value_missing},
+\code{value_corrupt}, \code{blob_missing}, \code{blob_orphan}, \code{blob_corrupt},
+\code{blob_mode}, \code{refcount_drift}, \code{counter_drift}, \code{tmp_stale} and
+\code{reader_stale}.
 }
 \description{
 Compares every index, reference count and counter with what the entries

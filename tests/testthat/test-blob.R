@@ -373,3 +373,45 @@ test_that("seven readers racing a writer through eviction never see a dangling f
   expect_identical(store_violations(s), character())
   expect_identical(nrow(cache_check(s, hash = TRUE)), 0L)
 })
+
+test_that("a missing or wrong-length inline value is damage, never a value (#113)", {
+  s <- local_cache()
+  e <- s$engine
+  values <- list(r = as.raw(1:5), s = "hello", d = list(1, "a"))
+  for (k in names(values)) {
+    cache_set(s, paste0(k, "_gone"), values[[k]])
+    cache_set(s, paste0(k, "_short"), values[[k]])
+  }
+  engine_write(e, function(txn) {
+    for (k in names(values)) {
+      engine_del(txn, engine_db(e, "values"), paste0(k, "_gone"))
+      engine_put(txn, engine_db(e, "values"), paste0(k, "_short"), as.raw(1))
+    }
+  })
+  for (k in names(values)) {
+    for (damage in c("_gone", "_short")) {
+      key <- paste0(k, damage)
+      expect_error(cache_get(s, key, default = "D"), class = "dazcache_blob_corrupt")
+      expect_error(cache_mget(s, key), class = "dazcache_blob_corrupt")
+      expect_error(cache_pop(s, key, default = "D"), class = "dazcache_blob_corrupt")
+      expect_true(cache_has(s, key))
+    }
+  }
+})
+
+test_that("writing the same bytes replaces a damaged blob (#114)", {
+  s <- local_cache(inline_max = 100)
+  x <- runif(100)
+  cache_set(s, "a", x)
+  path <- cache_path(s, "a")
+  Sys.chmod(path, "0644")
+  writeBin(as.raw(1), path)
+  expect_error(cache_get(s, "a"), class = "dazcache_blob_corrupt")
+  cache_set(s, "new", x)
+  expect_identical(cache_get(s, "new"), x)
+  expect_identical(cache_get(s, "a"), x)
+  unlink(path)
+  cache_set(s, "third", x)
+  expect_identical(cache_get(s, "a"), x)
+  expect_identical(nrow(cache_check(s, hash = TRUE)), 0L)
+})
