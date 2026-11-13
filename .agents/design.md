@@ -1,11 +1,11 @@
-# dastash — a disk cache for R
+# dazcache — a disk cache for R
 
 **Status:** 0.1.0 implemented (`.agents/roadmap.md` stages S0–S10), the subset of §3 that
 release covers, writing the final on-disk format. Revised 2026-09-28 for `mdbx` 0.1.1 on
 CRAN; the 0.1.0 soundness review (issue #15) is folded in.
 **Engine:** [`mdbx`](https://github.com/pedrobtz/mdbx) (≥ 0.1.1), first-party R bindings to
 libmdbx, on CRAN. §15 records what it provides, verified by running 0.1.1, and what
-dastash asks of its next release.
+dazcache asks of its next release.
 **Model:** Python's [`diskcache`](https://github.com/grantjenks/python-diskcache) for the
 cache, [`polars-diskcache`](https://github.com/lmmx/polars-diskcache) for file-backed
 frames, and the R ecosystem's own conventions for the API.
@@ -14,7 +14,7 @@ frames, and the R ecosystem's own conventions for the API.
 key -> (record in mdbx) -> value inline, or a content-addressed file on disk
 ```
 
-`dastash` is a persistent, cross-process disk cache for R. A key maps to a value that
+`dazcache` is a persistent, cross-process disk cache for R. A key maps to a value that
 outlives the session, is shared by every process on the machine, expires on a clock,
 carries tags for bulk invalidation, and is culled when the directory grows past a limit.
 Small values live inside one transactional key-value file. Large ones become
@@ -22,9 +22,9 @@ content-addressed files, which is how a data frame becomes a Parquet file that `
 `duckdb` and anything else can read without R materialising it — and how a *lazy* frame
 stays lazy across the cache.
 
-The API is functional. The stash is the first argument of every verb, the verbs pipe,
+The API is functional. The cache is the first argument of every verb, the verbs pipe,
 tabular answers are data frames, configuration is ordinary R values, and the whole
-surface is one `stash_` prefix away from tab completion.
+surface is one `cache_` prefix away from tab completion.
 
 ---
 
@@ -54,48 +54,48 @@ are legitimate (§11.3).
 # 1. What this is
 
 ```r
-library(dastash)
+library(dazcache)
 
-s <- stash("~/.cache/prices")
+s <- cache("~/.cache/prices")
 
 # key -> value, with expiry and tags ------------------------------------------
-s |> stash_set("XSWX/2026-08-29", quotes, expire = 3600, tags = "XSWX")
-stash_get(s, "XSWX/2026-08-29")
-stash_get(s, "missing", default = NULL)
-stash_has(s, c("XSWX/2026-08-29", "missing"))       # TRUE FALSE
+s |> cache_set("XSWX/2026-08-29", quotes, expire = 3600, tags = "XSWX")
+cache_get(s, "XSWX/2026-08-29")
+cache_get(s, "missing", default = NULL)
+cache_has(s, c("XSWX/2026-08-29", "missing"))       # TRUE FALSE
 
 # a function, cached across sessions and processes ---------------------------
-fetch_prices <- stash_memoise(fetch_prices, s, expire = 86400, tags = "prices")
+fetch_prices <- cache_memoise(fetch_prices, s, expire = 86400, tags = "prices")
 fetch_prices("XSWX", as.Date("2026-08-29"))         # computes, stores
 fetch_prices("XSWX", as.Date("2026-08-29"))         # reads back
-stash_forget(fetch_prices, "XSWX", as.Date("2026-08-29"))
+cache_forget(fetch_prices, "XSWX", as.Date("2026-08-29"))
 
 # frames become Parquet files other tools can read ---------------------------
-load_trades <- stash_memoise(load_trades, s, codec = codec_parquet())
+load_trades <- cache_memoise(load_trades, s, codec = codec_parquet())
 load_trades("XSWX")                                 # a data frame, from Parquet
-k <- stash_memoise_key(load_trades, "XSWX")
-stash_path(s, k)                                    # ".../blobs/9f/9fbc….parquet"
-stash_lazy(s, k) |>                                 # an arrow Dataset, nothing read yet
+k <- cache_memoise_key(load_trades, "XSWX")
+cache_path(s, k)                                    # ".../blobs/9f/9fbc….parquet"
+cache_lazy(s, k) |>                                 # an arrow Dataset, nothing read yet
   dplyr::filter(px > 100) |>
   dplyr::collect()
 
 # a lazy frame in, a lazy frame out ------------------------------------------
-scan_trades <- stash_memoise(
+scan_trades <- cache_memoise(
   function(dir) arrow::open_dataset(dir) |> dplyr::filter(px > 0),
   s, name = "scan_trades"
 )
 scan_trades("raw/")                                 # an arrow query over the cached file
 
 # browse it ------------------------------------------------------------------
-stash_tree(s)
+cache_tree(s)
 #> ~/.cache/prices/tree/load_trades/v1/x=XSWX/value.parquet -> ../../../../blobs/9f/9fbc….parquet
 
 # the catalogue is a data frame; maintenance pipes ---------------------------
-stash_entries(s, tag = "XSWX")
-s |> stash_expire() |> stash_cull()
-stash_evict(s, tag = "XSWX")
-stash_volume(s)
-stash_stats(s)
+cache_entries(s, tag = "XSWX")
+s |> cache_expire() |> cache_cull()
+cache_evict(s, tag = "XSWX")
+cache_volume(s)
+cache_stats(s)
 ```
 
 ## 1.1 The two models
@@ -123,10 +123,10 @@ memoisation; and the `cachem` interface for everything that already speaks it.
 
 | Package | What it is | Why it is not this |
 |---|---|---|
-| `cachem` | The cache interface `memoise` and Shiny use; `cache_disk()` is one RDS per key with an in-memory index | No transactions, no expiry index, no tags, pruning walks the directory, and its own documentation says it is not for multiple processes. **dastash implements its interface** (§3.10) so its users need not know |
+| `cachem` | The cache interface `memoise` and Shiny use; `cache_disk()` is one RDS per key with an in-memory index | No transactions, no expiry index, no tags, pruning walks the directory, and its own documentation says it is not for multiple processes. **dazcache implements its interface** (§3.10) so its users need not know |
 | `storr` | Content-addressed key–value store with pluggable drivers | A store, honestly: no expiry, size limit, eviction, tags or statistics. It answers "where do I put this"; a cache answers "how do I keep this under a gigabyte with eight processes doing it at once" |
 | `pins` | Versioned boards over local and cloud storage with metadata | Publishing and sharing, not caching: no expiry or eviction, per-pin directories with their own metadata files, no cross-process transactional guarantees |
-| `memoise` | In-memory or `cachem`-backed function memoisation | Keys are `rlang::hash()` of the arguments, which is not stable across R or rlang versions; fine for a session, wrong for a cache that outlives one. `stash_memoise()` uses the specified encoding of §5 |
+| `memoise` | In-memory or `cachem`-backed function memoisation | Keys are `rlang::hash()` of the arguments, which is not stable across R or rlang versions; fine for a session, wrong for a cache that outlives one. `cache_memoise()` uses the specified encoding of §5 |
 | `targets` | A dependency graph of computations keyed by code and inputs | Identity derived from implementation; a build system, not a cache |
 | `thor` | LMDB bindings | A binding, not a cache; libmdbx is LMDB's maintained descendant |
 
@@ -136,7 +136,7 @@ memoisation; and the `cachem` interface for everything that already speaks it.
 planner. It needs **sorted keys, bounded ordered scans, and atomic multi-step writes**.
 libmdbx provides exactly those, and the correspondence is direct:
 
-| `diskcache` on SQLite | `dastash` on mdbx |
+| `diskcache` on SQLite | `dazcache` on mdbx |
 |---|---|
 | `Cache(key) -> value` | named database `values` |
 | the metadata columns | named database `meta`, one record per key |
@@ -159,23 +159,23 @@ one place a mistake is silent.
 
 Ten rules. Every exported function follows them; the reference in §3 relies on them.
 
-1. **`stash_` prefix, snake_case, verb last.** `stash_get`, `stash_mget`, `stash_entries`.
+1. **`cache_` prefix, snake_case, verb last.** `cache_get`, `cache_mget`, `cache_entries`.
    One family, greppable, no collisions with base R.
-2. **The stash is the first argument, always, never optional.** That is what makes `|>`
-   work. There is no ambient default stash: `stash_set(x, "k")` must be readable without
-   knowing whether `x` is a stash or a key. `local_stash()` covers the throwaway case by
-   *returning* a stash rather than installing one.
+2. **The cache is the first argument, always, never optional.** That is what makes `|>`
+   work. There is no ambient default cache: `cache_set(x, "k")` must be readable without
+   knowing whether `x` is a cache or a key. `local_cache()` covers the throwaway case by
+   *returning* a cache rather than installing one.
 3. **One function, one return type.** A return type never depends on an argument's value.
    `diskcache`'s `get(key, read=, expire_time=, tag=)` breaks this; here it is four
-   functions: `stash_get()`, `stash_path()`, `stash_lazy()`, `stash_info()`.
-4. **Questions return answers; effects return the stash, invisibly.** `stash_has()`
-   returns a logical. `stash_set()` returns the stash so it chains. Four effects return
-   their outcome because the outcome is the point: `stash_add()` a logical, `stash_pop()`
-   the value, `stash_incr()` and `stash_decr()` the new count.
-5. **Scalar functions are scalar; plural functions are named.** `stash_get()` takes one key.
-   `stash_mget()` — base R's name for "get several into a list" — takes many. Predicates
+   functions: `cache_get()`, `cache_path()`, `cache_lazy()`, `cache_info()`.
+4. **Questions return answers; effects return the cache, invisibly.** `cache_has()`
+   returns a logical. `cache_set()` returns the cache so it chains. Four effects return
+   their outcome because the outcome is the point: `cache_add()` a logical, `cache_pop()`
+   the value, `cache_incr()` and `cache_decr()` the new count.
+5. **Scalar functions are scalar; plural functions are named.** `cache_get()` takes one key.
+   `cache_mget()` — base R's name for "get several into a list" — takes many. Predicates
    and deletions are vectorised because a vector is the only sensible answer:
-   `stash_has(s, keys)`, `stash_delete(s, keys)`.
+   `cache_has(s, keys)`, `cache_delete(s, keys)`.
 6. **Tabular answers are plain data frames.** No row names, no factors, no tibble
    dependency, the same class whatever is installed. Pipe into `tibble::as_tibble()` or
    `dplyr` if you want them.
@@ -184,7 +184,7 @@ Ten rules. Every exported function follows them; the reference in §3 relies on 
    strings matched with `match.arg()`, because they are enumerations. `expire =` takes a
    number of seconds, a `difftime`, or a `POSIXct`, because R already has those.
 8. **Pure things are pure.** Keys, canonicalisation and codecs touch nothing.
-   `stash_key()` is testable without a directory.
+   `cache_key()` is testable without a directory.
 9. **Errors are classed conditions** (§13), and every function that can miss offers a
    `default` so the common case needs no handler.
 10. **`...` is checked.** Every function with `...` before its options calls
@@ -200,7 +200,7 @@ Signatures are normative. Arguments after `...` must be named.
 ## 3.1 Opening and closing
 
 ```r
-stash(
+cache(
   dir,
   ...,
   size_limit    = 1024^3,
@@ -217,45 +217,45 @@ stash(
   timeout       = 60,
   readonly      = FALSE,
   create        = TRUE
-)                                    # -> <dastash_stash>
+)                                    # -> <dazcache_cache>
 
-stash_close(stash)                   # -> stash, invisibly. Idempotent
-stash_is_open(stash)                 # -> logical(1)
-stash_dir(stash)                     # -> character(1), the normalised root
+cache_close(cache)                   # -> cache, invisibly. Idempotent
+cache_is_open(cache)                 # -> logical(1)
+cache_dir(cache)                     # -> character(1), the normalised root
 
-local_stash(dir = NULL, ..., .local_envir = parent.frame())
-with_stash(dir, fn, ...)
+local_cache(dir = NULL, ..., .local_envir = parent.frame())
+with_cache(dir, fn, ...)
 ```
 
-`stash()` opens a directory or creates it. §12 says which settings are persisted in the
+`cache()` opens a directory or creates it. §12 says which settings are persisted in the
 store and which belong to the handle, and what happens when two processes disagree.
 `codecs` registers user-defined codecs (§6.2) for this handle. `create = FALSE` refuses to
-create and raises `dastash_not_found` on a missing directory.
+create and raises `dazcache_not_found` on a missing directory.
 
 **One environment per process and directory.** `mdbx` refuses a second `mdbx_env_open()`
 on a path this process already holds, under any spelling — relative, `./`, or through a
-symlinked directory (§15) — and an environment runs one transaction at a time. `stash()`
-therefore keeps a process-local registry keyed by `normalizePath(dir)`: a second `stash()`
+symlinked directory (§15) — and an environment runs one transaction at a time. `cache()`
+therefore keeps a process-local registry keyed by `normalizePath(dir)`: a second `cache()`
 on the same directory returns a new handle on the same environment, and the environment
 closes when the last handle closes. The registry exists to *share* the environment; `mdbx`
 already detects the conflict. The registry entry also owns the environment's current
 transaction (§10), so every handle on one directory sees the same one.
 
-Handles record the PID that opened them and raise `dastash_forked` when used from a
+Handles record the PID that opened them and raise `dazcache_forked` when used from a
 forked child (§10).
 
-`local_stash()` is the `withr` idiom: it creates a stash, registers `stash_close()` on the
+`local_cache()` is the `withr` idiom: it creates a cache, registers `cache_close()` on the
 calling frame, and returns it; with no `dir` it uses a new temporary directory and deletes
-it afterwards. `with_stash()` opens a stash, passes it to `fn`, and closes it — a
-function rather than an expression, because there is no ambient stash for an expression
+it afterwards. `with_cache()` opens a cache, passes it to `fn`, and closes it — a
+function rather than an expression, because there is no ambient cache for an expression
 to find (§2, rule 2).
 
-The handle is an **environment with S3 class `dastash_stash`**. It has identity and
+The handle is an **environment with S3 class `dazcache_cache`**. It has identity and
 mutable state and nothing else; no R6, no S7 (D2).
 
 ```r
 print(s)
-#> <dastash_stash> ~/.cache/prices
+#> <dazcache_cache> ~/.cache/prices
 #>   entries 1,204 · volume 412 MB of 1 GB · eviction least-recently-stored
 #>   durability safe · open
 ```
@@ -263,33 +263,33 @@ print(s)
 ## 3.2 Keys
 
 ```r
-stash_key(...)                       # named or unnamed values -> <dastash_key>
-stash_key_chr(key)                   # -> character(1): the canonical text
-stash_key_text(text)                 # a listed text -> <dastash_key>
-stash_key_hash(key)                  # -> character(1): sha256 hex of the canonical text
+cache_key(...)                       # named or unnamed values -> <dazcache_key>
+cache_key_chr(key)                   # -> character(1): the canonical text
+cache_key_text(text)                 # a listed text -> <dazcache_key>
+cache_key_hash(key)                  # -> character(1): sha256 hex of the canonical text
 ```
 
-Every function that takes a `key` accepts a **string**, a **`dastash_key`**, or **any
+Every function that takes a `key` accepts a **string**, a **`dazcache_key`**, or **any
 object the canonical encoding covers** (§5), which is converted on the way in. A string
 is used as-is. So these are the same entry:
 
 ```r
-stash_get(s, "XSWX/2026-08-29")
-stash_get(s, stash_key("XSWX/2026-08-29"))
+cache_get(s, "XSWX/2026-08-29")
+cache_get(s, cache_key("XSWX/2026-08-29"))
 
-k <- stash_key(exchange = "XSWX", date = as.Date("2026-08-29"))
+k <- cache_key(exchange = "XSWX", date = as.Date("2026-08-29"))
 k
-#> <dastash_key> {date=d:2026-08-29,exchange=s:XSWX}
-identical(k, stash_key(date = as.Date("2026-08-29"), exchange = "XSWX"))
+#> <dazcache_key> {date=d:2026-08-29,exchange=s:XSWX}
+identical(k, cache_key(date = as.Date("2026-08-29"), exchange = "XSWX"))
 #> TRUE                                            # field order is not identity
 ```
 
 Keys are values: comparable, printable, storable in a variable, computable without a
-store. `stash_keys()` returns them as the character vector of their canonical text.
+store. `cache_keys()` returns them as the character vector of their canonical text.
 
 A structured key's text is not itself that key: `"{n=i:1}"` passed as a key is a string
-that starts with an opener, and is escaped (§5.2). `stash_key_text(text)` turns a listed
-text back into its key, and round-trips everything `stash_keys()` returns — structured
+that starts with an opener, and is escaped (§5.2). `cache_key_text(text)` turns a listed
+text back into its key, and round-trips everything `cache_keys()` returns — structured
 keys, escaped strings, and the `#<hash>` form of keys too long to keep (decided in S9,
 over parsing encodings in strings, which would make a literal string like `"e:level"`
 collide with a value). A plain string key needs nothing: its text is itself.
@@ -297,97 +297,97 @@ collide with a value). A plain string key needs nothing: its text is itself.
 ## 3.3 Reading
 
 ```r
-stash_get(stash, key, default)                 # -> the value
-stash_mget(stash, keys, default)               # -> named list, one element per key
-stash_has(stash, keys)                         # -> logical, one per key
-stash_info(stash, key)                         # -> one-row data frame, or NULL
-stash_path(stash, key)                         # -> character(1): the blob path
-stash_lazy(stash, key, ..., engine = c("arrow", "duckdb", "polars"), con = NULL)
+cache_get(cache, key, default)                 # -> the value
+cache_mget(cache, keys, default)               # -> named list, one element per key
+cache_has(cache, keys)                         # -> logical, one per key
+cache_info(cache, key)                         # -> one-row data frame, or NULL
+cache_path(cache, key)                         # -> character(1): the blob path
+cache_lazy(cache, key, ..., engine = c("arrow", "duckdb", "polars"), con = NULL)
 ```
 
-**A miss is decided by whether `default` was supplied.** `stash_get(s, k)` raises
-`dastash_not_found`; `stash_get(s, k, default = NULL)` returns `NULL`. There is no
+**A miss is decided by whether `default` was supplied.** `cache_get(s, k)` raises
+`dazcache_not_found`; `cache_get(s, k, default = NULL)` returns `NULL`. There is no
 sentinel to learn and no ambiguity with a stored `NULL`, which is a legal value:
 
 ```r
-stash_get(s, "nope")
-#> Error in `stash_get()`:
+cache_get(s, "nope")
+#> Error in `cache_get()`:
 #> ! No entry for key "nope".
 #> ℹ Supply `default` to return a value instead of erroring.
 ```
 
 This is the functional translation of `diskcache`'s two verbs — `get()` with a default,
 `cache[key]` that raises — chosen by `missing()`, an ordinary R idiom, rather than by a
-second name. `s[[k]]` is `stash_get(s, k)`.
+second name. `s[[k]]` is `cache_get(s, k)`.
 
 **Expired means absent.** An entry past its deadline is invisible to every reader before
-anything has deleted it (§9.1). `stash_has()` is `FALSE`, `stash_get()` misses,
-`stash_keys()` omits it.
+anything has deleted it (§9.1). `cache_has()` is `FALSE`, `cache_get()` misses,
+`cache_keys()` omits it.
 
-`stash_mget()` reads every key in one read transaction and returns a named list in the
+`cache_mget()` reads every key in one read transaction and returns a named list in the
 order given; a missing key takes `default`, or the whole call raises if `default` is
-missing. `stash_info()` returns one row with the columns of `stash_entries()` (§3.5).
+missing. `cache_info()` returns one row with the columns of `cache_entries()` (§3.5).
 
-`stash_path()` returns the file behind a file-backed entry and raises `dastash_type_error`
+`cache_path()` returns the file behind a file-backed entry and raises `dazcache_type_error`
 for an inline one. The value never enters R. The path is stable while the entry lives and
 the file is read-only; §6.5 states the contract.
 
-`stash_lazy()` returns a **lazy handle over a Parquet-backed entry**: an `arrow::Dataset`
+`cache_lazy()` returns a **lazy handle over a Parquet-backed entry**: an `arrow::Dataset`
 by default, a `dbplyr` table over `read_parquet()` when `engine = "duckdb"` and a DuckDB
 `con` is supplied, or a polars `LazyFrame` when `engine = "polars"`. Nothing is read
-until the caller collects. It raises `dastash_type_error` for an entry that is not
-Parquet-backed and `dastash_codec_error` when the engine package is not installed. §6.4.
+until the caller collects. It raises `dazcache_type_error` for an entry that is not
+Parquet-backed and `dazcache_codec_error` when the engine package is not installed. §6.4.
 
 ## 3.4 Writing
 
 ```r
-stash_set(stash, key, value, ..., expire = NULL, tags = NULL, codec = NULL)   # -> stash
-stash_mset(stash, values, ..., expire = NULL, tags = NULL, codec = NULL)      # -> stash
-stash_add(stash, key, value, ..., expire = NULL, tags = NULL, codec = NULL)   # -> logical(1)
-stash_touch(stash, key, expire)                                              # -> stash
-stash_delete(stash, keys)                                                    # -> stash
-stash_pop(stash, key, default)                                               # -> the value
-stash_incr(stash, key, ..., by = 1, default = 0)                             # -> double
-stash_decr(stash, key, ..., by = 1, default = 0)                             # -> double
+cache_set(cache, key, value, ..., expire = NULL, tags = NULL, codec = NULL)   # -> cache
+cache_mset(cache, values, ..., expire = NULL, tags = NULL, codec = NULL)      # -> cache
+cache_add(cache, key, value, ..., expire = NULL, tags = NULL, codec = NULL)   # -> logical(1)
+cache_touch(cache, key, expire)                                              # -> cache
+cache_delete(cache, keys)                                                    # -> cache
+cache_pop(cache, key, default)                                               # -> the value
+cache_incr(cache, key, ..., by = 1, default = 0)                             # -> double
+cache_decr(cache, key, ..., by = 1, default = 0)                             # -> double
 ```
 
 **`expire`** is `NULL` or `Inf` for never; a number of seconds from now (zero or negative
 means already expired, which tests use); a `difftime`; or a `POSIXct` for an absolute
 deadline, so six hours is `expire = as.difftime(6, units = "hours")`. `NaN` and `NA` are
-`dastash_type_error`. (`lubridate::hours(6)` is a Period, an S4 object, not a `difftime`.)
+`dazcache_type_error`. (`lubridate::hours(6)` is a Period, an S4 object, not a `difftime`.)
 
 **`tags`** is a character vector, at most 16 tags of at most `TAG_MAX` bytes each.
-`stash_evict(s, tag = )` deletes every entry carrying the tag. One entry, many tags: an
+`cache_evict(s, tag = )` deletes every entry carrying the tag. One entry, many tags: an
 entry derived from two upstream sources belongs to both.
 
-**`codec`** is `NULL` for the stash default, or a codec object (§6.2). Decode never takes
+**`codec`** is `NULL` for the cache default, or a codec object (§6.2). Decode never takes
 a codec argument: it dispatches on what the record says was used.
 
-`stash_mset()` takes a **named list** — how R spells a set of key–value pairs — and
-commits it in one transaction; names are string keys. `stash_add()` writes only if no
+`cache_mset()` takes a **named list** — how R spells a set of key–value pairs — and
+commits it in one transaction; names are string keys. `cache_add()` writes only if no
 live entry exists and returns whether it landed; an expired entry counts as absent, and
 the write itself is `mdbx_put(overwrite = FALSE)`, which answers `FALSE` on an existing
-key instead of raising. `stash_touch()` moves a deadline without rewriting the value and
-is a no-op on a missing key. `stash_delete()` removes every key given in one transaction.
-`stash_pop()` reads and deletes atomically. The counters are atomic across processes,
-store a signed 64-bit integer, return a double, and raise `dastash_type_error` on a key
+key instead of raising. `cache_touch()` moves a deadline without rewriting the value and
+is a no-op on a missing key. `cache_delete()` removes every key given in one transaction.
+`cache_pop()` reads and deletes atomically. The counters are atomic across processes,
+store a signed 64-bit integer, return a double, and raise `dazcache_type_error` on a key
 that holds anything but a counter or a value beyond ±2⁵³ (D6).
 
 ## 3.5 Enumerating and accounting
 
 ```r
-stash_keys(stash, ..., prefix = NULL, start = NULL, n = Inf)        # -> character
-stash_entries(stash, ..., prefix = NULL, tag = NULL, n = Inf)       # -> data frame
-stash_count(stash)                                                 # -> integer(1)
-stash_volume(stash)                                                # -> double, bytes
-stash_stats(stash)                                                 # -> one-row data frame
+cache_keys(cache, ..., prefix = NULL, start = NULL, n = Inf)        # -> character
+cache_entries(cache, ..., prefix = NULL, tag = NULL, n = Inf)       # -> data frame
+cache_count(cache)                                                 # -> integer(1)
+cache_volume(cache)                                                # -> double, bytes
+cache_stats(cache)                                                 # -> one-row data frame
 ```
 
-`stash_keys()` is a resumable scan in key order. `prefix` makes the `"ns/key"` convention
+`cache_keys()` is a resumable scan in key order. `prefix` makes the `"ns/key"` convention
 a real access path; `start` (inclusive) with `n` pages through a large store, dropping the
 first element of each page after the first. Expired keys are filtered out.
 
-`stash_entries()` returns one row per live entry:
+`cache_entries()` returns one row per live entry:
 
 | Column | Type | |
 |---|---|---|
@@ -407,10 +407,10 @@ first element of each page after the first. Expired keys are filtered out.
 There is no query language and no data-masking: two explicit filters that map to
 indexes, a data frame for the rest (D11).
 
-`stash_count()` is `mdbx_env_stat(txn, db = meta)$entries` — exact, O(1), and immune to
+`cache_count()` is `mdbx_env_stat(txn, db = meta)$entries` — exact, O(1), and immune to
 counter drift — and includes entries past their deadline that nothing has reclaimed yet;
-`length(stash_keys(s))` excludes those and is O(n). `stash_volume()` is bytes occupied:
-the mdbx file plus every blob (§9.2). `stash_stats()` is one row: `count`,
+`length(cache_keys(s))` excludes those and is O(n). `cache_volume()` is bytes occupied:
+the mdbx file plus every blob (§9.2). `cache_stats()` is one row: `count`,
 `bytes_inline`, `bytes_blob`, `volume`, `size_limit`, `hits`, `misses`, `evictions`,
 `expired`, `eviction`, `durability` (effective, §11.1), `format_version`,
 `key_encoding_version`.
@@ -418,51 +418,51 @@ the mdbx file plus every blob (§9.2). `stash_stats()` is one row: `count`,
 ## 3.6 Maintenance
 
 ```r
-stash_expire(stash, ..., n = Inf)                        # -> stash
-stash_evict(stash, ..., tag = NULL, prefix = NULL)       # -> stash; exactly one of the two
-stash_cull(stash)                                        # -> stash
-stash_clear(stash)                                       # -> stash
-stash_check(stash, ..., repair = FALSE, hash = FALSE)    # -> data frame of findings
-stash_flush(stash)                                       # -> stash
-stash_tree(stash, ..., dir = NULL, prefix = NULL)        # -> dir, invisibly
+cache_expire(cache, ..., n = Inf)                        # -> cache
+cache_evict(cache, ..., tag = NULL, prefix = NULL)       # -> cache; exactly one of the two
+cache_cull(cache)                                        # -> cache
+cache_clear(cache)                                       # -> cache
+cache_check(cache, ..., repair = FALSE, hash = FALSE)    # -> data frame of findings
+cache_flush(cache)                                       # -> cache
+cache_tree(cache, ..., dir = NULL, prefix = NULL)        # -> dir, invisibly
 ```
 
-All chain except `stash_check()`, which answers a question: one row per finding with
+All chain except `cache_check()`, which answers a question: one row per finding with
 `kind`, `key`, `path`, `detail`, `repaired` (§11.3). `cache-model.md` §4.2 proves
 `expire`, `evict`, `cull`, `clear` and `delete` are one operation with five predicates;
 they keep five names because each has a different cost and no user should have to
-instantiate the abstraction. `stash_flush()` writes out the read journal (§9.3).
-`stash_tree()` materialises the browsable tree (§6.6).
+instantiate the abstraction. `cache_flush()` writes out the read journal (§9.3).
+`cache_tree()` materialises the browsable tree (§6.6).
 
 ## 3.7 Transactions
 
 ```r
-stash_transact(stash, code)
+cache_transact(cache, code)
 ```
 
 `code` is evaluated in the caller's environment with one write transaction held open on
-the stash's environment. Every `stash_set()`, `stash_delete()`, `stash_incr()` inside it
+the cache's environment. Every `cache_set()`, `cache_delete()`, `cache_incr()` inside it
 commits or aborts together, and reads inside it see its own writes. An error or an
 interrupt aborts; any other way out of the block — finishing, or a `return()`, `break` or
 `next` inside it — commits (D23). A nested
-`stash_transact()` joins the outer transaction, as does any verb on another handle to the
+`cache_transact()` joins the outer transaction, as does any verb on another handle to the
 same directory (§3.1).
 
 ```r
-stash_transact(s, {
-  stash_delete(s, "old")
-  stash_set(s, "new", value)
-  stash_incr(s, "generation")
+cache_transact(s, {
+  cache_delete(s, "old")
+  cache_set(s, "new", value)
+  cache_incr(s, "generation")
 })
 ```
 
-The stash is named inside the block rather than made ambient — DBI's
+The cache is named inside the block rather than made ambient — DBI's
 `dbWithTransaction()` shape. It costs three characters a line and means the block is
 ordinary code that can be extracted into a function without changing meaning.
 
 Two rules survive inside a transaction. Blobs are still published *before* the record is
 written and unlinks are still deferred until *after* the commit (§8), so a large
-`stash_set()` inside a block is safe and an aborted block leaves at most orphans. And the
+`cache_set()` inside a block is safe and an aborted block leaves at most orphans. And the
 transaction blocks every other writer for as long as it is open — **never call a producer
 inside it** (§10).
 
@@ -474,8 +474,8 @@ to get, at none of the risk.
 ## 3.8 Memoisation
 
 ```r
-stash_memoise(
-  f, stash, ...,
+cache_memoise(
+  f, cache, ...,
   expire  = NULL,
   tags    = NULL,
   codec   = NULL,
@@ -483,16 +483,16 @@ stash_memoise(
   omit    = NULL,          # argument names excluded from the key
   version = 1L,
   name    = NULL           # defaults to the symbol f was passed as
-)                          # -> a function of class c("dastash_memoised", "function")
+)                          # -> a function of class c("dazcache_memoised", "function")
 
-stash_memoise_key(f, ...)  # -> character(1): the key this call would use
-stash_forget(f, ...)       # drop that call's entry           -> f, invisibly
-stash_forget_all(f)        # drop every entry of f            -> f, invisibly
-is_stash_memoised(f)       # -> logical(1)
+cache_memoise_key(f, ...)  # -> character(1): the key this call would use
+cache_forget(f, ...)       # drop that call's entry           -> f, invisibly
+cache_forget_all(f)        # drop every entry of f            -> f, invisibly
+is_cache_memoised(f)       # -> logical(1)
 ```
 
-`stash_memoise()` is to `dastash` what `memoise::memoise()` is to `cachem`: it takes a
-function and returns one that consults the stash first. The differences are the point.
+`cache_memoise()` is to `dazcache` what `memoise::memoise()` is to `cachem`: it takes a
+function and returns one that consults the cache first. The differences are the point.
 
 **The key is specified, not hashed.** It is
 
@@ -509,21 +509,21 @@ and is left out. `...` is keyed by position, each element with its name. Argumen
 evaluated once and passed to `f` as values. `omit` drops named arguments from identity —
 `diskcache`'s `ignore=`, `memoise`'s `omit_args`. `key` replaces how the arguments are
 keyed with a function of the matched-argument list, which is `polars-diskcache`'s
-`cache_key=`; the `<name>/v<version>/` prefix stays, so `stash_forget_all()` and the tree
+`cache_key=`; the `<name>/v<version>/` prefix stays, so `cache_forget_all()` and the tree
 still find the entries:
 
 ```r
-fit <- stash_memoise(fit, s, key = function(args) stash_key(!!!args[c("data_id", "model")]))
+fit <- cache_memoise(fit, s, key = function(args) cache_key(!!!args[c("data_id", "model")]))
 ```
 
 **The key does not depend on the function's body.** Identity derived from implementation
 invalidates the cache every time a comment moves. When the meaning changes, `version =`
 is the lever, and it is the caller's to pull. `name` defaults to the symbol `f` was passed
-as (`stash_memoise(fetch_prices, s)` → `"fetch_prices"`); an anonymous function needs
-`name =` and raises `dastash_key_invalid` without it.
+as (`cache_memoise(fetch_prices, s)` → `"fetch_prices"`); an anonymous function needs
+`name =` and raises `dazcache_key_invalid` without it.
 
 **Anything the encoding cannot cover — connections, environments, functions, S4 objects,
-external pointers — is a `dastash_key_invalid` at call time**, with the hint to use
+external pointers — is a `dazcache_key_invalid` at call time**, with the hint to use
 `omit` or `key`. Silently keying on such an argument is the failure mode
 `polars-diskcache`'s `repr`-based keys have, and the explicit error is the fix.
 
@@ -533,21 +533,21 @@ returns a lazy scan over that file on a hit. An eager frame comes back eager.
 `codec = codec_parquet()` opts eager frames into the file path; without it, a data frame
 below `inline_max` is stored inline as RDS like any other value.
 
-**Two companions make the cache addressable.** `stash_memoise_key()` returns the key a
-call would use — `diskcache`'s `__cache_key__` — and `stash_forget()` drops it. Without
+**Two companions make the cache addressable.** `cache_memoise_key()` returns the key a
+call would use — `diskcache`'s `__cache_key__` — and `cache_forget()` drops it. Without
 them, invalidating one result means clearing the store.
 
 **Concurrency is at-least-once.** Two processes missing the same key at once both call
-`f`; both `stash_set()` calls are atomic and the last commit wins. That is duplicated work,
+`f`; both `cache_set()` calls are atomic and the last commit wins. That is duplicated work,
 not corruption, and `cache-model.md` §12 proves single-flight changes only the count of
 calls. Leases are v1.x (§19).
 
 ## 3.9 Base generics
 
 ```r
-length(s)                  # stash_count(s)
-s[["k"]]                   # stash_get(s, "k")
-s[["k"]] <- value          # stash_set(s, "k", value)
+length(s)                  # cache_count(s)
+s[["k"]]                   # cache_get(s, "k")
+s[["k"]] <- value          # cache_set(s, "k", value)
 print(s); format(s)
 as.list(s)                 # every value; warns above 1000 entries and refuses above 1e5
 ```
@@ -559,7 +559,7 @@ design rejected (D1).
 ## 3.10 The `cachem` interface
 
 ```r
-as_cachem(stash, ..., prefix = "cachem/", expire = NULL, codec = NULL)
+as_cachem(cache, ..., prefix = "cachem/", expire = NULL, codec = NULL)
 ```
 
 Returns a list with `get(key, missing)`, `set(key, value)`, `exists(key)`,
@@ -572,29 +572,29 @@ Returns a list with `get(key, missing)`, `set(key, value)`, `exists(key)`,
 
 ```r
 # open
-stash()  stash_close()  stash_is_open()  stash_dir()  local_stash()  with_stash()
+cache()  cache_close()  cache_is_open()  cache_dir()  local_cache()  with_cache()
 
 # keys and codecs (pure)
-stash_key()  stash_key_chr()  stash_key_text()  stash_key_hash()
+cache_key()  cache_key_chr()  cache_key_text()  cache_key_hash()
 codec()  codec_auto()  codec_rds()  codec_raw()  codec_file()  codec_qs2()  codec_parquet()
 
 # read
-stash_get()  stash_mget()  stash_has()  stash_info()  stash_path()  stash_lazy()
+cache_get()  cache_mget()  cache_has()  cache_info()  cache_path()  cache_lazy()
 
 # write
-stash_set()  stash_mset()  stash_add()  stash_touch()  stash_delete()  stash_pop()
-stash_incr()  stash_decr()
+cache_set()  cache_mset()  cache_add()  cache_touch()  cache_delete()  cache_pop()
+cache_incr()  cache_decr()
 
 # enumerate
-stash_keys()  stash_entries()  stash_count()  stash_volume()  stash_stats()
+cache_keys()  cache_entries()  cache_count()  cache_volume()  cache_stats()
 
 # maintain
-stash_expire()  stash_evict()  stash_cull()  stash_clear()  stash_check()  stash_flush()
-stash_tree()
+cache_expire()  cache_evict()  cache_cull()  cache_clear()  cache_check()  cache_flush()
+cache_tree()
 
 # compose
-stash_transact()  stash_memoise()  stash_memoise_key()  stash_forget()  stash_forget_all()
-is_stash_memoised()
+cache_transact()  cache_memoise()  cache_memoise_key()  cache_forget()  cache_forget_all()
+is_cache_memoised()
 
 # interop
 as_cachem()
@@ -607,23 +607,23 @@ Fifty names, one prefix, no flag that changes a return type.
 
 ## 3.12 Correspondence
 
-| `diskcache` / `plcache` | `dastash` |
+| `diskcache` / `plcache` | `dazcache` |
 |---|---|
-| `Cache(directory, size_limit=, eviction_policy=)` | `stash(dir, size_limit=, eviction=)` |
-| `set(key, value, expire=, tag=, read=)` | `stash_set(s, key, value, expire=, tags=, codec=)`; `read=True` is `codec_file()` |
-| `get(key, default=)` / `cache[key]` | `stash_get(s, key, default)` / `stash_get(s, key)` |
-| `get(..., read=True)` / `get(..., expire_time=True, tag=True)` | `stash_path()` / `stash_info()` |
-| `add`, `pop`, `touch`, `delete`, `incr`, `decr` | `stash_add`, `stash_pop`, `stash_touch`, `stash_delete`, `stash_incr`, `stash_decr` |
-| `key in cache`, `len(cache)`, `iterkeys()` | `stash_has()`, `length()` / `stash_count()`, `stash_keys()` |
-| `expire()`, `evict(tag)`, `cull()`, `clear()` | same names, `stash_` prefix |
-| `volume()`, `stats()`, `check(fix=)` | `stash_volume()`, `stash_stats()`, `stash_check(repair=)` |
-| `transact()`, `memoize(expire=, tag=, ignore=)` | `stash_transact()`, `stash_memoise(expire=, tags=, omit=)` |
-| `f.__cache_key__(...)` | `stash_memoise_key(f, ...)` |
+| `Cache(directory, size_limit=, eviction_policy=)` | `cache(dir, size_limit=, eviction=)` |
+| `set(key, value, expire=, tag=, read=)` | `cache_set(s, key, value, expire=, tags=, codec=)`; `read=True` is `codec_file()` |
+| `get(key, default=)` / `cache[key]` | `cache_get(s, key, default)` / `cache_get(s, key)` |
+| `get(..., read=True)` / `get(..., expire_time=True, tag=True)` | `cache_path()` / `cache_info()` |
+| `add`, `pop`, `touch`, `delete`, `incr`, `decr` | `cache_add`, `cache_pop`, `cache_touch`, `cache_delete`, `cache_incr`, `cache_decr` |
+| `key in cache`, `len(cache)`, `iterkeys()` | `cache_has()`, `length()` / `cache_count()`, `cache_keys()` |
+| `expire()`, `evict(tag)`, `cull()`, `clear()` | same names, `cache_` prefix |
+| `volume()`, `stats()`, `check(fix=)` | `cache_volume()`, `cache_stats()`, `cache_check(repair=)` |
+| `transact()`, `memoize(expire=, tag=, ignore=)` | `cache_transact()`, `cache_memoise(expire=, tags=, omit=)` |
+| `f.__cache_key__(...)` | `cache_memoise_key(f, ...)` |
 | `memoize_stampede`, `FanoutCache`, `Lock`, `Deque` | not in v1 (§19); the last two are not caching features |
-| `@cache()` on a frame-returning function | `stash_memoise(f, s, codec = codec_parquet())` |
+| `@cache()` on a frame-returning function | `cache_memoise(f, s, codec = codec_parquet())` |
 | a `LazyFrame` comes back a `LazyFrame` | an arrow query or polars `LazyFrame` comes back as a scan of the cached file |
 | `cache_key=` callback | `key =` |
-| `functions/` symlink tree, `nested=`, `trim_arg=` | `stash_tree()`, always nested, 64-character components |
+| `functions/` symlink tree, `nested=`, `trim_arg=` | `cache_tree()`, always nested, 64-character components |
 | blob named by hash of the *call* | blob named by hash of the *content*; identical bytes stored once |
 | no expiry | `expire =` |
 
@@ -646,7 +646,7 @@ for the key that is still live**, or nothing. Two axioms:
 So the read-after-write law is membership, not equality:
 
 ```text
-stash_get(s, k)  after  stash_set(s, k, v)   ∈   { v, absent }
+cache_get(s, k)  after  cache_set(s, k, v)   ∈   { v, absent }
 ```
 
 A store promises the first; a cache promises only that it is one of the two. Callers who
@@ -656,11 +656,11 @@ Six consequences shape the design and are theorems rather than choices:
 
 - **Expiry is part of the read, not an operation.** Whether a write is live is a function
   of its deadline and the clock, so a read can decide it without writing anything, and
-  `stash_expire()` can only ever reclaim space, never change an answer. Lazy expiry is
+  `cache_expire()` can only ever reclaim space, never change an answer. Lazy expiry is
   forced, not chosen (§9.1).
 - **Every maintenance verb is one operation** — drop the writes satisfying a predicate —
   and each index exists to answer one predicate in order and stop early (§9.1).
-- **Eviction policy is semantically free.** Two stashes differing only in policy cannot be
+- **Eviction policy is semantically free.** Two cachees differing only in policy cannot be
   told apart by any sequence of reads; they differ as consumers of disk. That is why
   access times may be batched, sampled or lost without a correctness cost (§9.3).
 - **Least-recently-stored is the only policy that keeps reads pure.** LRU and LFU depend
@@ -688,11 +688,11 @@ mdbx's byte order is a usable key order and prefix scans work.
   base R has no NFC normaliser and this is a cache, where a miss costs a recompute.
   Callers who receive text from filesystems or user input can normalise with
   `utf8::utf8_normalize()` before keying.
-- **A `dastash_key`** carries its canonical text.
+- **A `dazcache_key`** carries its canonical text.
 - **Anything else the grammar covers** is canonicalised (§5.2). An object it does not
-  cover raises `dastash_key_invalid`.
+  cover raises `dazcache_key_invalid`.
 
-There are no raw-vector keys. Every key is printable and `stash_keys()` returns a
+There are no raw-vector keys. Every key is printable and `cache_keys()` returns a
 character vector (D12).
 
 ## 5.2 The canonical encoding
@@ -742,7 +742,7 @@ Per-type rules:
 | unnamed list | `(…)` | |
 | data.frame | `D{…}` | row names ignored |
 | a partially named vector or list | invalid | names are all or none |
-| function, environment, connection, S4, external pointer, anything else | `dastash_key_invalid` | the hint names `omit =` and `key =` |
+| function, environment, connection, S4, external pointer, anything else | `dazcache_key_invalid` | the hint names `omit =` and `key =` |
 
 Attributes other than `names`, `class` (for the classes above), `levels`, `tzone` and
 `units` are ignored. `1L` and `1` agreeing, `Date` never exposing its double, and
@@ -752,9 +752,9 @@ which a cache — unlike the typed layer of §20 — must allow (D12).
 
 **Never hash `serialize()` output.** R's serialisation changes across versions and ALTREP
 representations; a cache that outlives an R upgrade would silently lose every key. Every
-hash is SHA-256 over bytes dastash chose, computed by `tools::sha256sum()` in one internal
+hash is SHA-256 over bytes dazcache chose, computed by `tools::sha256sum()` in one internal
 file, `R/hash.R` (D13), and the grep guards of §16 enforce both.
-This is also why `stash_memoise()` does not use `rlang::hash()`.
+This is also why `cache_memoise()` does not use `rlang::hash()`.
 
 ## 5.3 Length, and why the limit is a constant
 
@@ -771,8 +771,8 @@ tags entry                              : 256 + 1 + 512    = 769  <= 2022
 
 A key whose text exceeds `KEY_MAX` is stored as `"#" ‖ sha256hex(text)` — 65 bytes.
 Its text is kept in the meta record when it is at most `CANON_KEEP_MAX`, so
-`stash_keys()` and `stash_entries()` still report the real key; beyond that the record
-keeps a 256-byte preview and the length, and `stash_keys()` reports the digest form.
+`cache_keys()` and `cache_entries()` still report the real key; beyond that the record
+keeps a 256-byte preview and the length, and `cache_keys()` reports the digest form.
 `#` is an opener (§5.2), so a string key that starts with `#` is stored as `s:#…` and can
 never be mistaken for a digest. Digesting is a storage detail: equality is still decided
 by the canonical text. A
@@ -820,18 +820,18 @@ whether `codec_raw()` stored a string or a raw vector, the extension of the file
 store, and never run inside a transaction (§10).
 
 **The record stores the codec name and version, and decode dispatches on it** — never
-on the stash's current default. Changing a default codec cannot orphan what is stored.
-Built-in codecs are always known; a user-defined codec must be passed in `stash(codecs =)`
+on the cache's current default. Changing a default codec cannot orphan what is stored.
+Built-in codecs are always known; a user-defined codec must be passed in `cache(codecs =)`
 by every process that reads its entries, and a record naming a codec the handle does not
-know raises `dastash_codec_error` with the name.
+know raises `dazcache_codec_error` with the name.
 
 `codec_auto()` chooses by the value: a raw vector with no attributes → `codec_raw()`; an
 unnamed length-1 character with no attributes → `codec_raw()` as UTF-8 text; everything
 else → `codec_rds()`. **It never selects a lossy codec and never selects a codec from
 `Suggests`**, so what `codec_auto()` writes on one machine every machine can read. Parquet
-and `qs2` are opted into, per call or per stash.
+and `qs2` are opted into, per call or per cache.
 
-Optional codecs raise `dastash_codec_error` with an install hint when their package is
+Optional codecs raise `dazcache_codec_error` with an install hint when their package is
 absent; the no-Suggests CI job proves the message rather than a stack trace is what a
 user sees.
 
@@ -845,7 +845,7 @@ user sees.
 |---|---|---|---|
 | `nanoparquet` | data frames; no system dependency; preferred for eager frames when installed | data frames | no |
 | `arrow` | everything above; a query is evaluated in C++ and written without an R data frame in between | data frames | `open_dataset()` |
-| `duckdb` | not used for writing in v1 | via `stash_lazy(engine = "duckdb")` | `read_parquet()` through `dbplyr` |
+| `duckdb` | not used for writing in v1 | via `cache_lazy(engine = "duckdb")` | `read_parquet()` through `dbplyr` |
 | `polars` | `DataFrame$write_parquet()`, `LazyFrame$sink_parquet()` | | `pl$scan_parquet()` |
 
 `engine = "auto"` picks `nanoparquet` for a data frame and `arrow` or `polars` for their
@@ -856,7 +856,7 @@ when installed and is not a declared dependency.
 **What Parquet does not round-trip**, and why it is never automatic: row names; most
 attributes; nested list columns under `nanoparquet`; factor levels not present in the
 data; `POSIXlt`; anything a column cannot hold. `supports()` says no to those and
-`stash_set()` raises `dastash_type_error` before writing anything.
+`cache_set()` raises `dazcache_type_error` before writing anything.
 
 ## 6.4 Laziness preserved
 
@@ -864,33 +864,33 @@ The record has a `shape` field: `"value"` for anything decoded back into R, `"fi
 `codec_file()`, and `"lazy"` when the value that was written was a lazy frame. On a
 `"lazy"` entry:
 
-- `stash_get()` and a memoised function return a **lazy scan** over the blob with the
+- `cache_get()` and a memoised function return a **lazy scan** over the blob with the
   engine that wrote it — `arrow::open_dataset(path)` for an arrow query or Dataset,
   `pl$scan_parquet(path)` for a polars `LazyFrame` — so dplyr verbs or polars expressions
   compose onto the cached file and only `collect()` reads it.
-- `stash_lazy()` returns the same, with `engine =` free to choose another reader.
+- `cache_lazy()` returns the same, with `engine =` free to choose another reader.
 
-On an eager Parquet entry, `stash_get()` returns a data frame — a tibble or `data.table`
+On an eager Parquet entry, `cache_get()` returns a data frame — a tibble or `data.table`
 when the original was one and the package is installed, a `data.frame` otherwise — and
-`stash_lazy()` is how to get a scan.
+`cache_lazy()` is how to get a scan.
 
 A `dbplyr` table over DuckDB is collected on the way in and stored eager in v1, because a
-lazy read needs a connection the cache cannot invent; `stash_lazy(engine = "duckdb",
+lazy read needs a connection the cache cannot invent; `cache_lazy(engine = "duckdb",
 con = )` is the explicit lazy path for those. This is the one asymmetry with
 `polars-diskcache`, and it is stated rather than hidden.
 
-## 6.5 `stash_path()`
+## 6.5 `cache_path()`
 
-`stash_path()` hands out the blob path and journals an access; the value never enters R.
+`cache_path()` hands out the blob path and journals an access; the value never enters R.
 
 ```r
-arrow::open_dataset(stash_path(s, "trades"))
-DBI::dbGetQuery(con, "select * from read_parquet(?)", list(stash_path(s, "trades")))
+arrow::open_dataset(cache_path(s, "trades"))
+DBI::dbGetQuery(con, "select * from read_parquet(?)", list(cache_path(s, "trades")))
 ```
 
 The path is stable while the entry lives, the file is mode `0444`, and identical content
-is one file however many keys reference it. The path is **invalidated by `stash_delete()`,
-`stash_cull()`, `stash_evict()`, `stash_clear()` and expiry**, from any process. A caller
+is one file however many keys reference it. The path is **invalidated by `cache_delete()`,
+`cache_cull()`, `cache_evict()`, `cache_clear()` and expiry**, from any process. A caller
 holding a path across one of those holds a path to a file that may be gone, and the
 documentation says so rather than pretending otherwise. A caller who needs the file to
 outlive the entry copies it.
@@ -901,8 +901,8 @@ A content-addressed directory is unbrowsable by construction: `blobs/9f/9fbc…p
 nothing. `polars-diskcache` fixes this with a second, disposable view made of symlinks.
 
 ```r
-stash_tree(s)                       # -> "<root>/tree", invisibly
-stash_tree(s, prefix = "load_trades/")
+cache_tree(s)                       # -> "<root>/tree", invisibly
+cache_tree(s, prefix = "load_trades/")
 ```
 
 ```text
@@ -914,12 +914,12 @@ stash_tree(s, prefix = "load_trades/")
 
 Rules:
 
-- **Derived, on demand.** `stash_tree()` rebuilds the tree under `dir` (default
+- **Derived, on demand.** `cache_tree()` rebuilds the tree under `dir` (default
   `<root>/tree`) from the live records; nothing maintains it on write (D16). It is a view,
-  like an index: `stash_check()` ignores it, `stash_clear()` removes it, and a stale tree
+  like an index: `cache_check()` ignores it, `cache_clear()` removes it, and a stale tree
   costs dangling symlinks and nothing else.
 - **Path from key.** A string key splits on `/`. A trailing canonical named list —
-  what `stash_memoise()` produces — expands to one directory per field, `name=value`,
+  what `cache_memoise()` produces — expands to one directory per field, `name=value`,
   which is `plcache`'s `arg0=1000/`. Each component is percent-escaped outside
   `[A-Za-z0-9._=,+@-]`, components `.` and `..` and the empty string are escaped whole,
   and a component over 64 characters is truncated with `~` and eight hex characters of
@@ -929,8 +929,8 @@ Rules:
   whose results should appear uses `codec = codec_parquet()` or produces values over
   `inline_max`.
 - On a platform where the symlink cannot be created — Windows without developer mode —
-  `stash_tree()` raises `dastash_unsupported`. It does not fall back to copies or hard
-  links, because both would silently change what `stash_volume()` means.
+  `cache_tree()` raises `dazcache_unsupported`. It does not fall back to copies or hard
+  links, because both would silently change what `cache_volume()` means.
 
 ---
 
@@ -948,16 +948,16 @@ Rules:
 
 The environment opens with `subdir = FALSE`, so it is two files. `blobs/` shards on the
 first two hex characters of the hash — 256 directories — so no single directory grows
-past what `list.files()` handles comfortably during `stash_check()`.
+past what `list.files()` handles comfortably during `cache_check()`.
 
 ## 7.2 Named databases
 
 `max_dbs = 16`, leaving room. Databases are created **on demand from the configuration**:
-a stash with least-recently-stored eviction never opens `accessed`; one that never tags
+a cache with least-recently-stored eviction never opens `accessed`; one that never tags
 never opens `tags`. An index is a cost on every write, and one nobody reads should not
 exist.
 
-Creation needs a write transaction, so a read-write `stash()` creates every database its
+Creation needs a write transaction, so a read-write `cache()` creates every database its
 configuration implies in one write transaction at open. A read-only handle can create
 nothing: it reads `mdbx_dbi_list()` once at open and treats a database absent from that
 list as empty, which is one call instead of a failed open per index (§15).
@@ -974,14 +974,14 @@ list as empty, which is one call instead of a failed open per index (§15).
 | `blobs` | `hash` | `{refs, bytes, ext}` | always |
 
 Exactly one eviction index exists, the one the policy walks; `eviction = "none"` has
-none. `stash_entries()` reads `stored`, `accessed` and `hits` from the meta record, not
+none. `cache_entries()` reads `stored`, `accessed` and `hits` from the meta record, not
 from the indexes.
 
 Index entries carry the key after eight fixed bytes because entries must be unique — two
 records can share a millisecond — and because having the key inside the index means
 expiry and eviction never need a second lookup to learn what to delete.
 
-Not indexing `expire = Inf` (D7) removes one write per never-expiring `stash_set()`
+Not indexing `expire = Inf` (D7) removes one write per never-expiring `cache_set()`
 and halves the size of `expiry` in the common case; the expiry scan stops at the first
 future deadline and would never have reached those rows.
 
@@ -996,7 +996,7 @@ Store-level records live in the unnamed main database, which is why nothing else
 ## 7.3 The meta record
 
 One record per key, read on every hit, so it is small and the payload is not in it: a
-scan of `meta` during `stash_check()` should not drag value bytes through the page cache.
+scan of `meta` during `cache_check()` should not drag value bytes through the page cache.
 
 ```text
 stored        double     epoch seconds UTC
@@ -1055,7 +1055,7 @@ zero, subnormals, large magnitudes and both infinities.
 ## 7.5 Indexes are derived; metadata is not
 
 Every index database is a projection of `meta` and can be dropped and rebuilt from it.
-That is what makes `stash_check(repair = TRUE)` possible, and why the index encodings of
+That is what makes `cache_check(repair = TRUE)` possible, and why the index encodings of
 §7.4 may be revised — `index_encoding_version` in the `format` record — while the key
 encoding of §5.2 may not. Identity is frozen; ordering is rebuildable.
 
@@ -1089,7 +1089,7 @@ encode  -> <root>/tmp/<pid>-<n>          same device as blobs/; no lock held
 
 The rename happens inside the transaction, while the write lock is held, and before the
 commit: still published first, committed second. A crash between the two leaves an
-**unreferenced blob**: invisible, harmless, reclaimed by `stash_check(repair = TRUE)`.
+**unreferenced blob**: invisible, harmless, reclaimed by `cache_check(repair = TRUE)`.
 The reverse order would commit a record pointing at a file that does not exist, which is
 a soundness violation. Staging and hashing, the slow part, happen before the lock is
 taken. Staging is in `<root>/tmp`, not `tempdir()`: a cross-device rename is a copy, and
@@ -1135,7 +1135,7 @@ writes a blob without one (decided 2026-09-29). A process crash loses nothing: t
 are in the operating system's page cache, which survives it. A power loss or an operating
 system crash can leave a recently committed blob short or empty. Every read therefore
 compares the file's size with the size its record holds and treats a mismatch as
-`dastash_blob_corrupt`, never as a value; `stash_check(hash = TRUE)` verifies the bytes
+`dazcache_blob_corrupt`, never as a value; `cache_check(hash = TRUE)` verifies the bytes
 themselves. A real `fsync` arrives when a first-party package offers one.
 
 On Windows, `file.rename()` fails when the target exists, so an orphan in the way is
@@ -1160,7 +1160,7 @@ for (row in due) { if (when(row) > now) break; forget(key_of(row)) }
 victims <- mdbx_keys(txn, db = index_for(eviction), limit = n, as = "raw")
 ```
 
-`stash_cull()` expires everything due, then evicts until the bytes the entries hold —
+`cache_cull()` expires everything due, then evicts until the bytes the entries hold —
 `bytes_inline + bytes_blob` — are within `size_limit`, in transactions of at most
 `cull_limit` victims so no single transaction holds the write lock for long. Every write
 that leaves the store over its limit runs one bounded cull step in its own transaction,
@@ -1169,25 +1169,25 @@ background process — and there is no background process, by design. A single v
 larger than `size_limit` is stored and everything else is evicted around it, as in
 `diskcache`; `size_limit = Inf` disables culling.
 
-**The limit counts held bytes, not `stash_volume()`** (decided in S7, correcting the
+**The limit counts held bytes, not `cache_volume()`** (decided in S7, correcting the
 first version of this section). The mdbx file never shrinks: freed pages are kept for
 reuse. A store whose file had once grown past the limit could never get its volume back
 under it, and a cull measured by volume would evict every entry and still fail.
 Evicting an inline entry frees space inside the file for the next writes, which is the
-point; `stash_volume()` goes on reporting bytes on disk.
+point; `cache_volume()` goes on reporting bytes on disk.
 
-`stash_evict(tag =)` walks `tags` from `tag ‖ 0x00`; `stash_evict(prefix =)` walks
+`cache_evict(tag =)` walks `tags` from `tag ‖ 0x00`; `cache_evict(prefix =)` walks
 `meta` from the prefix. Both stop at the first non-matching key and delete in bounded
 chunks.
 
 ## 9.2 Accounting is exact and O(1)
 
-`counters` is updated in the same transaction as every mutation, so `stash_volume()` reads
-one record; `stash_count()` reads the exact `entries` figure libmdbx keeps for `meta`. A
+`counters` is updated in the same transaction as every mutation, so `cache_volume()` reads
+one record; `cache_count()` reads the exact `entries` figure libmdbx keeps for `meta`. A
 single hot row would be a contention problem in SQLite; under mdbx there is exactly one
 writer at a time already, so the hot record costs nothing that is not already being paid.
 
-`stash_volume()` is `mdbx_env_info()$file_size + counters$bytes_blob`. The mdbx file only
+`cache_volume()` is `mdbx_env_info()$file_size + counters$bytes_blob`. The mdbx file only
 grows on disk — freed pages are reused, not returned — so this is bytes occupied. It is
 what a user asks about; the size limit is about held bytes instead (§9.1).
 
@@ -1204,13 +1204,13 @@ a `statistics` switch; so does this:
 | `"always"` | Every read is a write transaction. Exact LRU, serialised readers |
 
 The buffer flushes when it exceeds 128 entries, before any write transaction the handle
-is about to run anyway, on `stash_cull()`, on `stash_flush()` and on `stash_close()`. A
+is about to run anyway, on `cache_cull()`, on `cache_flush()` and on `cache_close()`. A
 flush is one write transaction that rewrites `accessed` and `hits` rows and folds in the
 hit and miss counts.
 
 **Losing the buffer to a crash costs eviction accuracy, not correctness** — §4, third
-consequence. `stash_entries()$accessed` is documented as "as last flushed", and
-`stash_flush()` is exported so a user who asks why it disagrees with what they just did
+consequence. `cache_entries()$accessed` is documented as "as last flushed", and
+`cache_flush()` is exported so a user who asks why it disagrees with what they just did
 has an answer. Statistics ride the same mechanism; `statistics = FALSE` by default means an
 ordinary read touches nothing at all.
 
@@ -1229,46 +1229,46 @@ libmdbx's model is **many readers and one writer across processes, one live tran
 per environment**, and the design follows it.
 
 **Reads never block and are never blocked.** A read transaction sees the snapshot that
-existed when it began. `stash_get()`, `stash_mget()`, `stash_has()`, `stash_keys()`,
-`stash_entries()` and `stash_path()` are read transactions, and because expiry is lazy
+existed when it began. `cache_get()`, `cache_mget()`, `cache_has()`, `cache_keys()`,
+`cache_entries()` and `cache_path()` are read transactions, and because expiry is lazy
 and access times are journalled they stay read transactions.
 
-**Writers serialise.** A second writer waits on the lock file. dastash begins every write
+**Writers serialise.** A second writer waits on the lock file. dazcache begins every write
 transaction itself with `mdbx_txn_begin(env, write = TRUE, flags = "TRY")` —
 `mdbx_with_write()` takes no flags — which fails at once with `mdbx_busy` instead of
 blocking, and retries with exponential backoff up to `timeout` seconds before raising
-`dastash_busy`. A worker that never returns is worse than an error that says the store is
+`dazcache_busy`. A worker that never returns is worse than an error that says the store is
 busy. Both behaviours are verified across processes (§15).
 
 **A writer killed holding the lock.** Whether the lock is released depends on how the
 vendored libmdbx was built (`MDBX_LOCKING`): Linux with glibc gets robust mutexes and
 Windows file locks, both released by the kernel when the holder dies. macOS has no
 robust mutexes, so `mdbx` 0.1.1 falls back to POSIX semaphores, which nothing releases:
-with any other process still open, every later write is `dastash_busy` until all of them
-close, and only then does the next opener re-initialise the lock file (dastash#15,
+with any other process still open, every later write is `dazcache_busy` until all of them
+close, and only then does the next opener re-initialise the lock file (dazcache#15,
 mdbx#28). The fix
 belongs in `mdbx` (System V semaphores with `SEM_UNDO`, or dead-writer recovery);
-until then `stash()`, `stash_transact()`, the shared-stash vignette and the
-`dastash_busy` message state the limitation.
+until then `cache()`, `cache_transact()`, the shared-cache vignette and the
+`dazcache_busy` message state the limitation.
 
 **One live transaction per environment.** `mdbx` refuses a second `mdbx_txn_begin()` on
 an environment rather than deadlocking. The registry entry of §3.1 therefore owns the
-current transaction: inside `stash_transact()` every verb, on every handle to that
+current transaction: inside `cache_transact()` every verb, on every handle to that
 directory, uses it; outside one, every verb opens and closes its own. No user code runs
-while a transaction is open except the body of `stash_transact()`: codecs encode before
+while a transaction is open except the body of `cache_transact()`: codecs encode before
 the write transaction and decode after the read transaction has returned the bytes, and
 nothing in the API takes a callback that runs inside one.
 
 **One environment per process, opened in the process that uses it.** An environment does
 not survive `fork()`: `parallel::mclapply()` gives the child the R object but not the
-mapping, lock or reader slot. The handle records its PID and raises `dastash_forked`, with
+mapping, lock or reader slot. The handle records its PID and raises `dazcache_forked`, with
 the instruction to open inside the worker, before `mdbx` can refuse.
 
 ```r
 parallel::mclapply(keys, function(k) {
-  s <- stash(dir)
-  on.exit(stash_close(s))
-  stash_get(s, k)
+  s <- cache(dir)
+  on.exit(cache_close(s))
+  cache_get(s, k)
 })
 
 # callr, mirai, future: the worker is a fresh process; open there
@@ -1276,12 +1276,12 @@ parallel::mclapply(keys, function(k) {
 
 **Read transactions are short.** A long-lived reader holds back the pages its snapshot
 needs and the file grows. Every read is scoped by `mdbx_with_read()`, and
-`stash_check()` calls `mdbx_env_reader_check()` to clear slots left by processes that
+`cache_check()` calls `mdbx_env_reader_check()` to clear slots left by processes that
 died.
 
-**What is atomic** without further machinery: `stash_set`, `stash_mset`, `stash_delete`,
-`stash_add`, `stash_pop`, `stash_incr`, `stash_decr`, `stash_touch`, and any block in
-`stash_transact()`. Eight processes calling `stash_incr()` on one key produce eight
+**What is atomic** without further machinery: `cache_set`, `cache_mset`, `cache_delete`,
+`cache_add`, `cache_pop`, `cache_incr`, `cache_decr`, `cache_touch`, and any block in
+`cache_transact()`. Eight processes calling `cache_incr()` on one key produce eight
 increments.
 
 **What is not:** two processes missing the same key both compute it (§3.8). That is
@@ -1303,9 +1303,9 @@ transaction itself.
 | `"fast"` | `SAFE_NOSYNC` | Commits are not flushed. A crash can lose recent transactions; it cannot corrupt the file |
 | `"unsafe"` | `UTTERLY_NOSYNC` | Can corrupt beyond recovery. For a store you are prepared to rebuild |
 
-Full durability is the default even though this is a cache, because `stash_set()`
+Full durability is the default even though this is a cache, because `cache_set()`
 returning is read by users as a promise, and a user who has to reason about which of the
-last N writes survived is reasoning about the wrong thing. `stash_transact()` recovers
+last N writes survived is reasoning about the wrong thing. `cache_transact()` recovers
 most of the performance with no risk (§3.7). `"fast"` plus a periodic `mdbx_env_sync()` is
 a reasonable choice for a purely derived cache, and its failure mode is the recoverable
 one: a lost metadata commit after a blob was written is an orphan, the direction §8
@@ -1313,20 +1313,20 @@ already tolerates.
 
 Sync flags are a property of the environment *as currently open*, and a process joining an
 open environment inherits them: a joiner asking for `SAFE_NOSYNC` without `ACCEDE` gets
-`mdbx_incompatible`, and with `ACCEDE` it gets the incumbent's flags (§15). `stash()`
+`mdbx_incompatible`, and with `ACCEDE` it gets the incumbent's flags (§15). `cache()`
 therefore always passes `ACCEDE` and reports the effective mode from
-`mdbx_env_get_flags()` in `stash_stats()`, rather than pretending the argument won.
+`mdbx_env_get_flags()` in `cache_stats()`, rather than pretending the argument won.
 
 ## 11.2 Capacity
 
 `map_size` is the upper bound the mapped file may grow to, fixed at open. Values above
 `inline_max` live outside the file, so the map holds metadata — a few hundred bytes per
 entry — and the 1 GiB default covers millions of entries. Exhausting it is
-`mdbx_map_full`, raised as `dastash_store_full` with `geo_current` and `geo_upper` from
+`mdbx_map_full`, raised as `dazcache_store_full` with `geo_current` and `geo_upper` from
 `mdbx_env_info()` and the instruction to reopen with a larger `map_size`. An operational
 limit, not a crash.
 
-## 11.3 `stash_check()` and repair
+## 11.3 `cache_check()` and repair
 
 Because indexes are derived, most damage is repairable:
 
@@ -1345,8 +1345,8 @@ Because indexes are derived, most damage is repairable:
 | `blob_corrupt` — the file's size differs from its records', or with `hash = TRUE` its bytes do not hash to its name | delete the records and the file |
 
 PID liveness is legitimate because the deployment is one host (§0). `hash = TRUE` reads
-every blob and is the only expensive check; `stash_get()` does not verify hashes on the
-way in (D20), because hashing a 200 MB file on every read defeats `stash_path()`.
+every blob and is the only expensive check; `cache_get()` does not verify hashes on the
+way in (D20), because hashing a 200 MB file on every read defeats `cache_path()`.
 
 ---
 
@@ -1356,12 +1356,12 @@ Settings split into two kinds, and the split is not cosmetic.
 
 **Store-level**, persisted in the `config` record and shared by every process:
 `size_limit`, `eviction`, `inline_max`, `codec`. The process that creates the store fixes
-them. A later `stash()` that passes a *different explicit* value raises
-`dastash_config_conflict`; one that passes nothing adopts what is there. Two processes
+them. A later `cache()` that passes a *different explicit* value raises
+`dazcache_config_conflict`; one that passes nothing adopts what is there. Two processes
 disagreeing about `inline_max` would produce a store where neither can predict where a
 value lives; two disagreeing about `eviction` would maintain different indexes.
-Changing a store-level setting is `stash_reconfigure()` in v1.x, which rebuilds the
-affected indexes; in v1 it is `stash_clear()`.
+Changing a store-level setting is `cache_reconfigure()` in v1.x, which rebuilds the
+affected indexes; in v1 it is `cache_clear()`.
 
 **Handle-level**, affecting this session only: `map_size`, `cull_limit`, `statistics`,
 `touch_on_read`, `timeout`, `readonly`, `codecs`.
@@ -1369,65 +1369,65 @@ affected indexes; in v1 it is `stash_clear()`.
 **`durability`** is neither; §11.1.
 
 `readonly = TRUE` opens the environment read-only, disables the journal, and raises
-`dastash_readonly` on any write verb, including `stash_expire()` and `stash_cull()`,
+`dazcache_readonly` on any write verb, including `cache_expire()` and `cache_cull()`,
 before a transaction is attempted.
 
 The `format` record carries `format_version`, `key_encoding_version` and
 `index_encoding_version`. A store whose `format_version` or `key_encoding_version` is
-newer than the package understands raises `dastash_version_unsupported` at open; a newer
-`index_encoding_version` triggers a rebuild through `stash_check(repair = TRUE)`.
+newer than the package understands raises `dazcache_version_unsupported` at open; a newer
+`index_encoding_version` triggers a rebuild through `cache_check(repair = TRUE)`.
 
 ---
 
 # 13. Errors
 
 Conditions are part of the API. Every one is raised through `rlang::abort()` with its
-class and `dastash_error` as parent, carries structured fields (`key`, `dir`, `path`,
+class and `dazcache_error` as parent, carries structured fields (`key`, `dir`, `path`,
 `codec` as applicable), and has a constructor and a test asserting its class chain before
 any feature uses it. No bare `stop()`. Callers need to distinguish "compute it again"
 from "your store is broken".
 
 | Class | Raised when |
 |---|---|
-| `dastash_key_invalid` | An object the encoding does not cover; a partially named vector; an anonymous memoised function without `name` |
-| `dastash_not_found` | `stash_get()`, `stash_pop()`, `s[[key]]` on an absent or expired key without `default`; `stash()` with `create = FALSE` on a missing directory |
-| `dastash_type_error` | `stash_incr()` on a non-counter or past ±2⁵³; `stash_path()` or `stash_lazy()` on an entry of the wrong shape; a value a codec's `supports()` rejects; an `expire` that is `NA` or `NaN` |
-| `dastash_codec_error` | Encode or decode failed; a codec package from `Suggests` is not installed; a record names a codec the handle does not know |
-| `dastash_blob_corrupt` | A read finds the record's blob file missing, or not the size the record holds. `stash_check()` reports the same condition as a finding instead of raising |
-| `dastash_busy` | Write lock not acquired within `timeout` |
-| `dastash_store_full` | `map_size` exhausted |
-| `dastash_readonly` | A write verb on a read-only handle |
-| `dastash_config_conflict` | An explicit store-level setting disagrees with the persisted one |
-| `dastash_version_unsupported` | The store's format or key encoding is newer than the package |
-| `dastash_forked` | A handle used in a process that did not open it |
-| `dastash_closed` | A verb on a closed handle |
-| `dastash_unsupported` | The platform or this release cannot do it: symlinks for `stash_tree()`; an eviction policy or value size a release before 1.0.0 does not yet support (`roadmap.md` §0) |
-| `dastash_engine_error` | Any other `mdbx` failure, with the original condition as `parent` |
+| `dazcache_key_invalid` | An object the encoding does not cover; a partially named vector; an anonymous memoised function without `name` |
+| `dazcache_not_found` | `cache_get()`, `cache_pop()`, `s[[key]]` on an absent or expired key without `default`; `cache()` with `create = FALSE` on a missing directory |
+| `dazcache_type_error` | `cache_incr()` on a non-counter or past ±2⁵³; `cache_path()` or `cache_lazy()` on an entry of the wrong shape; a value a codec's `supports()` rejects; an `expire` that is `NA` or `NaN` |
+| `dazcache_codec_error` | Encode or decode failed; a codec package from `Suggests` is not installed; a record names a codec the handle does not know |
+| `dazcache_blob_corrupt` | A read finds the record's blob file missing, or not the size the record holds. `cache_check()` reports the same condition as a finding instead of raising |
+| `dazcache_busy` | Write lock not acquired within `timeout` |
+| `dazcache_store_full` | `map_size` exhausted |
+| `dazcache_readonly` | A write verb on a read-only handle |
+| `dazcache_config_conflict` | An explicit store-level setting disagrees with the persisted one |
+| `dazcache_version_unsupported` | The store's format or key encoding is newer than the package |
+| `dazcache_forked` | A handle used in a process that did not open it |
+| `dazcache_closed` | A verb on a closed handle |
+| `dazcache_unsupported` | The platform or this release cannot do it: symlinks for `cache_tree()`; an eviction policy or value size a release before 1.0.0 does not yet support (`roadmap.md` §0) |
+| `dazcache_engine_error` | Any other `mdbx` failure, with the original condition as `parent` |
 
-A missing required argument is a `dastash_type_error`, not R's own "argument is missing".
+A missing required argument is a `dazcache_type_error`, not R's own "argument is missing".
 
-There is one warning, raised with `rlang::warn()`: `dastash_memoise_unstored`, with
-`dastash_warning` as parent, when a memoised function returns a result it could not store
-because the stash was busy, full or read-only (D22). Its `parent` is the error.
+There is one warning, raised with `rlang::warn()`: `dazcache_memoise_unstored`, with
+`dazcache_warning` as parent, when a memoised function returns a result it could not store
+because the cache was busy, full or read-only (D22). Its `parent` is the error.
 
 **Translating engine errors.** `mdbx` signals every libmdbx failure as a condition of
 class `mdbx_error`, with a subclass named after the status and `code` and `name` fields
 (§15). `R/engine.R` catches by class: `mdbx_busy` feeds the retry loop of §10 and becomes
-`dastash_busy` when `timeout` runs out, `mdbx_map_full` becomes `dastash_store_full`, and
-any other `mdbx_error` becomes `dastash_engine_error`. **No code reads a message's text.**
+`dazcache_busy` when `timeout` runs out, `mdbx_map_full` becomes `dazcache_store_full`, and
+any other `mdbx_error` becomes `dazcache_engine_error`. **No code reads a message's text.**
 
 The binding's own refusals — a second open, a second transaction, a write in a read
 transaction, a missing named database, a handle inherited across `fork()` — are
-unclassed, and dastash is built never to reach them: the registry (§3.1), the shared
+unclassed, and dazcache is built never to reach them: the registry (§3.1), the shared
 transaction (§10), the read-only check (§12), `mdbx_dbi_list()` at open (§7.2) and the
-PID check (§10) each stop the call first. One that gets through anyway is a dastash bug,
-and surfaces as `dastash_engine_error`.
+PID check (§10) each stop the call first. One that gets through anyway is a dazcache bug,
+and surfaces as `dazcache_engine_error`.
 
 ```r
 rlang::try_fetch(
-  stash_get(s, k),
-  dastash_not_found    = function(cnd) NULL,
-  dastash_blob_corrupt = function(cnd) { stash_check(s, repair = TRUE); NULL }
+  cache_get(s, k),
+  dazcache_not_found    = function(cnd) NULL,
+  dazcache_blob_corrupt = function(cnd) { cache_check(s, repair = TRUE); NULL }
 )
 ```
 
@@ -1455,7 +1455,7 @@ Suggests:  qs2, nanoparquet, arrow, duckdb, DBI, dbplyr, dplyr, bit64, cachem, m
   `integer64` is recognised by class and formatted through its own methods when present;
   data frames are plain; `rlang::abort()` formats bullets on its own.
 
-Every `Suggests` codec and engine degrades to a `dastash_codec_error` naming the package,
+Every `Suggests` codec and engine degrades to a `dazcache_codec_error` naming the package,
 verified by the no-Suggests CI job. `polars` is not on CRAN and is used only when it is
 found installed.
 
@@ -1491,12 +1491,12 @@ it, in one process and across two, on macOS. The design needs nothing outside th
 
 | Call | Shape | Used for |
 |---|---|---|
-| `mdbx_env_open(path, readonly, create, subdir = FALSE, max_dbs = 16L, map_size, max_readers, mode, flags)` | flags are libmdbx names without `MDBX_`: `ACCEDE`, `SAFE_NOSYNC`, `UTTERLY_NOSYNC`, … | `stash()` |
+| `mdbx_env_open(path, readonly, create, subdir = FALSE, max_dbs = 16L, map_size, max_readers, mode, flags)` | flags are libmdbx names without `MDBX_`: `ACCEDE`, `SAFE_NOSYNC`, `UTTERLY_NOSYNC`, … | `cache()` |
 | `mdbx_env_close()`, `mdbx_env_is_open()`, `mdbx_env_sync()` | | close, `"fast"` mode |
 | `mdbx_env_info()`, `mdbx_env_stat()`, `mdbx_env_get_flags()`, `mdbx_env_set_flags()`, `mdbx_flags()` | `mdbx_env_info()` has `file_size`, `geo_current`, `geo_upper`, `mapsize`, `pagesize` | volume, capacity, effective durability |
-| `mdbx_env_reader_check()` | | `stash_check()` |
+| `mdbx_env_reader_check()` | | `cache_check()` |
 | `mdbx_limits(pagesize)` | `keysize_max` | the §5.3 assertion |
-| `mdbx_txn_begin(env, write, flags)`, `mdbx_txn_commit()`, `mdbx_txn_abort()`, `mdbx_txn_state()` | `flags = "TRY"` for a write | `stash_transact()`, the retry loop |
+| `mdbx_txn_begin(env, write, flags)`, `mdbx_txn_commit()`, `mdbx_txn_abort()`, `mdbx_txn_state()` | `flags = "TRY"` for a write | `cache_transact()`, the retry loop |
 | `mdbx_with_read(env, fun)`, `mdbx_with_write(env, fun)` | no flags | reads |
 | `mdbx_dbi_open(txn, name, create)`, `mdbx_dbi_drop()`, `mdbx_dbi_list()` | | named databases, index rebuild |
 | `mdbx_put(txn, key, value, overwrite, db)`, `mdbx_get(txn, key, default, as, db)`, `mdbx_del(txn, key, db)` | | records |
@@ -1516,18 +1516,18 @@ it, in one process and across two, on macOS. The design needs nothing outside th
 | `mdbx_put(overwrite = FALSE)`, `mdbx_del()`, `mdbx_get(default =)` | `FALSE` on an existing key; `TRUE`/`FALSE` for whether a record existed; `default` for an absent key | §3.4 |
 | `mdbx_keys(start =)` | Positions at the first key at or after `start` and runs past a prefix; `limit = NULL` is guarded at `mdbx_scan_max` (10⁶) | §3.5, §9.1: stop client-side, always pass `limit` |
 | Key size | `keysize_max` 2022 at 4 KiB pages, 8166 at 16 KiB. A key one byte over is `mdbx_bad_valsize`. The empty key stores | §5.3 |
-| `mdbx_env_stat(txn, db =)$entries` | Exact within the transaction | `stash_count()` |
+| `mdbx_env_stat(txn, db =)$entries` | Exact within the transaction | `cache_count()` |
 | Map exhaustion | `mdbx_map_full` | §11.2 |
 | After `fork()` | `mdbx_env_is_open()` is `FALSE` in the child and any use is refused, unclassed, naming the fork | §10 |
 | Cost of a commit | 2000 single-put write transactions took 37.4 s; the same 2000 puts in one took 0.058 s (default durability, APFS) | §3.7 |
 
-**What dastash asks of the next `mdbx`**, in priority order, with what each removes here:
+**What dazcache asks of the next `mdbx`**, in priority order, with what each removes here:
 
-| Ask | Removes from dastash |
+| Ask | Removes from dazcache |
 |---|---|
 | An upper bound on scans, `mdbx_keys(end =)` or `prefix =`, stopping in C | the client-side prefix stop and the over-read at the end of every prefix scan (§3.5, §9.1) |
 | `mdbx_with_write(env, fun, flags = NULL)`, or a `try = TRUE` argument | the hand-rolled begin/commit/abort loop |
-| Batch `mdbx_get()`, `mdbx_put()` and `mdbx_del()` over lists of keys in one crossing | one R–C crossing per record in `stash_mget()`, culls and journal flushes |
+| Batch `mdbx_get()`, `mdbx_put()` and `mdbx_del()` over lists of keys in one crossing | one R–C crossing per record in `cache_mget()`, culls and journal flushes |
 | A cursor API, later | nothing v1 needs; prefix scans get cheaper |
 
 **Closed asks.** Classed conditions, once the first ask, are in 0.1.1.
@@ -1545,18 +1545,18 @@ typed layer's `find()` might use (§20).
 **Properties**, executable rather than prose:
 
 ```text
-stash_get(stash_set(k, v)) ~ v                   per codec, per supported type
+cache_get(cache_set(k, v)) ~ v                   per codec, per supported type
 decode(encode(v)) ~ v                            per codec, per supported type
 canon(canon(k)) == canon(k)
 canon(k1) == canon(k2)  <=>  k1 ~ k2             over a generated key domain
 canon("text") == "text"                          for text not starting with an opener
 order(enc_f64(x)) == order(x)                    over generated doubles, both infinities
 order(enc_u64(n)) == order(n)
-stash_volume() == sum of encoded sizes           after any sequence of set / delete
-stash_count()  == length(stash_keys())           after stash_expire()
+cache_volume() == sum of encoded sizes           after any sequence of set / delete
+cache_count()  == length(cache_keys())           after cache_expire()
 no index row without a meta record, none missing after any sequence of mutations
 a "lazy" entry returns a lazy handle; collect() ~ the collected original
-stash_tree(): one leaf per file-backed live entry, every symlink resolves
+cache_tree(): one leaf per file-backed live entry, every symlink resolves
 ```
 
 **Golden vectors** in `tests/testthat/golden/key-vectors.csv` freeze the encoding of §5.2.
@@ -1569,12 +1569,12 @@ stash_tree(): one leaf per file-backed live entry, every symlink resolves
 the concurrency and atomicity claims:
 
 ```text
-8 processes stash_set() the same key        no partial file under blobs/, all hashes verify
-8 processes stash_incr() one key            exactly 8
-8 processes stash_set() distinct keys       counters exact, every key readable
+8 processes cache_set() the same key        no partial file under blobs/, all hashes verify
+8 processes cache_incr() one key            exactly 8
+8 processes cache_set() distinct keys       counters exact, every key readable
 1 writer + 7 readers through a cull         no reader observes a dangling blob
 8 processes call one memoised function      >= 1 computation, 8 identical results
-a writer killed between publish and commit  at most an orphan; stash_check() reclaims it
+a writer killed between publish and commit  at most an orphan; cache_check() reclaims it
 a writer killed between commit and unlink   at most an orphan; never a dangling record
 ```
 
@@ -1590,12 +1590,12 @@ concluding a storage change is sound.
 Each is a decision this document makes and why. Overruling one is cheap now and expensive
 after data exists. "Reverses" names what an earlier draft had.
 
-**D1 — The API is functions.** `stash_get(s, …)`, not `s$get(…)`. Functions pipe, pass to
+**D1 — The API is functions.** `cache_get(s, …)`, not `s$get(…)`. Functions pipe, pass to
 `lapply()`, dispatch, and appear in `methods()` and the NAMESPACE; the package reads like
-`fs`, `httr2`, `pins` and `DBI`. Names follow what R users already know: `stash_mget()`
-after base `mget()`, `stash_memoise()` after `memoise::memoise()`, and `stash_count()` and
-`stash_volume()` rather than an ambiguous `stash_size()`. Reverses the first draft's R6
-methods and the functional proposal's `stash_get_many()` and `stashed()`.
+`fs`, `httr2`, `pins` and `DBI`. Names follow what R users already know: `cache_mget()`
+after base `mget()`, `cache_memoise()` after `memoise::memoise()`, and `cache_count()` and
+`cache_volume()` rather than an ambiguous `cache_size()`. Reverses the first draft's R6
+methods and the functional proposal's `cache_get_many()` and `cacheed()`.
 
 **D2 — The handle is an environment with an S3 class; no R6, no S7.** With functions as
 the interface the object needs identity, mutability and a print method, which an
@@ -1617,7 +1617,7 @@ above it the file keeps the map proportional to metadata and makes §6.3 possibl
 **D6 — Counters return doubles; `bit64` is not imported.** A counter past 2⁵³ is not a
 cache counter; the storage stays 64-bit; the dependency goes.
 
-**D7 — Never-expiring entries have no `expiry` row.** One write per `stash_set()` saved
+**D7 — Never-expiring entries have no `expiry` row.** One write per `cache_set()` saved
 and the index halved, for rows the scan could never reach.
 
 **D8 — `expire =` accepts seconds, `difftime` and `POSIXct`.** R already has the types;
@@ -1631,17 +1631,17 @@ derived from two sources belongs to both.
 are the names users search for; codecs are objects, because they carry code. No
 `evict_lru()` constructors.
 
-**D11 — `stash_entries()` takes two indexed filters, not data-masked predicates.** Tidy
+**D11 — `cache_entries()` takes two indexed filters, not data-masked predicates.** Tidy
 evaluation with index pushdown by pattern-matching the quosure is a query planner in
 disguise, whose fallback is a full scan nobody asked for. `prefix` and `tag` are what the
 indexes answer; everything else is `dplyr` on a data frame. For the same reason there is
-no general `stash_forget(s, predicate)`: an irreversible bulk delete driven by an
+no general `cache_forget(s, predicate)`: an irreversible bulk delete driven by an
 expression is a foot-gun, and the named verbs cover every indexed predicate.
 
 **D12 — Doubles are legal keys, encoded exactly; no NFC normalisation; no raw keys.** A
 cache keyed on a memoised function's arguments must accept `0.1`; hex floats make it
 exact and portable. Normalisation needs a package base R does not have, and a cache miss
-is the whole cost of skipping it. Raw keys would make `stash_keys()` unprintable. The
+is the whole cost of skipping it. Raw keys would make `cache_keys()` unprintable. The
 typed layer may impose precision and normalisation; the cache does not. Reverses the
 first draft, which rejected doubles, normalised strings and accepted raw keys.
 
@@ -1664,13 +1664,13 @@ Reverses the typed-store plan, which wanted `storr`'s driver contract as insuran
 against a binding that did not yet exist.
 
 **D15 — Laziness is a recorded shape, not a flag.** A lazy frame in is a lazy scan out,
-decided by what was written, so `stash_get()` and a memoised function behave the same
-way for the same entry, and `stash_lazy()` exists for an eager Parquet entry.
+decided by what was written, so `cache_get()` and a memoised function behave the same
+way for the same entry, and `cache_lazy()` exists for an eager Parquet entry.
 
 **D16 — The tree is derived and on demand.** Maintaining it on every write would put a
 symlink into the publish path of §8. Rebuilding it is O(entries) and scoped by `prefix`.
 
-**D17 — `stash_memoise()` keys on `name/version/canon(args)`, with defaults filled in.**
+**D17 — `cache_memoise()` keys on `name/version/canon(args)`, with defaults filled in.**
 A string key so it prefix-scans, evicts and browses. Defaults included so an omitted
 argument and its default are one entry; `omit` and `key` for everything else.
 
@@ -1679,28 +1679,28 @@ argument and its default are one entry; `omit` and `key` for everything else.
 **D19 — The typed layer lives in this package, later, as a layer.** Splitting it into a
 second package before either exists is a decision made with no information.
 
-**D20 — `stash_get()` does not verify blob hashes.** Hashing a 200 MB Parquet file on
-every read defeats `stash_path()`; `stash_check(hash = TRUE)` verifies on demand, and a
-corrupt file surfaces as `dastash_codec_error` from the decoder.
+**D20 — `cache_get()` does not verify blob hashes.** Hashing a 200 MB Parquet file on
+every read defeats `cache_path()`; `cache_check(hash = TRUE)` verifies on demand, and a
+corrupt file surfaces as `dazcache_codec_error` from the decoder.
 
 **D21 — The transaction belongs to the environment, not the handle.** Handles on one
 directory share one environment (§3.1), and an environment runs one transaction. If each
-handle owned its own, a verb on a second handle inside `stash_transact()` would hit
+handle owned its own, a verb on a second handle inside `cache_transact()` would hit
 `mdbx`'s unclassed refusal; owning it in the registry entry makes that verb join the open
 transaction instead.
 
 **D22 — A memoised function returns a result it cannot store, with a warning.** Once `f`
 has run, losing its result because the lock stayed busy, the map is full or the handle is
 read-only trades an expensive computation for nothing: a cache may forget (§4). Those three
-become the warning `dastash_memoise_unstored`. A codec that cannot store the value
-(`dastash_codec_error`, `dastash_type_error`) stays an error, since a warning would let a
+become the warning `dazcache_memoise_unstored`. A codec that cannot store the value
+(`dazcache_codec_error`, `dazcache_type_error`) stays an error, since a warning would let a
 misconfigured function silently never cache. (Decided on review, issue #29.)
 
 **D23 — Leaving a transaction's block without an error commits.** The block is a promise
 forced inside the engine's write, so a `return()`, `break` or `next` in it unwinds past the
 commit. Aborting there dropped the writes silently; the block finished, so it commits. Only
 an error or an interrupt aborts. DBI's `dbWithTransaction()` aborts instead and documents
-it; dastash took the reading that matches "commits when `code` finishes". (Issue #18.)
+it; dazcache took the reading that matches "commits when `code` finishes". (Issue #18.)
 
 ---
 
@@ -1723,18 +1723,18 @@ derived indexes, so a store written by 0.1.0 opens under every later version.
 ```text
 single-flight leases        a lease record with holder and expiry, claimed in a short
                             transaction, never held across a producer (§10)
-stale-while-revalidate      probabilistic early recompute in stash_memoise(); the
+stale-while-revalidate      probabilistic early recompute in cache_memoise(); the
                             memoize_stampede recipe
-stale-if-error              stash_fallback(f, s): serve the last good value when f fails;
+stale-if-error              cache_fallback(f, s): serve the last good value when f fails;
                             a second deadline per record, not a subsystem
                             (cache-model.md §8)
 retention                   enforce retain_until; cull and evict refuse to cross it
-stash_reconfigure()         change a store-level setting by rebuilding indexes (§12)
+cache_reconfigure()         change a store-level setting by rebuilding indexes (§12)
 fanout sharding             N environments, key hash picks one; the answer to writer
                             serialisation, and diskcache's own
-namespaces                  stash_sub(s, "prices") over a key prefix; prefix scans exist
+namespaces                  cache_sub(s, "prices") over a key prefix; prefix scans exist
 lazy DuckDB round trip      when a connection can be supplied at decode time
-batch entry points          when mdbx grows them; stash_mget() gets faster, nothing changes
+batch entry points          when mdbx grows them; cache_mget() gets faster, nothing changes
 codec_json()                for a cache other languages read
 ```
 
@@ -1754,10 +1754,10 @@ cache. It sits above one:
 dataset("prices", s, keys = list(date = key_date(), exchange = key_character()),
         produce = ..., identify = ..., on_mismatch = "error")
         |
-        |  "prices/" ‖ canon(date = , exchange = )   ->  a stash key
+        |  "prices/" ‖ canon(date = , exchange = )   ->  a cache key
         |  ds_find(prices, exchange = "XSWX")         ->  an index v1 does not maintain
         v
-      stash                                          <- this document
+      cache                                          <- this document
 ```
 
 Three things v1 does that let it arrive without a migration: the key encoding is the same

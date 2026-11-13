@@ -1,6 +1,6 @@
 # diskcache and polars-diskcache — what they are for
 
-Reference notes on the two Python libraries `dastash` is modelled on. This is about what
+Reference notes on the two Python libraries `dazcache` is modelled on. This is about what
 they do and why people reach for them; `design.md` §1.3 and §3.12 are where the mapping
 onto R and mdbx lives.
 
@@ -168,7 +168,7 @@ for key in cache.iterkeys(): ...      # sorted key order
 ```
 
 Two verbs for a miss — `get()` returns a default, `cache[key]` raises `KeyError` — which
-is a distinction `dastash` copies.
+is a distinction `dazcache` copies.
 
 `get(..., expire_time=True, tag=True)` returns the metadata alongside the value, which is
 how you ask "when does this go stale" without a second call.
@@ -620,12 +620,12 @@ cache_instance.clear()
 
 ---
 
-# 8. What this means for dastash
+# 8. What this means for dazcache
 
 The short version; `design.md` is the long one, and its §3.12 maps the two APIs call by
 call.
 
-| From diskcache and plcache | dastash's position |
+| From diskcache and plcache | dazcache's position |
 |---|---|
 | One table, six indexes, no joins | Named mdbx databases, one per index (`design.md` §1.3, §7.2) |
 | Values above a threshold become files | Same, at 32 KiB — but content-addressed with refcounts, so identical bytes are stored once and deletion is safe (§6.1, §8) |
@@ -633,15 +633,15 @@ call.
 | Indexes created on demand | Copied (§7.2) |
 | `statistics` off, LRS default, tag index off | Copied, for the same reason: an ordinary read touches nothing (§9.3, D4) |
 | Lazy expiry, bounded `cull()` on write | Copied (§9.1) |
-| `Timeout` with `retry=` | `TRY` plus backoff, then `dastash_busy` (§10) |
+| `Timeout` with `retry=` | `TRY` plus backoff, then `dazcache_busy` (§10) |
 | `FanoutCache` for write contention | v1.x; mdbx serialises writers per environment exactly as SQLite does |
 | `memoize` keys on arguments, not code | Copied, with an explicit `version =` lever (§3.8) |
 | Pickle as the default format | RDS, with the ban on hashing `serialize()` output for *identity* (§5.2) |
-| plcache's Parquet path | `codec_parquet()`, `stash_path()` and `stash_lazy()` (§6.3–§6.5) |
+| plcache's Parquet path | `codec_parquet()`, `cache_path()` and `cache_lazy()` (§6.3–§6.5) |
 | A `LazyFrame` comes back lazy | A lazy arrow or polars frame comes back as a scan of the cached file (§6.4) |
 | plcache keys on `repr(bound_args)` | A specified canonical encoding (§5) — same goal, but `1L` and `1` agree and no `repr` can drift |
-| `cache_key=`, `ignore=` | `key =` and `omit =` on `stash_memoise()` (§3.8) |
-| plcache's `functions/` symlink tree | `stash_tree()`: derived, on demand, relative symlinks (§6.6) |
+| `cache_key=`, `ignore=` | `key =` and `omit =` on `cache_memoise()` (§3.8) |
+| plcache's `functions/` symlink tree | `cache_tree()`: derived, on demand, relative symlinks (§6.6) |
 | plcache has no expiry | `expire =` (§3.4) |
 
 The one thing neither library has is a notion of what a value *is*. diskcache will store

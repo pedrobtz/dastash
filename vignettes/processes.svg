@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 270" width="680" height="270" role="img" aria-labelledby="title desc" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13">
   <title id="title">Many readers, one writer at a time</title>
-  <desc id="desc">Three processes read the stash at once without waiting, each seeing the last committed state. One process holds the write lock and writes; a second writer waits for its turn, and raises dastash_busy if it waits longer than timeout.</desc>
+  <desc id="desc">Three processes read the cache at once without waiting, each seeing the last committed state. One process holds the write lock and writes; a second writer waits for its turn, and raises dazcache_busy if it waits longer than timeout.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#52606d"/>
@@ -31,9 +31,9 @@
   <text x="88" y="246" text-anchor="middle" font-size="12" fill="#52606d">read at once, never wait,</text>
   <text x="88" y="262" text-anchor="middle" font-size="12" fill="#52606d">see the last commit</text>
 
-  <!-- stash -->
+  <!-- cache -->
   <rect x="256" y="72" width="168" height="120" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
-  <text x="340" y="112" text-anchor="middle" font-weight="600" fill="#1e3a8a">the stash</text>
+  <text x="340" y="112" text-anchor="middle" font-weight="600" fill="#1e3a8a">the cache</text>
   <text x="340" y="132" text-anchor="middle" font-size="12" fill="#52606d">cache.mdbx + blobs/</text>
   <text x="340" y="160" text-anchor="middle" font-size="12" fill="#52606d">write lock in</text>
   <text x="340" y="176" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#52606d">cache.mdbx-lck</text>
@@ -50,5 +50,5 @@
   <text x="592" y="196" text-anchor="middle" font-size="12" fill="#52606d">waits its turn</text>
   <path d="M520,182 C480,182 470,160 428,152" stroke="#9aa5b1" stroke-width="1.5" stroke-dasharray="5 4" fill="none" marker-end="url(#arrow)"/>
   <text x="592" y="232" text-anchor="middle" font-size="12" fill="#52606d">longer than timeout:</text>
-  <text x="592" y="248" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" fill="#b91c1c">dastash_busy</text>
+  <text x="592" y="248" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" fill="#b91c1c">dazcache_busy</text>
 </svg>

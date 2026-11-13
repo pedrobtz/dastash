@@ -35,5 +35,5 @@ jobs:
          {"os": "ubuntu-latest", "r": "release"},
          {"os": "ubuntu-latest", "r": "oldrel-1"}]
       # The `containers` and `quick-containers` defaults are the CRAN-like
-      # R-devel images: dastash has no compiled code, but they are the only
+      # R-devel images: dazcache has no compiled code, but they are the only
       # R-devel legs, and R-devel is where CRAN checks first.

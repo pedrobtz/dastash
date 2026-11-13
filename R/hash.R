@@ -1,4 +1,4 @@
-# SHA-256, the one hash dastash uses: for digested keys (design.md §5.3) and
+# SHA-256, the one hash dazcache uses: for digested keys (design.md §5.3) and
 # for content-addressed blobs (§6.1). Every hash goes through these functions,
 # so the implementation can change without anything else noticing; the output
 # cannot, since stored keys and blob names are made of it.

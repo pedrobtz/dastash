@@ -2,47 +2,47 @@
 # transaction: it never writes, and it decodes values only after the
 # transaction has returned their bytes.
 
-#' Read from a stash
+#' Read from a cache
 #'
 #' @description
-#' `stash_get()` returns the value stored under a key. A missing key is an error
-#' of class `dastash_not_found` unless `default` is supplied, in which case
+#' `cache_get()` returns the value stored under a key. A missing key is an error
+#' of class `dazcache_not_found` unless `default` is supplied, in which case
 #' `default` is returned; a stored `NULL` is a value like any other.
 #'
-#' `stash_mget()` reads several keys at once and returns a named list in the
-#' order asked. `stash_has()` says which keys have an entry.
+#' `cache_mget()` reads several keys at once and returns a named list in the
+#' order asked. `cache_has()` says which keys have an entry.
 #'
-#' A key is a string, a key from [stash_key()], or any value that can be a key;
-#' see [stash_key()].
+#' A key is a string, a key from [cache_key()], or any value that can be a key;
+#' see [cache_key()].
 #'
-#' @param stash A stash, from [stash()].
+#' @param cache A cache, from [cache()].
 #' @param key A key.
 #' @param keys A character vector of keys, or a list of keys.
 #' @param default Returned for a missing key. Leave it out to make a missing key
 #'   an error.
 #'
-#' @return `stash_get()` returns the value. `stash_mget()` returns a list named
-#'   by each key's text. `stash_has()` returns a logical vector, one element per
+#' @return `cache_get()` returns the value. `cache_mget()` returns a list named
+#'   by each key's text. `cache_has()` returns a logical vector, one element per
 #'   key.
 #'
 #' @examples
-#' s <- local_stash()
-#' stash_set(s, "a", 1)
-#' stash_get(s, "a")
-#' stash_get(s, "b", default = NA)
-#' try(stash_get(s, "b"))
+#' s <- local_cache()
+#' cache_set(s, "a", 1)
+#' cache_get(s, "a")
+#' cache_get(s, "b", default = NA)
+#' try(cache_get(s, "b"))
 #'
-#' stash_has(s, c("a", "b"))
-#' stash_mget(s, c("a", "b"), default = NULL)
+#' cache_has(s, c("a", "b"))
+#' cache_mget(s, c("a", "b"), default = NULL)
 #' @export
-stash_get <- function(stash, key, default) {
+cache_get <- function(cache, key, default) {
   check_supplied("key")
-  check_open(stash)
+  check_open(cache)
   key <- store_key(key)
-  hit <- engine_read(stash$engine, function(txn) {
-    store_read_entry(stash, txn, key)
+  hit <- engine_read(cache$engine, function(txn) {
+    store_read_entry(cache, txn, key)
   })
-  value <- if (!is.null(hit)) store_decode_entry(stash, hit, key)
+  value <- if (!is.null(hit)) store_decode_entry(cache, hit, key)
   if (is.null(value)) {
     if (missing(default)) {
       abort_not_found(
@@ -58,17 +58,17 @@ stash_get <- function(stash, key, default) {
   value[[1L]]
 }
 
-#' @rdname stash_get
+#' @rdname cache_get
 #' @export
-stash_mget <- function(stash, keys, default) {
+cache_mget <- function(cache, keys, default) {
   check_supplied("keys")
-  check_open(stash)
+  check_open(cache)
   infos <- store_keys(keys)
-  hits <- engine_read(stash$engine, function(txn) {
-    lapply(infos, function(key) store_read_entry(stash, txn, key))
+  hits <- engine_read(cache$engine, function(txn) {
+    lapply(infos, function(key) store_read_entry(cache, txn, key))
   })
   values <- lapply(seq_along(hits), function(i) {
-    if (!is.null(hits[[i]])) store_decode_entry(stash, hits[[i]], infos[[i]])
+    if (!is.null(hits[[i]])) store_decode_entry(cache, hits[[i]], infos[[i]])
   })
   absent <- vapply(values, is.null, logical(1))
   if (any(absent) && missing(default)) {
@@ -96,74 +96,74 @@ stash_mget <- function(stash, keys, default) {
   out
 }
 
-#' @rdname stash_get
+#' @rdname cache_get
 #' @export
-stash_has <- function(stash, keys) {
+cache_has <- function(cache, keys) {
   check_supplied("keys")
-  check_open(stash)
+  check_open(cache)
   infos <- store_keys(keys)
-  engine_read(stash$engine, function(txn) {
+  engine_read(cache$engine, function(txn) {
     vapply(
       infos,
-      function(key) !is.null(store_live_record(stash, txn, key)),
+      function(key) !is.null(store_live_record(cache, txn, key)),
       logical(1)
     )
   })
 }
 
-#' List and count a stash's entries
+#' List and count a cache's entries
 #'
 #' @description
-#' `stash_keys()` returns keys in the order they are stored: the text of each
-#' key, as [stash_key_chr()] gives it. A structured key's text is not itself
-#' that key; pass it through [stash_key_text()] to use it again. Use `prefix`
+#' `cache_keys()` returns keys in the order they are stored: the text of each
+#' key, as [cache_key_chr()] gives it. A structured key's text is not itself
+#' that key; pass it through [cache_key_text()] to use it again. Use `prefix`
 #' for keys that begin with a string, and `start` with `n` to page through a
-#' large stash: `start` is inclusive, so drop the first key of every page after
+#' large cache: `start` is inclusive, so drop the first key of every page after
 #' the first.
 #'
 #' A key of up to 512 bytes is stored as itself, so those keys come in byte
 #' order. A longer key is stored under `#` and a digest of its text, and sorts
 #' there, among keys beginning with `#`, in no meaningful order. `prefix` still
-#' matches it by its text, which the stash keeps for keys up to 4096 bytes; of
+#' matches it by its text, which the cache keeps for keys up to 4096 bytes; of
 #' a longer key it keeps the first 256 bytes, so a `prefix` longer than that
 #' does not match it, and it is listed as its digest.
 #'
-#' `stash_count()` returns the number of entries, including expired ones that
-#' [stash_expire()] has not reclaimed yet. `stash_volume()` returns the bytes
-#' the stash occupies on disk: its database file and every stored file.
+#' `cache_count()` returns the number of entries, including expired ones that
+#' [cache_expire()] has not reclaimed yet. `cache_volume()` returns the bytes
+#' the cache occupies on disk: its database file and every stored file.
 #'
-#' @inheritParams stash_get
+#' @inheritParams cache_get
 #' @param ... Must be empty.
 #' @param prefix Only keys whose text begins with this string.
-#' @param start Begin at this key, inclusive: a key's text as `stash_keys()`
-#'   returns it, or a key from [stash_key()].
+#' @param start Begin at this key, inclusive: a key's text as `cache_keys()`
+#'   returns it, or a key from [cache_key()].
 #' @param n The most keys to return.
 #'
-#' @return `stash_keys()` returns a character vector, `stash_count()` an integer,
-#'   and `stash_volume()` a number of bytes.
+#' @return `cache_keys()` returns a character vector, `cache_count()` an integer,
+#'   and `cache_volume()` a number of bytes.
 #'
 #' @examples
-#' s <- local_stash()
-#' for (k in c("prices/a", "prices/b", "volumes/a")) stash_set(s, k, 1)
-#' stash_keys(s)
-#' stash_keys(s, prefix = "prices/")
-#' stash_keys(s, start = "prices/b", n = 2)
-#' stash_count(s)
+#' s <- local_cache()
+#' for (k in c("prices/a", "prices/b", "volumes/a")) cache_set(s, k, 1)
+#' cache_keys(s)
+#' cache_keys(s, prefix = "prices/")
+#' cache_keys(s, start = "prices/b", n = 2)
+#' cache_count(s)
 #' @export
-stash_keys <- function(stash, ..., prefix = NULL, start = NULL, n = Inf) {
+cache_keys <- function(cache, ..., prefix = NULL, start = NULL, n = Inf) {
   rlang::check_dots_empty()
-  check_open(stash)
+  check_open(cache)
   if (!is.null(prefix)) {
     check_string_or_empty(prefix, "prefix")
   }
   check_number(n, "n", min = 0, whole = TRUE, allow_inf = TRUE)
   from <- if (!is.null(start)) key_start(start)
-  e <- stash$engine
+  e <- cache$engine
   now <- unclass(Sys.time())
   engine_read(e, function(txn) {
     if (!is.null(prefix)) {
       got <- store_scan_prefix(
-        stash,
+        cache,
         txn,
         prefix,
         start = from,
@@ -175,7 +175,7 @@ stash_keys <- function(stash, ..., prefix = NULL, start = NULL, n = Inf) {
     # Expired entries are skipped; the records come with the keys, so
     # skipping costs no lookup.
     got <- store_scan_pages(
-      stash,
+      cache,
       txn,
       function(k, r) vapply(r, is_live, logical(1), now = now),
       start = from,
@@ -186,29 +186,29 @@ stash_keys <- function(stash, ..., prefix = NULL, start = NULL, n = Inf) {
   })
 }
 
-#' @rdname stash_keys
+#' @rdname cache_keys
 #' @export
-stash_count <- function(stash) {
-  check_open(stash)
-  e <- stash$engine
+cache_count <- function(cache) {
+  check_open(cache)
+  e <- cache$engine
   as.integer(engine_read(e, function(txn) {
     engine_count(txn, engine_db(e, "meta"))
   }))
 }
 
-#' @rdname stash_keys
+#' @rdname cache_keys
 #' @export
-stash_volume <- function(stash) {
-  check_open(stash)
-  counters <- engine_read(stash$engine, store_counters)
-  as.double(engine_info(stash$engine)$file_size) + counters$bytes_blob
+cache_volume <- function(cache) {
+  check_open(cache)
+  counters <- engine_read(cache$engine, store_counters)
+  as.double(engine_info(cache$engine)$file_size) + counters$bytes_blob
 }
 
 #' The file behind an entry
 #'
 #' @description
 #' An entry of `inline_max` bytes or more, or one written with a file-backed
-#' codec such as [codec_file()], is stored as a file. `stash_path()` returns its
+#' codec such as [codec_file()], is stored as a file. `cache_path()` returns its
 #' path without reading it, so other tools can read it in place.
 #'
 #' The file is read-only, and identical content is one file however many keys
@@ -216,24 +216,24 @@ stash_volume <- function(stash) {
 #' or expiring the entry, from any process, may remove the file. Copy the file
 #' if you need it to outlive the entry.
 #'
-#' @inheritParams stash_get
+#' @inheritParams cache_get
 #'
-#' @return The path, a string. A missing key is a `dastash_not_found` error,
-#'   and an entry stored inline a `dastash_type_error`.
+#' @return The path, a string. A missing key is a `dazcache_not_found` error,
+#'   and an entry stored inline a `dazcache_type_error`.
 #'
 #' @examples
-#' s <- local_stash()
-#' stash_set(s, "numbers", runif(1e5))
-#' path <- stash_path(s, "numbers")
+#' s <- local_cache()
+#' cache_set(s, "numbers", runif(1e5))
+#' path <- cache_path(s, "numbers")
 #' file.size(path)
-#' identical(readRDS(path), stash_get(s, "numbers"))
+#' identical(readRDS(path), cache_get(s, "numbers"))
 #' @export
-stash_path <- function(stash, key) {
+cache_path <- function(cache, key) {
   check_supplied("key")
-  check_open(stash)
+  check_open(cache)
   key <- store_key(key)
-  record <- engine_read(stash$engine, function(txn) {
-    store_live_record(stash, txn, key)
+  record <- engine_read(cache$engine, function(txn) {
+    store_live_record(cache, txn, key)
   })
   if (is.null(record)) {
     abort_not_found(
@@ -253,7 +253,7 @@ stash_path <- function(stash, key) {
       key = key$text
     )
   }
-  blob_path(stash, record_blob_name(record))
+  blob_path(cache, record_blob_name(record))
 }
 
 # Helpers ----------------------------------------------------------------------
@@ -354,7 +354,7 @@ store_decode_entry <- function(s, hit, key, call = rlang::caller_env()) {
           invokeRestart("muffleWarning")
         }
       ),
-      dastash_codec_error = function(cnd) {
+      dazcache_codec_error = function(cnd) {
         failure <<- cnd
         NULL
       }
@@ -376,7 +376,7 @@ store_decode_entry <- function(s, hit, key, call = rlang::caller_env()) {
 # the entry has since been deleted or now names another file (a miss); an
 # error when the record still names a file that is missing or the wrong size.
 # The size is what a crash before the data reached the disk would leave wrong;
-# stash_check(hash = TRUE) verifies the bytes themselves.
+# cache_check(hash = TRUE) verifies the bytes themselves.
 store_blob_ready <- function(s, hit, key, call) {
   record <- hit$record
   size <- file.size(hit$path)
@@ -418,11 +418,11 @@ store_blob_ready <- function(s, hit, key, call) {
 }
 
 # `keys` as a list of keys: a character or other atomic vector is one key per
-# element, and an unnamed list one key per element. A single `dastash_key`, a
-# named list, a data frame or a POSIXlt is one key, as it is to stash_get().
+# element, and an unnamed list one key per element. A single `dazcache_key`, a
+# named list, a data frame or a POSIXlt is one key, as it is to cache_get().
 as_key_list <- function(keys, call = rlang::caller_env()) {
   if (
-    is_dastash_key(keys) || is.data.frame(keys) || inherits(keys, "POSIXlt")
+    is_dazcache_key(keys) || is.data.frame(keys) || inherits(keys, "POSIXlt")
   ) {
     return(list(keys))
   }
@@ -455,11 +455,11 @@ display_key <- function(text, max = 80L) {
 
 
 # Where a listing begins, as a stored key. `start` is a position in the
-# listing, so a string is a key's text, as stash_keys() returns it, and is not
+# listing, so a string is a key's text, as cache_keys() returns it, and is not
 # encoded again: the text of a structured key such as `{n=i:2}` would
 # otherwise be escaped as a string and sort before every structured key.
 key_start <- function(start, call = rlang::caller_env()) {
-  if (is_dastash_key(start)) {
+  if (is_dazcache_key(start)) {
     return(store_key(start, call = call)$stored)
   }
   check_string_or_empty(start, "start", call)

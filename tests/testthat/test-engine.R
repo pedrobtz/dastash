@@ -44,8 +44,8 @@ test_that("a read-only open cannot be joined for writing", {
   engine_fill(e, list(a = "1"))
   engine_close(e)
   ro <- local_engine(dir = dir, readonly = TRUE)
-  expect_error(engine_open(file.path(dir, "cache.mdbx")), class = "dastash_readonly")
-  expect_error(engine_fill(ro, list(b = "2")), class = "dastash_readonly")
+  expect_error(engine_open(file.path(dir, "cache.mdbx")), class = "dazcache_readonly")
+  expect_error(engine_fill(ro, list(b = "2")), class = "dazcache_readonly")
 })
 
 test_that("durability is reported by the environment's flags", {
@@ -94,7 +94,7 @@ test_that("a read-only handle reads a missing database as empty", {
 
 test_that("a database that was never opened is an internal error", {
   e <- local_engine()
-  expect_error(engine_db(e, "nope"), class = "dastash_engine_error")
+  expect_error(engine_db(e, "nope"), class = "dazcache_engine_error")
 })
 
 # Records ------------------------------------------------------------------------
@@ -125,7 +125,7 @@ test_that("an error in a write aborts it and passes through unchanged", {
       engine_put(txn, NULL, "k", "1")
       abort_type_error("Not a counter.")
     }),
-    class = "dastash_type_error"
+    class = "dazcache_type_error"
   )
   expect_null(engine_read(e, function(txn) engine_get(txn, NULL, "k")))
   expect_null(e$txn)
@@ -148,7 +148,7 @@ test_that("a write inside a read transaction is an internal error", {
   e <- local_engine()
   expect_error(
     engine_read(e, function(txn) engine_write(e, function(t) NULL)),
-    class = "dastash_engine_error"
+    class = "dazcache_engine_error"
   )
   expect_null(e$txn)
 })
@@ -167,7 +167,7 @@ test_that("deferred actions run after the commit, and not after an abort", {
     abort_type_error("no")
   }), silent = TRUE)
   expect_identical(ran, "committed")
-  expect_error(engine_defer(e, function() NULL), class = "dastash_engine_error")
+  expect_error(engine_defer(e, function() NULL), class = "dazcache_engine_error")
 })
 
 test_that("a write returns its value, visibly or not", {
@@ -178,26 +178,26 @@ test_that("a write returns its value, visibly or not", {
 
 # Errors -----------------------------------------------------------------------------
 
-test_that("a full map is dastash_store_full, with the engine's condition as parent", {
+test_that("a full map is dazcache_store_full, with the engine's condition as parent", {
   e <- local_engine(map_size = 1024^2)
   cnd <- expect_error(
     engine_write(e, function(txn) {
       for (i in 1:20000) engine_put(txn, NULL, sprintf("k%06d", i), strrep("v", 200))
     }),
-    class = "dastash_store_full"
+    class = "dazcache_store_full"
   )
   expect_s3_class(cnd$parent, "mdbx_map_full")
   expect_null(e$txn)
 })
 
-test_that("any other engine failure is dastash_engine_error", {
+test_that("any other engine failure is dazcache_engine_error", {
   e <- local_engine()
   # One byte over libmdbx's key limit, which depends on the page size: 2022
   # bytes at 4 KiB pages, 8166 at 16 KiB (macOS arm64).
   too_long <- strrep("k", mdbx::mdbx_limits(engine_info(e)$pagesize)$keysize_max + 1L)
   cnd <- expect_error(
     engine_write(e, function(txn) engine_put(txn, NULL, too_long, "v")),
-    class = "dastash_engine_error"
+    class = "dazcache_engine_error"
   )
   expect_s3_class(cnd$parent, "mdbx_error")
 })
@@ -253,7 +253,7 @@ test_that("a forked child cannot use an inherited environment", {
   skip_on_cran()
   e <- local_engine()
   job <- parallel::mcparallel(
-    tryCatch(engine_read(e, function(txn) "used"), dastash_forked = function(cnd) "forked")
+    tryCatch(engine_read(e, function(txn) "used"), dazcache_forked = function(cnd) "forked")
   )
   expect_identical(parallel::mccollect(job)[[1]], "forked")
 })
@@ -281,24 +281,24 @@ test_that("a writer in another process makes the lock busy, then free", {
   for (i in 1:200) if (file.exists(ready)) break else Sys.sleep(0.05)
   expect_true(file.exists(ready))
 
-  expect_error(engine_write(e, function(txn) NULL, timeout = 0.3), class = "dastash_busy")
+  expect_error(engine_write(e, function(txn) NULL, timeout = 0.3), class = "dazcache_busy")
   # Readers are never blocked.
   expect_identical(engine_read(e, function(txn) rawToChar(engine_get(txn, NULL, "k"))), "0")
   # Waiting long enough gets the lock once the other writer commits.
   expect_identical(engine_write(e, function(txn) "written", timeout = 30), "written")
 })
 
-test_that("dastash_busy says how to recover where a dead writer keeps the lock", {
+test_that("dazcache_busy says how to recover where a dead writer keeps the lock", {
   e <- local_engine()
   busy <- function(...) {
     stop(structure(class = c("mdbx_busy", "mdbx_error", "error", "condition"), list(message = "busy", call = NULL)))
   }
   local_mocked_bindings(mdbx_txn_begin = busy, .package = "mdbx")
   local_mocked_bindings(engine_dead_writer_wedges = function() TRUE)
-  cnd <- expect_error(engine_write(e, function(txn) NULL, timeout = 0), class = "dastash_busy")
-  expect_match(conditionMessage(cnd), "close every handle on this stash, in every process")
+  cnd <- expect_error(engine_write(e, function(txn) NULL, timeout = 0), class = "dazcache_busy")
+  expect_match(conditionMessage(cnd), "close every handle on this cache, in every process")
   local_mocked_bindings(engine_dead_writer_wedges = function() FALSE)
-  cnd <- expect_error(engine_write(e, function(txn) NULL, timeout = 0), class = "dastash_busy")
+  cnd <- expect_error(engine_write(e, function(txn) NULL, timeout = 0), class = "dazcache_busy")
   expect_no_match(conditionMessage(cnd), "close every handle")
 })
 
@@ -314,7 +314,7 @@ test_that("a failed commit raises its own error, and the engine stays usable", {
   local({
     local_mocked_bindings(mdbx_txn_commit = failing, .package = "mdbx")
     local_mocked_bindings(mdbx_txn_abort = function(txn) stop("abort of a finished transaction"), .package = "mdbx")
-    expect_error(engine_fill(e, list(a = "1")), class = "dastash_store_full")
+    expect_error(engine_fill(e, list(a = "1")), class = "dazcache_store_full")
   })
   expect_null(e$txn)
   engine_fill(e, list(b = "2"))

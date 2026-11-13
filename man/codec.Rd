@@ -42,10 +42,10 @@ round-trips without loss, or \code{NULL} for every value.}
 time than a local disk saves.}
 }
 \value{
-A codec: a list with class \code{dastash_codec}.
+A codec: a list with class \code{dazcache_codec}.
 }
 \description{
-A codec turns a value into a file and back. The stash records which codec
+A codec turns a value into a file and back. The cache records which codec
 wrote each entry and always decodes with that one, so changing the default
 never makes stored entries unreadable.
 \itemize{
@@ -61,7 +61,7 @@ exactly as they are.
 \item \code{codec_file()} stores a copy of an existing file; reading the entry back
 gives the path of the stored copy, which is read-only. Always file-backed.
 \item \code{codec()} defines your own. Every process that reads its entries must pass
-it to \code{stash()} in \code{codecs}.
+it to \code{cache()} in \code{codecs}.
 }
 }
 \examples{

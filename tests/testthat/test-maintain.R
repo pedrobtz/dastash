@@ -1,10 +1,10 @@
 # Size limit and eviction --------------------------------------------------------
 
-test_that("writes keep the stash near its limit, evicting the least recently stored", {
-  s <- local_stash(size_limit = 20000, inline_max = 1000, cull_limit = 5)
-  for (i in 1:30) stash_set(s, sprintf("k%02d", i), runif(250))
+test_that("writes keep the cache near its limit, evicting the least recently stored", {
+  s <- local_cache(size_limit = 20000, inline_max = 1000, cull_limit = 5)
+  for (i in 1:30) cache_set(s, sprintf("k%02d", i), runif(250))
   expect_lte(held(s), 20000 + 2100)
-  keys <- stash_keys(s)
+  keys <- cache_keys(s)
   # What is left is the most recently stored.
   expect_true("k30" %in% keys)
   expect_false("k01" %in% keys)
@@ -12,124 +12,124 @@ test_that("writes keep the stash near its limit, evicting the least recently sto
   expect_identical(store_violations(s), character())
 })
 
-test_that("stash_mset() keeps the stash near its limit however large the batch", {
-  s <- local_stash(size_limit = 1e5, inline_max = 1000)
+test_that("cache_mset() keeps the cache near its limit however large the batch", {
+  s <- local_cache(size_limit = 1e5, inline_max = 1000)
   values <- stats::setNames(lapply(1:50, function(i) runif(1000)), sprintf("v%02d", 1:50))
-  stash_mset(s, values)
-  # At most one entry over the limit, as a run of stash_set() calls leaves it.
+  cache_mset(s, values)
+  # At most one entry over the limit, as a run of cache_set() calls leaves it.
   expect_lte(held(s), 1e5 + 8100)
-  expect_true("v50" %in% stash_keys(s))
-  expect_identical(stash_get(s, "v50"), values$v50)
+  expect_true("v50" %in% cache_keys(s))
+  expect_identical(cache_get(s, "v50"), values$v50)
   expect_identical(store_violations(s), character())
 })
 
-test_that("stash_cull() finishes the job", {
+test_that("cache_cull() finishes the job", {
   # One eviction per write cannot make room for a value three times the size
-  # of the others, so the write leaves the stash over its limit.
-  s <- local_stash(size_limit = 10000, inline_max = 1000, cull_limit = 1)
-  for (i in 1:4) stash_set(s, sprintf("k%02d", i), runif(250))
-  stash_set(s, "k05", runif(750))
+  # of the others, so the write leaves the cache over its limit.
+  s <- local_cache(size_limit = 10000, inline_max = 1000, cull_limit = 1)
+  for (i in 1:4) cache_set(s, sprintf("k%02d", i), runif(250))
+  cache_set(s, "k05", runif(750))
   expect_gt(held(s), 10000)
-  stash_cull(s)
+  cache_cull(s)
   expect_lte(held(s), 10000)
-  expect_true("k05" %in% stash_keys(s))
+  expect_true("k05" %in% cache_keys(s))
   expect_identical(store_violations(s), character())
 })
 
 test_that("a value larger than the limit is kept and everything else evicted", {
-  s <- local_stash(size_limit = 5000, inline_max = 1000, cull_limit = 100)
-  for (i in 1:3) stash_set(s, sprintf("small%d", i), runif(100))
-  stash_set(s, "huge", runif(2000))
-  expect_true(stash_has(s, "huge"))
-  expect_identical(stash_keys(s), "huge")
+  s <- local_cache(size_limit = 5000, inline_max = 1000, cull_limit = 100)
+  for (i in 1:3) cache_set(s, sprintf("small%d", i), runif(100))
+  cache_set(s, "huge", runif(2000))
+  expect_true(cache_has(s, "huge"))
+  expect_identical(cache_keys(s), "huge")
 })
 
 test_that("eviction = \"none\" and size_limit = Inf never evict", {
-  s <- local_stash(size_limit = 1000, eviction = "none", inline_max = 100)
-  for (i in 1:10) stash_set(s, sprintf("k%d", i), runif(100))
-  expect_identical(stash_count(s), 10L)
-  stash_cull(s)
-  expect_identical(stash_count(s), 10L)
+  s <- local_cache(size_limit = 1000, eviction = "none", inline_max = 100)
+  for (i in 1:10) cache_set(s, sprintf("k%d", i), runif(100))
+  expect_identical(cache_count(s), 10L)
+  cache_cull(s)
+  expect_identical(cache_count(s), 10L)
   expect_false("stored" %in% names(s$engine$dbs))
 })
 
 test_that("culling reclaims expired entries first", {
-  s <- local_stash(size_limit = 1e6, inline_max = 1000)
-  stash_set(s, "old", runif(100), expire = 0)
-  stash_set(s, "kept", runif(100))
-  stash_cull(s)
-  expect_identical(stash_count(s), 1L)
-  expect_identical(stash_keys(s), "kept")
+  s <- local_cache(size_limit = 1e6, inline_max = 1000)
+  cache_set(s, "old", runif(100), expire = 0)
+  cache_set(s, "kept", runif(100))
+  cache_cull(s)
+  expect_identical(cache_count(s), 1L)
+  expect_identical(cache_keys(s), "kept")
 })
 
 # Tags ---------------------------------------------------------------------------
 
 test_that("tags are stored, listed and evicted", {
-  s <- local_stash(inline_max = 100)
-  stash_set(s, "a", 1, tags = "x")
-  stash_set(s, "b", runif(100), tags = c("x", "y"))
-  stash_set(s, "c", 3, tags = "y")
-  stash_set(s, "d", 4)
-  expect_setequal(stash_entries(s, tag = "x")$key, c("a", "b"))
-  expect_identical(stash_entries(s, tag = "y")$tags, list(c("x", "y"), "y"))
-  stash_evict(s, tag = "x")
-  expect_identical(stash_keys(s), c("c", "d"))
+  s <- local_cache(inline_max = 100)
+  cache_set(s, "a", 1, tags = "x")
+  cache_set(s, "b", runif(100), tags = c("x", "y"))
+  cache_set(s, "c", 3, tags = "y")
+  cache_set(s, "d", 4)
+  expect_setequal(cache_entries(s, tag = "x")$key, c("a", "b"))
+  expect_identical(cache_entries(s, tag = "y")$tags, list(c("x", "y"), "y"))
+  cache_evict(s, tag = "x")
+  expect_identical(cache_keys(s), c("c", "d"))
   expect_length(list.files(file.path(s$dir, "blobs"), recursive = TRUE), 0L)
   expect_identical(store_violations(s), character())
 })
 
 test_that("replacing an entry replaces its tags", {
-  s <- local_stash()
-  stash_set(s, "a", 1, tags = c("old", "both"))
-  stash_set(s, "a", 2, tags = c("both", "new"))
-  expect_identical(nrow(stash_entries(s, tag = "old")), 0L)
-  expect_identical(stash_entries(s, tag = "new")$key, "a")
-  stash_incr(s, "n")
-  stash_set(s, "n", 5, tags = "count")
-  expect_identical(stash_entries(s, tag = "count")$key, "n")
+  s <- local_cache()
+  cache_set(s, "a", 1, tags = c("old", "both"))
+  cache_set(s, "a", 2, tags = c("both", "new"))
+  expect_identical(nrow(cache_entries(s, tag = "old")), 0L)
+  expect_identical(cache_entries(s, tag = "new")$key, "a")
+  cache_incr(s, "n")
+  cache_set(s, "n", 5, tags = "count")
+  expect_identical(cache_entries(s, tag = "count")$key, "n")
 })
 
 test_that("tags are checked", {
-  s <- local_stash()
-  expect_error(stash_set(s, "a", 1, tags = NA_character_), class = "dastash_type_error")
-  expect_error(stash_set(s, "a", 1, tags = ""), class = "dastash_type_error")
-  expect_error(stash_set(s, "a", 1, tags = 1), class = "dastash_type_error")
-  expect_error(stash_set(s, "a", 1, tags = paste0("t", 1:17)), class = "dastash_type_error")
-  expect_error(stash_set(s, "a", 1, tags = strrep("t", 257)), class = "dastash_type_error")
-  stash_set(s, "a", 1, tags = c("b", "a", "b"))
-  expect_identical(stash_info(s, "a")$tags, list(c("a", "b")))
+  s <- local_cache()
+  expect_error(cache_set(s, "a", 1, tags = NA_character_), class = "dazcache_type_error")
+  expect_error(cache_set(s, "a", 1, tags = ""), class = "dazcache_type_error")
+  expect_error(cache_set(s, "a", 1, tags = 1), class = "dazcache_type_error")
+  expect_error(cache_set(s, "a", 1, tags = paste0("t", 1:17)), class = "dazcache_type_error")
+  expect_error(cache_set(s, "a", 1, tags = strrep("t", 257)), class = "dazcache_type_error")
+  cache_set(s, "a", 1, tags = c("b", "a", "b"))
+  expect_identical(cache_info(s, "a")$tags, list(c("a", "b")))
 })
 
 test_that("evict by prefix, and evict needs exactly one selector", {
-  s <- local_stash()
-  stash_mset(s, list(`p/1` = 1, `p/2` = 2, `q/1` = 3))
-  stash_evict(s, prefix = "p/")
-  expect_identical(stash_keys(s), "q/1")
-  expect_error(stash_evict(s), class = "dastash_type_error")
-  expect_error(stash_evict(s, tag = "a", prefix = "b"), class = "dastash_type_error")
+  s <- local_cache()
+  cache_mset(s, list(`p/1` = 1, `p/2` = 2, `q/1` = 3))
+  cache_evict(s, prefix = "p/")
+  expect_identical(cache_keys(s), "q/1")
+  expect_error(cache_evict(s), class = "dazcache_type_error")
+  expect_error(cache_evict(s, tag = "a", prefix = "b"), class = "dazcache_type_error")
 })
 
-test_that("stash_clear() empties everything and removes every file", {
-  s <- local_stash(inline_max = 100)
-  stash_set(s, "a", runif(100), tags = "t", expire = 60)
-  stash_set(s, "b", 1)
-  stash_clear(s)
-  expect_identical(stash_count(s), 0L)
+test_that("cache_clear() empties everything and removes every file", {
+  s <- local_cache(inline_max = 100)
+  cache_set(s, "a", runif(100), tags = "t", expire = 60)
+  cache_set(s, "b", 1)
+  cache_clear(s)
+  expect_identical(cache_count(s), 0L)
   expect_identical(held(s), 0)
   expect_length(list.files(file.path(s$dir, "blobs"), recursive = TRUE), 0L)
   expect_identical(store_violations(s), character())
-  stash_set(s, "c", 1)
-  expect_identical(stash_get(s, "c"), 1)
+  cache_set(s, "c", 1)
+  expect_identical(cache_get(s, "c"), 1)
 })
 
 # Catalogue ------------------------------------------------------------------------
 
-test_that("stash_entries() has one row per live entry and stable columns", {
-  s <- local_stash(inline_max = 100)
-  stash_set(s, "a", "abc", tags = "t")
-  stash_set(s, "b", runif(100), expire = 3600)
-  stash_set(s, "gone", 1, expire = 0)
-  e <- stash_entries(s)
+test_that("cache_entries() has one row per live entry and stable columns", {
+  s <- local_cache(inline_max = 100)
+  cache_set(s, "a", "abc", tags = "t")
+  cache_set(s, "b", runif(100), expire = 3600)
+  cache_set(s, "gone", 1, expire = 0)
+  e <- cache_entries(s)
   expect_s3_class(e, "data.frame")
   expect_identical(class(e), "data.frame")
   expect_named(e, c("key", "bytes", "codec", "inline", "blob", "tags", "shape", "stored", "accessed", "hits", "expires"))
@@ -139,25 +139,25 @@ test_that("stash_entries() has one row per live entry and stable columns", {
   expect_match(e$blob[[2]], "^[0-9a-f]{64}$")
   expect_true(is.na(e$expires[[1]]))
   expect_s3_class(e$stored, "POSIXct")
-  expect_identical(nrow(stash_entries(s, prefix = "b")), 1L)
-  expect_identical(nrow(stash_entries(s, n = 1)), 1L)
-  expect_identical(nrow(local_stash() |> stash_entries()), 0L)
+  expect_identical(nrow(cache_entries(s, prefix = "b")), 1L)
+  expect_identical(nrow(cache_entries(s, n = 1)), 1L)
+  expect_identical(nrow(local_cache() |> cache_entries()), 0L)
 })
 
-test_that("stash_info() is one row or NULL", {
-  s <- local_stash()
-  stash_set(s, "a", "text")
-  info <- stash_info(s, "a")
+test_that("cache_info() is one row or NULL", {
+  s <- local_cache()
+  cache_set(s, "a", "text")
+  info <- cache_info(s, "a")
   expect_identical(nrow(info), 1L)
   expect_identical(info$codec, "raw")
-  expect_null(stash_info(s, "missing"))
+  expect_null(cache_info(s, "missing"))
 })
 
-test_that("stash_stats() is one row", {
-  s <- local_stash(inline_max = 100)
-  stash_set(s, "a", 1)
-  stash_set(s, "b", runif(100))
-  st <- stash_stats(s)
+test_that("cache_stats() is one row", {
+  s <- local_cache(inline_max = 100)
+  cache_set(s, "a", 1)
+  cache_set(s, "b", runif(100))
+  st <- cache_stats(s)
   expect_identical(nrow(st), 1L)
   expect_identical(st$count, 2L)
   expect_gt(st$bytes_blob, 0)
@@ -166,27 +166,27 @@ test_that("stash_stats() is one row", {
   expect_identical(st$format_version, FORMAT_VERSION)
 })
 
-# stash_check() ---------------------------------------------------------------------
+# cache_check() ---------------------------------------------------------------------
 
-test_that("a sound stash has no findings", {
-  s <- local_stash(inline_max = 100)
-  stash_set(s, "a", runif(100), tags = "t", expire = 60)
-  stash_set(s, "b", 1)
-  f <- stash_check(s, hash = TRUE)
+test_that("a sound cache has no findings", {
+  s <- local_cache(inline_max = 100)
+  cache_set(s, "a", runif(100), tags = "t", expire = 60)
+  cache_set(s, "b", 1)
+  f <- cache_check(s, hash = TRUE)
   expect_identical(nrow(f), 0L)
   expect_named(f, c("kind", "key", "path", "detail", "repaired"))
 })
 
-test_that("stash_check() finds and repairs every kind of damage", {
-  s <- local_stash(inline_max = 100)
+test_that("cache_check() finds and repairs every kind of damage", {
+  s <- local_cache(inline_max = 100)
   x <- runif(100)
-  stash_set(s, "blob", x, tags = "t", expire = 60)
-  stash_set(s, "shared1", runif(100))
-  stash_set(s, "shared2", stash_get(s, "shared1"))
-  stash_set(s, "inline", 1)
-  stash_set(s, "novalue", 2)
-  stash_set(s, "nofile", runif(100))
-  stash_set(s, "corrupt", runif(100))
+  cache_set(s, "blob", x, tags = "t", expire = 60)
+  cache_set(s, "shared1", runif(100))
+  cache_set(s, "shared2", cache_get(s, "shared1"))
+  cache_set(s, "inline", 1)
+  cache_set(s, "novalue", 2)
+  cache_set(s, "nofile", runif(100))
+  cache_set(s, "corrupt", runif(100))
   e <- s$engine
   engine_write(e, function(txn) {
     # An orphan index row, a missing one, an orphan value, a missing value.
@@ -195,16 +195,16 @@ test_that("stash_check() finds and repairs every kind of damage", {
     engine_put(txn, engine_db(e, "values"), "stray", as.raw(1))
     engine_del(txn, engine_db(e, "values"), "novalue")
     # A drifted refcount and drifted counters.
-    name <- basename(stash_path(s, "shared1"))
+    name <- basename(cache_path(s, "shared1"))
     row <- record_decode(engine_get(txn, engine_db(e, "blobs"), name))
     row$refs <- 7
     engine_put(txn, engine_db(e, "blobs"), name, record_encode(row))
     store_counters_add(txn, list(bytes_inline = 99, bytes_blob = 7))
     # A file whose blobs row is gone.
-    engine_del(txn, engine_db(e, "blobs"), basename(stash_path(s, "blob")))
+    engine_del(txn, engine_db(e, "blobs"), basename(cache_path(s, "blob")))
   })
-  nofile <- stash_path(s, "nofile")
-  corrupt <- stash_path(s, "corrupt")
+  nofile <- cache_path(s, "nofile")
+  corrupt <- cache_path(s, "corrupt")
   blob_unlink(nofile)
   Sys.chmod(corrupt, "0644")
   writeBin(as.raw(1:5), corrupt)
@@ -212,7 +212,7 @@ test_that("stash_check() finds and repairs every kind of damage", {
   dir.create(dirname(orphan), showWarnings = FALSE)
   writeBin(as.raw(1:3), orphan)
 
-  found <- stash_check(s)
+  found <- cache_check(s)
   expect_setequal(
     unique(found$kind),
     c("index_orphan", "index_missing", "value_orphan", "value_missing",
@@ -223,38 +223,38 @@ test_that("stash_check() finds and repairs every kind of damage", {
   expect_true(any(startsWith(found$detail, "bytes_blob")))
   expect_true(any(startsWith(found$detail, "bytes_inline")))
 
-  fixed <- stash_check(s, repair = TRUE)
+  fixed <- cache_check(s, repair = TRUE)
   expect_true(all(fixed$repaired))
-  expect_identical(nrow(stash_check(s, hash = TRUE)), 0L)
+  expect_identical(nrow(cache_check(s, hash = TRUE)), 0L)
   expect_identical(store_violations(s), character())
   expect_false(file.exists(orphan))
   expect_false(file.exists(corrupt))
-  expect_identical(stash_get(s, "blob"), x)
-  expect_identical(stash_entries(s, tag = "t")$key, "blob")
-  expect_false(any(stash_has(s, c("novalue", "nofile", "corrupt"))))
-  expect_true(all(stash_has(s, c("shared1", "shared2", "inline"))))
+  expect_identical(cache_get(s, "blob"), x)
+  expect_identical(cache_entries(s, tag = "t")$key, "blob")
+  expect_false(any(cache_has(s, c("novalue", "nofile", "corrupt"))))
+  expect_true(all(cache_has(s, c("shared1", "shared2", "inline"))))
 })
 
 test_that("hash = TRUE finds a file whose bytes changed but not its size", {
-  s <- local_stash(inline_max = 100)
-  stash_set(s, "k", runif(100))
-  path <- stash_path(s, "k")
+  s <- local_cache(inline_max = 100)
+  cache_set(s, "k", runif(100))
+  path <- cache_path(s, "k")
   bytes <- readBin(path, "raw", file.size(path))
   bytes[length(bytes)] <- xor(bytes[length(bytes)], as.raw(1))
   Sys.chmod(path, "0644")
   writeBin(bytes, path)
-  expect_identical(nrow(stash_check(s)), 0L)
-  f <- stash_check(s, hash = TRUE)
+  expect_identical(nrow(cache_check(s)), 0L)
+  f <- cache_check(s, hash = TRUE)
   expect_identical(f$kind, "blob_corrupt")
-  stash_check(s, repair = TRUE, hash = TRUE)
-  expect_false(stash_has(s, "k"))
+  cache_check(s, repair = TRUE, hash = TRUE)
+  expect_false(cache_has(s, "k"))
   expect_identical(store_violations(s), character())
 })
 
 test_that("stale staging files of dead processes are reported and removed", {
   skip_on_os("windows")
   skip_if_not_installed("callr")
-  s <- local_stash()
+  s <- local_cache()
   live <- callr::r_bg(function() Sys.sleep(60))
   withr::defer(live$kill())
   # A process that has exited, so its id is certainly not running now.
@@ -266,50 +266,50 @@ test_that("stale staging files of dead processes are reported and removed", {
   Sys.setFileTime(old, Sys.time() - 7200)
   Sys.setFileTime(busy, Sys.time() - 7200)
   # A dead process's file is stale however new; a live one's however old.
-  f <- stash_check(s)
+  f <- cache_check(s)
   expect_setequal(f$kind, "tmp_stale")
   expect_setequal(f$path, c(old, fresh))
-  stash_check(s, repair = TRUE)
+  cache_check(s, repair = TRUE)
   expect_false(file.exists(old))
   expect_false(file.exists(fresh))
   expect_true(file.exists(busy))
 })
 
 test_that("an encoder that fails or is interrupted leaves no staging file", {
-  s <- local_stash(inline_max = 5)
+  s <- local_cache(inline_max = 5)
   tmp <- file.path(s$dir, "tmp")
   bad <- codec("bad", encode = function(value, path) {
     writeBin(as.raw(1:10), path)
     stop("broke")
   }, decode = function(path, meta) 1)
-  for (i in 1:3) expect_error(stash_set(s, "k", 1, codec = bad), class = "dastash_codec_error")
-  expect_error(stash_mset(s, list(a = 1, b = 2), codec = bad), class = "dastash_codec_error")
+  for (i in 1:3) expect_error(cache_set(s, "k", 1, codec = bad), class = "dazcache_codec_error")
+  expect_error(cache_mset(s, list(a = 1, b = 2), codec = bad), class = "dazcache_codec_error")
   expect_length(list.files(tmp), 0L)
   stopped <- codec("stopped", encode = function(value, path) {
     writeBin(as.raw(1:10), path)
     rlang::interrupt()
   }, decode = function(path, meta) 1)
-  interrupted <- tryCatch(stash_set(s, "k", 1, codec = stopped), interrupt = function(cnd) TRUE)
+  interrupted <- tryCatch(cache_set(s, "k", 1, codec = stopped), interrupt = function(cnd) TRUE)
   expect_true(interrupted)
-  interrupted <- tryCatch(stash_mset(s, list(a = 1, b = 2), codec = stopped), interrupt = function(cnd) TRUE)
+  interrupted <- tryCatch(cache_mset(s, list(a = 1, b = 2), codec = stopped), interrupt = function(cnd) TRUE)
   expect_true(interrupted)
   expect_length(list.files(tmp), 0L)
-  expect_identical(stash_count(s), 0L)
+  expect_identical(cache_count(s), 0L)
   # Interrupted on its own staging file, a file-backed value of bytes.
   reached <- FALSE
   local_mocked_bindings(hash_bytes = function(bytes) {
     reached <<- TRUE
     rlang::interrupt()
   })
-  tryCatch(stash_set(s, "r", as.raw(1:10)), interrupt = function(cnd) NULL)
+  tryCatch(cache_set(s, "r", as.raw(1:10)), interrupt = function(cnd) NULL)
   expect_true(reached)
   expect_length(list.files(tmp), 0L)
 })
 
 test_that("a crash's orphan is reclaimed by repair", {
-  s <- local_stash(inline_max = 100)
-  stash_set(s, "k", runif(100))
-  path <- stash_path(s, "k")
+  s <- local_cache(inline_max = 100)
+  cache_set(s, "k", runif(100))
+  path <- cache_path(s, "k")
   # What a crash between commit and unlink leaves: no record, no row, a file.
   engine_write(s$engine, function(txn) {
     engine_del(txn, engine_db(s$engine, "meta"), "k")
@@ -317,149 +317,149 @@ test_that("a crash's orphan is reclaimed by repair", {
     store_counters_add(txn, list(bytes_blob = -file.size(path)))
   })
   engine_write(s$engine, function(txn) engine_clear_db(txn, engine_db(s$engine, "stored")))
-  f <- stash_check(s, repair = TRUE)
+  f <- cache_check(s, repair = TRUE)
   expect_true("blob_orphan" %in% f$kind)
   expect_false(file.exists(path))
   expect_identical(store_violations(s), character())
 })
 
 test_that("prefix selects digested keys by their text", {
-  s <- local_stash()
+  s <- local_cache()
   long <- paste0("p/", strrep("x", 600))
   longer <- paste0("p/", strrep("y", 5000))
   other <- paste0("q/", strrep("z", 600))
   # A string beginning with `#` is escaped, so it never sorts among digests.
   hash_like <- "#not-a-digest"
   for (k in c("p/a", long, longer, other, hash_like, "p/b")) {
-    stash_set(s, k, 1)
+    cache_set(s, k, 1)
   }
   expect_setequal(
-    stash_keys(s, prefix = "p/"),
-    c("p/a", "p/b", long, paste0("#", stash_key_hash(longer)))
+    cache_keys(s, prefix = "p/"),
+    c("p/a", "p/b", long, paste0("#", cache_key_hash(longer)))
   )
-  expect_length(stash_keys(s, prefix = "p/"), 4L)
+  expect_length(cache_keys(s, prefix = "p/"), 4L)
   expect_identical(
-    stash_keys(s, prefix = "p/", n = 2),
-    stash_keys(s, prefix = "p/")[1:2]
+    cache_keys(s, prefix = "p/", n = 2),
+    cache_keys(s, prefix = "p/")[1:2]
   )
-  expect_identical(stash_keys(s, prefix = "q/"), other)
-  expect_identical(stash_keys(s, prefix = "s:#"), stash_key_chr(hash_like))
-  expect_length(stash_keys(s, prefix = ""), 6L)
+  expect_identical(cache_keys(s, prefix = "q/"), other)
+  expect_identical(cache_keys(s, prefix = "s:#"), cache_key_chr(hash_like))
+  expect_length(cache_keys(s, prefix = ""), 6L)
   # A prefix longer than the kept preview cannot be told for an unkept key.
-  expect_length(stash_keys(s, prefix = paste0("p/", strrep("y", 300))), 0L)
-  expect_identical(nrow(stash_entries(s, prefix = "p/")), 4L)
-  stash_set(s, long, 2, tags = "t")
-  stash_set(s, "q/plain", 2, tags = "t")
-  expect_identical(stash_entries(s, prefix = "p/", tag = "t")$key, long)
-  stash_evict(s, prefix = "p/")
+  expect_length(cache_keys(s, prefix = paste0("p/", strrep("y", 300))), 0L)
+  expect_identical(nrow(cache_entries(s, prefix = "p/")), 4L)
+  cache_set(s, long, 2, tags = "t")
+  cache_set(s, "q/plain", 2, tags = "t")
+  expect_identical(cache_entries(s, prefix = "p/", tag = "t")$key, long)
+  cache_evict(s, prefix = "p/")
   expect_identical(
-    sort(stash_keys(s), method = "radix"),
-    sort(c(other, stash_key_chr(hash_like), "q/plain"), method = "radix")
+    sort(cache_keys(s), method = "radix"),
+    sort(c(other, cache_key_chr(hash_like), "q/plain"), method = "radix")
   )
   expect_identical(store_violations(s), character())
 })
 
 test_that("start pages through a prefix that holds digested keys", {
-  s <- local_stash()
+  s <- local_cache()
   keys <- c(paste0("p/", 1:5), paste0("p/", strrep("x", 600), 1:3))
   for (k in keys) {
-    stash_set(s, k, 1)
+    cache_set(s, k, 1)
   }
-  all <- stash_keys(s, prefix = "p/")
+  all <- cache_keys(s, prefix = "p/")
   expect_setequal(all, keys)
-  page1 <- stash_keys(s, prefix = "p/", n = 4)
+  page1 <- cache_keys(s, prefix = "p/", n = 4)
   last <- page1[[4]]
-  page2 <- stash_keys(s, prefix = "p/", start = last, n = 10)
+  page2 <- cache_keys(s, prefix = "p/", start = last, n = 10)
   expect_identical(c(page1, page2[-1L]), all)
 })
 
-test_that("stash_evict() removes more entries than one scan holds", {
-  s <- local_stash()
+test_that("cache_evict() removes more entries than one scan holds", {
+  s <- local_cache()
   n <- ENGINE_SCAN_CHUNK + 1L
   values <- as.list(seq_len(n))
-  stash_mset(s, stats::setNames(values, sprintf("p/%04d", seq_len(n))))
-  stash_mset(s, stats::setNames(values, sprintf("t/%04d", seq_len(n))), tags = "many")
-  stash_evict(s, prefix = "p/")
-  expect_identical(stash_count(s), n)
-  stash_evict(s, tag = "many")
-  expect_identical(stash_count(s), 0L)
+  cache_mset(s, stats::setNames(values, sprintf("p/%04d", seq_len(n))))
+  cache_mset(s, stats::setNames(values, sprintf("t/%04d", seq_len(n))), tags = "many")
+  cache_evict(s, prefix = "p/")
+  expect_identical(cache_count(s), n)
+  cache_evict(s, tag = "many")
+  expect_identical(cache_count(s), 0L)
   expect_identical(store_violations(s), character())
 })
 
-test_that("stash_evict() by tag ends on tag rows whose entries are gone", {
-  s <- local_stash()
+test_that("cache_evict() by tag ends on tag rows whose entries are gone", {
+  s <- local_cache()
   e <- s$engine
   engine_write(e, function(txn) {
     for (i in seq_len(ENGINE_SCAN_CHUNK)) {
       engine_put(txn, engine_db(e, "tags"), tag_key("t", sprintf("ghost%04d", i)), raw())
     }
   })
-  stash_set(s, "real", 1, tags = "t")
-  stash_evict(s, tag = "t")
-  expect_identical(stash_count(s), 0L)
+  cache_set(s, "real", 1, tags = "t")
+  cache_evict(s, tag = "t")
+  expect_identical(cache_count(s), 0L)
   expect_identical(engine_read(e, function(txn) engine_count(txn, engine_db(e, "tags"))), 0)
 })
 
 test_that("the files a transaction releases are reaped in one follow-up", {
-  s <- local_stash(inline_max = 100)
-  for (i in 1:20) stash_set(s, paste0("k", i), runif(100))
+  s <- local_cache(inline_max = 100)
+  for (i in 1:20) cache_set(s, paste0("k", i), runif(100))
   reaps <- 0
   reap <- blob_reap
   local_mocked_bindings(blob_reap = function(s, names) {
     reaps <<- reaps + 1
     reap(s, names)
   })
-  stash_clear(s)
+  cache_clear(s)
   expect_identical(reaps, 1)
-  for (i in 1:20) stash_set(s, paste0("k", i), runif(100))
-  stash_evict(s, prefix = "k")
+  for (i in 1:20) cache_set(s, paste0("k", i), runif(100))
+  cache_evict(s, prefix = "k")
   expect_identical(reaps, 2)
   expect_length(blob_files(s), 0L)
 })
 
-test_that("a write that fills the map leaves the stash sound and usable", {
-  s <- local_stash(map_size = 2^20, inline_max = 10000, size_limit = Inf)
+test_that("a write that fills the map leaves the cache sound and usable", {
+  s <- local_cache(map_size = 2^20, inline_max = 10000, size_limit = Inf)
   # Each batch publishes a file first, then fills the map with an inline value,
   # so the commit that fails has already published a file.
   full <- tryCatch(
     {
       for (i in 1:200) {
-        stash_mset(s, stats::setNames(list(runif(5000), runif(1000)), sprintf(c("b%03d", "i%03d"), i)))
+        cache_mset(s, stats::setNames(list(runif(5000), runif(1000)), sprintf(c("b%03d", "i%03d"), i)))
       }
       FALSE
     },
-    dastash_store_full = function(cnd) TRUE
+    dazcache_store_full = function(cnd) TRUE
   )
   skip_if_not(full, "the map did not fill")
   expect_length(list.files(file.path(s$dir, "tmp")), 0L)
   expect_identical(store_violations(s), character())
-  stash_evict(s, prefix = "i")
-  f <- stash_check(s, repair = TRUE)
+  cache_evict(s, prefix = "i")
+  f <- cache_check(s, repair = TRUE)
   expect_true(all(f$kind %in% "blob_orphan"))
-  expect_identical(nrow(stash_check(s)), 0L)
-  stash_set(s, "after", 1)
-  expect_identical(stash_get(s, "after"), 1)
+  expect_identical(nrow(cache_check(s)), 0L)
+  cache_set(s, "after", 1)
+  expect_identical(cache_get(s, "after"), 1)
 })
 
 test_that("every index stays a projection of the records through random mutations", {
   withr::local_seed(20261026)
-  s <- local_stash(inline_max = 200, size_limit = 20000, cull_limit = 3)
+  s <- local_cache(inline_max = 200, size_limit = 20000, cull_limit = 3)
   keys <- sprintf("k%02d", 1:15)
   tags <- c("red", "green", "blue")
   for (step in 1:300) {
     k <- sample(keys, 1L)
     switch(sample(c("set", "set", "delete", "pop", "incr", "expire", "touch", "evict"), 1L),
-      set = stash_set(
+      set = cache_set(
         s, k, if (runif(1) < 0.5) runif(sample(1:60, 1L)) else sample(letters, 1L),
         tags = sample(tags, sample(0:2, 1L)),
         expire = if (runif(1) < 0.3) sample(c(-1, 3600), 1L)
       ),
-      delete = stash_delete(s, k),
-      pop = stash_pop(s, k, default = NULL),
-      incr = tryCatch(stash_incr(s, paste0("n", k)), dastash_type_error = function(cnd) NULL),
-      expire = stash_expire(s),
-      touch = stash_touch(s, k, sample(c(-1, 60), 1L)),
-      evict = if (runif(1) < 0.5) stash_evict(s, tag = sample(tags, 1L)) else stash_evict(s, prefix = "k0")
+      delete = cache_delete(s, k),
+      pop = cache_pop(s, k, default = NULL),
+      incr = tryCatch(cache_incr(s, paste0("n", k)), dazcache_type_error = function(cnd) NULL),
+      expire = cache_expire(s),
+      touch = cache_touch(s, k, sample(c(-1, 60), 1L)),
+      evict = if (runif(1) < 0.5) cache_evict(s, tag = sample(tags, 1L)) else cache_evict(s, prefix = "k0")
     )
     violations <- store_violations(s)
     if (length(violations) > 0L) {
@@ -467,5 +467,5 @@ test_that("every index stays a projection of the records through random mutation
       break
     }
   }
-  expect_identical(nrow(stash_check(s)), 0L)
+  expect_identical(nrow(cache_check(s)), 0L)
 })

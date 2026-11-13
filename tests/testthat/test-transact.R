@@ -1,85 +1,85 @@
 test_that("a block commits as a unit and returns its value", {
-  s <- local_stash()
-  out <- stash_transact(s, {
-    stash_set(s, "a", 1)
-    stash_set(s, "b", 2)
-    stash_incr(s, "n")
+  s <- local_cache()
+  out <- cache_transact(s, {
+    cache_set(s, "a", 1)
+    cache_set(s, "b", 2)
+    cache_incr(s, "n")
     "done"
   })
   expect_identical(out, "done")
-  expect_identical(stash_mget(s, c("a", "b", "n")), list(a = 1, b = 2, n = 1))
+  expect_identical(cache_mget(s, c("a", "b", "n")), list(a = 1, b = 2, n = 1))
 })
 
 test_that("an error aborts the whole block", {
-  s <- local_stash()
-  stash_set(s, "a", "before")
+  s <- local_cache()
+  cache_set(s, "a", "before")
   expect_error(
-    stash_transact(s, {
-      stash_set(s, "a", "after")
-      stash_set(s, "b", 1)
+    cache_transact(s, {
+      cache_set(s, "a", "after")
+      cache_set(s, "b", 1)
       abort_type_error("changed my mind")
     }),
-    class = "dastash_type_error"
+    class = "dazcache_type_error"
   )
-  expect_identical(stash_get(s, "a"), "before")
-  expect_false(stash_has(s, "b"))
+  expect_identical(cache_get(s, "a"), "before")
+  expect_false(cache_has(s, "b"))
   expect_null(s$engine$txn)
 })
 
 test_that("reads inside a block see its writes", {
-  s <- local_stash()
-  stash_transact(s, {
-    stash_set(s, "k", 1)
-    expect_identical(stash_get(s, "k"), 1)
-    expect_identical(stash_keys(s), "k")
-    stash_delete(s, "k")
-    expect_false(stash_has(s, "k"))
+  s <- local_cache()
+  cache_transact(s, {
+    cache_set(s, "k", 1)
+    expect_identical(cache_get(s, "k"), 1)
+    expect_identical(cache_keys(s), "k")
+    cache_delete(s, "k")
+    expect_false(cache_has(s, "k"))
   })
 })
 
 test_that("nested blocks and other handles join the transaction", {
   dir <- withr::local_tempdir()
-  s1 <- stash(dir)
-  s2 <- stash(dir)
+  s1 <- cache(dir)
+  s2 <- cache(dir)
   withr::defer({
-    stash_close(s1)
-    stash_close(s2)
+    cache_close(s1)
+    cache_close(s2)
   })
   expect_error(
-    stash_transact(s1, {
-      stash_transact(s1, stash_set(s1, "inner", 1))
-      stash_set(s2, "other-handle", 2)
-      expect_identical(stash_get(s2, "inner"), 1)
+    cache_transact(s1, {
+      cache_transact(s1, cache_set(s1, "inner", 1))
+      cache_set(s2, "other-handle", 2)
+      expect_identical(cache_get(s2, "inner"), 1)
       abort_type_error("undo both")
     }),
-    class = "dastash_type_error"
+    class = "dazcache_type_error"
   )
-  expect_false(any(stash_has(s1, c("inner", "other-handle"))))
+  expect_false(any(cache_has(s1, c("inner", "other-handle"))))
 })
 
 test_that("an aborted block with files leaves at most orphans", {
-  s <- local_stash(inline_max = 100)
-  stash_set(s, "kept", runif(100))
-  kept <- stash_path(s, "kept")
-  try(stash_transact(s, {
-    stash_set(s, "new", runif(100))
-    stash_delete(s, "kept")
+  s <- local_cache(inline_max = 100)
+  cache_set(s, "kept", runif(100))
+  kept <- cache_path(s, "kept")
+  try(cache_transact(s, {
+    cache_set(s, "new", runif(100))
+    cache_delete(s, "kept")
     abort_type_error("no")
   }), silent = TRUE)
   expect_true(file.exists(kept))
-  expect_identical(stash_get(s, "kept"), readRDS(kept))
-  expect_false(stash_has(s, "new"))
+  expect_identical(cache_get(s, "kept"), readRDS(kept))
+  expect_false(cache_has(s, "new"))
   expect_identical(store_violations(s), character())
-  stash_check(s, repair = TRUE)
+  cache_check(s, repair = TRUE)
   expect_length(list.files(file.path(s$dir, "blobs"), recursive = TRUE), 1L)
 })
 
 test_that("a committed block unlinks what it released, after the commit", {
-  s <- local_stash(inline_max = 100)
-  stash_set(s, "a", runif(100))
-  path <- stash_path(s, "a")
-  stash_transact(s, {
-    stash_delete(s, "a")
+  s <- local_cache(inline_max = 100)
+  cache_set(s, "a", runif(100))
+  path <- cache_path(s, "a")
+  cache_transact(s, {
+    cache_delete(s, "a")
     # Released but not yet unlinked: the transaction has not committed.
     expect_true(file.exists(path))
   })
@@ -87,62 +87,62 @@ test_that("a committed block unlinks what it released, after the commit", {
 })
 
 test_that("pop inside a block reads a file that is not yet gone", {
-  s <- local_stash(inline_max = 100)
+  s <- local_cache(inline_max = 100)
   x <- runif(100)
-  stash_set(s, "k", x)
-  got <- stash_transact(s, stash_pop(s, "k"))
+  cache_set(s, "k", x)
+  got <- cache_transact(s, cache_pop(s, "k"))
   expect_identical(got, x)
-  expect_false(stash_has(s, "k"))
+  expect_false(cache_has(s, "k"))
 })
 
-test_that("a read-only or closed stash refuses a transaction", {
+test_that("a read-only or closed cache refuses a transaction", {
   dir <- withr::local_tempdir()
-  stash_close(stash(dir))
-  ro <- stash(dir, readonly = TRUE)
-  expect_error(stash_transact(ro, NULL), class = "dastash_readonly")
-  stash_close(ro)
-  expect_error(stash_transact(ro, NULL), class = "dastash_closed")
+  cache_close(cache(dir))
+  ro <- cache(dir, readonly = TRUE)
+  expect_error(cache_transact(ro, NULL), class = "dazcache_readonly")
+  cache_close(ro)
+  expect_error(cache_transact(ro, NULL), class = "dazcache_closed")
 })
 
 test_that("a transaction in another process makes writes busy, not reads", {
   skip_unless_children_see_this_build()
   skip_on_cran()
   dir <- withr::local_tempdir()
-  s <- stash(dir, timeout = 0.3)
-  withr::defer(stash_close(s))
-  stash_set(s, "k", "before")
+  s <- cache(dir, timeout = 0.3)
+  withr::defer(cache_close(s))
+  cache_set(s, "k", "before")
   ready <- file.path(dir, "ready")
   holder <- callr::r_bg(function(dir, ready) {
-    s <- dastash::stash(dir)
-    on.exit(dastash::stash_close(s))
-    dastash::stash_transact(s, {
-      dastash::stash_set(s, "k", "inside")
+    s <- dazcache::cache(dir)
+    on.exit(dazcache::cache_close(s))
+    dazcache::cache_transact(s, {
+      dazcache::cache_set(s, "k", "inside")
       file.create(ready)
       Sys.sleep(3)
     })
   }, args = list(dir = dir, ready = ready))
   withr::defer(holder$kill())
   for (i in 1:200) if (file.exists(ready)) break else Sys.sleep(0.05)
-  expect_error(stash_set(s, "x", 1), class = "dastash_busy")
+  expect_error(cache_set(s, "x", 1), class = "dazcache_busy")
   # A reader sees the last commit, not the open transaction.
-  expect_identical(stash_get(s, "k"), "before")
+  expect_identical(cache_get(s, "k"), "before")
   holder$wait(timeout = 30000)
-  expect_identical(stash_get(s, "k"), "inside")
+  expect_identical(cache_get(s, "k"), "inside")
 })
 
-test_that("opening a stash does not wait for another process's transaction", {
+test_that("opening a cache does not wait for another process's transaction", {
   skip_unless_children_see_this_build()
   skip_on_cran()
   dir <- withr::local_tempdir()
-  s0 <- stash(dir, size_limit = 1e6)
-  stash_set(s0, "k", "before")
-  stash_close(s0)
+  s0 <- cache(dir, size_limit = 1e6)
+  cache_set(s0, "k", "before")
+  cache_close(s0)
   ready <- tempfile()
   release <- tempfile()
   holder <- callr::r_bg(function(dir, ready, release) {
-    s <- dastash::stash(dir)
-    on.exit(dastash::stash_close(s))
-    dastash::stash_transact(s, {
+    s <- dazcache::cache(dir)
+    on.exit(dazcache::cache_close(s))
+    dazcache::cache_transact(s, {
       file.create(ready)
       for (i in 1:600) if (file.exists(release)) break else Sys.sleep(0.05)
     })
@@ -151,28 +151,28 @@ test_that("opening a stash does not wait for another process's transaction", {
   for (i in 1:200) if (file.exists(ready)) break else Sys.sleep(0.05)
   expect_true(file.exists(ready))
   # Opening, even with an explicit store-level setting, only reads.
-  s <- stash(dir, size_limit = 1e6, timeout = 0.3)
-  withr::defer(stash_close(s))
-  expect_identical(stash_get(s, "k"), "before")
-  cnd <- expect_error(stash_set(s, "x", 1), class = "dastash_busy")
+  s <- cache(dir, size_limit = 1e6, timeout = 0.3)
+  withr::defer(cache_close(s))
+  expect_identical(cache_get(s, "k"), "before")
+  cnd <- expect_error(cache_set(s, "x", 1), class = "dazcache_busy")
   expect_match(conditionMessage(cnd), "timeout")
   file.create(release)
   holder$wait(timeout = 30000)
-  stash_set(s, "x", 1)
-  expect_identical(stash_get(s, "x"), 1)
+  cache_set(s, "x", 1)
+  expect_identical(cache_get(s, "x"), 1)
 })
 
-test_that("a process joining an open stash takes its durability", {
+test_that("a process joining an open cache takes its durability", {
   skip_unless_children_see_this_build()
   skip_on_cran()
   dir <- withr::local_tempdir()
-  s <- stash(dir, durability = "fast")
-  withr::defer(stash_close(s))
-  expect_identical(stash_stats(s)$durability, "fast")
+  s <- cache(dir, durability = "fast")
+  withr::defer(cache_close(s))
+  expect_identical(cache_stats(s)$durability, "fast")
   joined <- callr::r(function(dir) {
-    s <- dastash::stash(dir, durability = "safe")
-    on.exit(dastash::stash_close(s))
-    dastash::stash_stats(s)$durability
+    s <- dazcache::cache(dir, durability = "safe")
+    on.exit(dazcache::cache_close(s))
+    dazcache::cache_stats(s)$durability
   }, args = list(dir = dir))
   expect_identical(joined, "fast")
 })
@@ -183,14 +183,14 @@ test_that("a writer killed inside a transaction frees the lock for processes sti
   # macOS: libmdbx's POSIX-semaphore lock outlives its holder (issue #15).
   skip_if(engine_dead_writer_wedges(), "a dead writer's lock is not released on this platform")
   dir <- withr::local_tempdir()
-  s <- stash(dir, timeout = 10)
-  withr::defer(stash_close(s))
-  stash_set(s, "k", 1)
+  s <- cache(dir, timeout = 10)
+  withr::defer(cache_close(s))
+  cache_set(s, "k", 1)
   ready <- tempfile()
   holder <- callr::r_bg(function(dir, ready) {
-    s <- dastash::stash(dir)
-    dastash::stash_transact(s, {
-      dastash::stash_set(s, "k", 2)
+    s <- dazcache::cache(dir)
+    dazcache::cache_transact(s, {
+      dazcache::cache_set(s, "k", 2)
       file.create(ready)
       Sys.sleep(600)
     })
@@ -199,74 +199,74 @@ test_that("a writer killed inside a transaction frees the lock for processes sti
   for (i in 1:200) if (file.exists(ready)) break else Sys.sleep(0.05)
   expect_true(file.exists(ready))
   holder$kill()
-  expect_identical(stash_get(s, "k"), 1)
-  stash_set(s, "x", 1)
-  expect_identical(stash_get(s, "x"), 1)
-  expect_no_error(stash_check(s, repair = TRUE))
+  expect_identical(cache_get(s, "k"), 1)
+  cache_set(s, "x", 1)
+  expect_identical(cache_get(s, "x"), 1)
+  expect_no_error(cache_check(s, repair = TRUE))
 })
 
 test_that("leaving a block with return(), break or next commits it", {
-  s <- local_stash()
+  s <- local_cache()
   f <- function() {
-    stash_transact(s, {
-      stash_set(s, "returned", 1)
+    cache_transact(s, {
+      cache_set(s, "returned", 1)
       return("early")
     })
     "late"
   }
   expect_identical(f(), "early")
   for (i in 1:2) {
-    stash_transact(s, {
-      stash_set(s, paste0("loop", i), i)
+    cache_transact(s, {
+      cache_set(s, paste0("loop", i), i)
       if (i == 1) next
       break
     })
   }
-  expect_identical(stash_mget(s, c("returned", "loop1", "loop2")), list(returned = 1, loop1 = 1L, loop2 = 2L))
+  expect_identical(cache_mget(s, c("returned", "loop1", "loop2")), list(returned = 1, loop1 = 1L, loop2 = 2L))
   expect_null(s$engine$txn)
   # And a caught error inside the block does not abort it.
-  stash_transact(s, {
-    stash_set(s, "kept", TRUE)
+  cache_transact(s, {
+    cache_set(s, "kept", TRUE)
     try(abort_type_error("handled"), silent = TRUE)
   })
-  expect_true(stash_get(s, "kept"))
+  expect_true(cache_get(s, "kept"))
 })
 
-test_that("closing the stash inside a block aborts it with a classed error", {
+test_that("closing the cache inside a block aborts it with a classed error", {
   dir <- withr::local_tempdir()
-  s <- stash(dir)
+  s <- cache(dir)
   expect_error(
-    stash_transact(s, {
-      stash_set(s, "a", 1)
-      stash_close(s)
+    cache_transact(s, {
+      cache_set(s, "a", 1)
+      cache_close(s)
     }),
-    class = "dastash_error"
+    class = "dazcache_error"
   )
-  s2 <- local_stash(dir)
-  expect_false(stash_has(s2, "a"))
-  stash_set(s2, "b", 1)
-  expect_true(stash_has(s2, "b"))
+  s2 <- local_cache(dir)
+  expect_false(cache_has(s2, "a"))
+  cache_set(s2, "b", 1)
+  expect_true(cache_has(s2, "b"))
 })
 
 test_that("repair inside a block unlinks nothing until the block commits", {
-  s <- local_stash(inline_max = 100)
-  stash_set(s, "big", runif(1000))
-  path <- stash_path(s, "big")
+  s <- local_cache(inline_max = 100)
+  cache_set(s, "big", runif(1000))
+  path <- cache_path(s, "big")
   expect_error(
-    stash_transact(s, {
-      stash_delete(s, "big")
-      stash_check(s, repair = TRUE)
+    cache_transact(s, {
+      cache_delete(s, "big")
+      cache_check(s, repair = TRUE)
       abort_type_error("abort")
     }),
-    class = "dastash_type_error"
+    class = "dazcache_type_error"
   )
   expect_true(file.exists(path))
-  expect_identical(length(stash_get(s, "big")), 1000L)
+  expect_identical(length(cache_get(s, "big")), 1000L)
   expect_identical(store_violations(s), character())
 
-  stash_transact(s, {
-    stash_delete(s, "big")
-    stash_check(s, repair = TRUE)
+  cache_transact(s, {
+    cache_delete(s, "big")
+    cache_check(s, repair = TRUE)
     expect_true(file.exists(path))
   })
   expect_false(file.exists(path))

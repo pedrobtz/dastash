@@ -27,7 +27,7 @@ store_create_layout <- function(dir, call = rlang::caller_env()) {
   }
 }
 
-# Create a directory, or raise dastash_engine_error saying why it could not be.
+# Create a directory, or raise dazcache_engine_error saying why it could not be.
 store_mkdir <- function(path, call = rlang::caller_env()) {
   if (dir.exists(path)) {
     return(invisible(path))
@@ -75,7 +75,7 @@ store_init <- function(s, config, explicit, call) {
   }
   if (e$readonly) {
     abort_not_found(
-      sprintf("%s is not a dastash stash.", encodeString(s$dir, quote = "\"")),
+      sprintf("%s is not a dazcache cache.", encodeString(s$dir, quote = "\"")),
       dir = s$dir,
       call = call
     )
@@ -108,10 +108,10 @@ store_check <- function(found, config, explicit, dir, call) {
     abort_version_unsupported(
       c(
         sprintf(
-          "This stash was written with a newer %s than this version of dastash reads.",
+          "This cache was written with a newer %s than this version of dazcache reads.",
           names(newer)[newer][[1L]]
         ),
-        i = "Update dastash to open it."
+        i = "Update dazcache to open it."
       ),
       dir = dir,
       call = call
@@ -130,12 +130,12 @@ store_check <- function(found, config, explicit, dir, call) {
     abort_config_conflict(
       c(
         sprintf(
-          "`%s = %s` disagrees with this stash's %s.",
+          "`%s = %s` disagrees with this cache's %s.",
           name,
           format_setting(config[[name]]),
           format_setting(persisted[[name]])
         ),
-        i = "Store-level settings are fixed when a stash is created; leave the argument out to use the stored value."
+        i = "Store-level settings are fixed when a cache is created; leave the argument out to use the stored value."
       ),
       dir = dir,
       setting = name,
@@ -225,7 +225,7 @@ store_update_record <- function(s, txn, stored, old, record) {
 
 # The index rows one record implies, as a list of `db` and `key`. Every index
 # is a projection of the record, so this is the only place that knows which
-# rows exist (design.md §7.2, §7.5), and stash_check() rebuilds from it. A
+# rows exist (design.md §7.2, §7.5), and cache_check() rebuilds from it. A
 # never-expiring entry has no expiry row (D7).
 index_rows <- function(s, stored, record) {
   rows <- list()

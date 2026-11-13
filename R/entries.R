@@ -1,39 +1,39 @@
 # The catalogue (design.md §3.5): entries as a plain data frame, and the
-# stash's statistics as one row.
+# cache's statistics as one row.
 
-#' The catalogue of a stash
+#' The catalogue of a cache
 #'
 #' @description
-#' `stash_entries()` returns one row per live entry. `prefix` and `tag` select
-#' entries through the stash's indexes; filter the rest with ordinary data
-#' frame tools. `stash_info()` returns the row for one key, or `NULL`.
+#' `cache_entries()` returns one row per live entry. `prefix` and `tag` select
+#' entries through the cache's indexes; filter the rest with ordinary data
+#' frame tools. `cache_info()` returns the row for one key, or `NULL`.
 #'
-#' `stash_stats()` returns one row describing the whole stash.
+#' `cache_stats()` returns one row describing the whole cache.
 #'
-#' @inheritParams stash_keys
+#' @inheritParams cache_keys
 #' @param tag Only entries carrying this tag.
 #'
-#' @return `stash_entries()` and `stash_info()` return a data frame with columns
+#' @return `cache_entries()` and `cache_info()` return a data frame with columns
 #'   `key`, `bytes`, `codec`, `inline`, `blob`, `tags` (a list of character
 #'   vectors), `shape`, `stored`, `accessed`, `hits` and `expires` (`NA` for
 #'   never). In this release `accessed` is always `stored` and `hits` always 0:
-#'   reads are not yet recorded. `stash_stats()` returns a one-row data frame
+#'   reads are not yet recorded. `cache_stats()` returns a one-row data frame
 #'   with `count`, `bytes_inline`, `bytes_blob`, `volume`, `size_limit`,
 #'   `evictions`, `expired`, `eviction`, `durability`, `format_version` and
 #'   `key_encoding_version`.
 #'
 #' @examples
-#' s <- local_stash()
-#' stash_set(s, "a", 1:10, tags = "small")
-#' stash_set(s, "b", "text", expire = 3600)
-#' stash_entries(s)
-#' stash_entries(s, tag = "small")
-#' stash_info(s, "b")
-#' stash_stats(s)
+#' s <- local_cache()
+#' cache_set(s, "a", 1:10, tags = "small")
+#' cache_set(s, "b", "text", expire = 3600)
+#' cache_entries(s)
+#' cache_entries(s, tag = "small")
+#' cache_info(s, "b")
+#' cache_stats(s)
 #' @export
-stash_entries <- function(stash, ..., prefix = NULL, tag = NULL, n = Inf) {
+cache_entries <- function(cache, ..., prefix = NULL, tag = NULL, n = Inf) {
   rlang::check_dots_empty()
-  check_open(stash)
+  check_open(cache)
   if (!is.null(prefix)) {
     check_string_or_empty(prefix, "prefix")
   }
@@ -41,7 +41,7 @@ stash_entries <- function(stash, ..., prefix = NULL, tag = NULL, n = Inf) {
     check_string(tag, "tag")
   }
   check_number(n, "n", min = 0, whole = TRUE, allow_inf = TRUE)
-  e <- stash$engine
+  e <- cache$engine
   now <- unclass(Sys.time())
   found <- engine_read(e, function(txn) {
     if (!is.null(tag)) {
@@ -51,7 +51,7 @@ stash_entries <- function(stash, ..., prefix = NULL, tag = NULL, n = Inf) {
         prefix = c(charToRaw(utf8_text(tag)), as.raw(0L))
       )
       stored <- vapply(rows, tag_key_stored, character(1))
-      records <- lapply(stored, function(k) store_get_record(stash, txn, k))
+      records <- lapply(stored, function(k) store_get_record(cache, txn, k))
       if (!is.null(prefix)) {
         matches <- vapply(
           seq_along(stored),
@@ -69,7 +69,7 @@ stash_entries <- function(stash, ..., prefix = NULL, tag = NULL, n = Inf) {
         records <- records[matches]
       }
     } else if (!is.null(prefix)) {
-      return(store_scan_prefix(stash, txn, prefix, now = now))
+      return(store_scan_prefix(cache, txn, prefix, now = now))
     } else {
       got <- engine_scan(
         txn,
@@ -91,15 +91,15 @@ stash_entries <- function(stash, ..., prefix = NULL, tag = NULL, n = Inf) {
   entries_frame(found$stored[keep], found$records[keep])
 }
 
-#' @rdname stash_entries
-#' @inheritParams stash_get
+#' @rdname cache_entries
+#' @inheritParams cache_get
 #' @export
-stash_info <- function(stash, key) {
+cache_info <- function(cache, key) {
   check_supplied("key")
-  check_open(stash)
+  check_open(cache)
   key <- store_key(key)
-  record <- engine_read(stash$engine, function(txn) {
-    store_live_record(stash, txn, key)
+  record <- engine_read(cache$engine, function(txn) {
+    store_live_record(cache, txn, key)
   })
   if (is.null(record)) {
     return(NULL)
@@ -107,11 +107,11 @@ stash_info <- function(stash, key) {
   entries_frame(key$stored, list(record))
 }
 
-#' @rdname stash_entries
+#' @rdname cache_entries
 #' @export
-stash_stats <- function(stash) {
-  check_open(stash)
-  e <- stash$engine
+cache_stats <- function(cache) {
+  check_open(cache)
+  e <- cache$engine
   got <- engine_read(e, function(txn) {
     list(
       counters = store_counters(txn),
@@ -125,11 +125,11 @@ stash_stats <- function(stash) {
     bytes_inline = counters$bytes_inline,
     bytes_blob = counters$bytes_blob,
     volume = as.double(engine_info(e)$file_size) + counters$bytes_blob,
-    size_limit = stash$config$size_limit,
+    size_limit = cache$config$size_limit,
     evictions = counters$evictions,
     expired = counters$expired,
-    eviction = stash$config$eviction,
-    durability = stash_durability(stash),
+    eviction = cache$config$eviction,
+    durability = cache_durability(cache),
     format_version = got$format$format_version,
     key_encoding_version = got$format$key_encoding_version,
     stringsAsFactors = FALSE

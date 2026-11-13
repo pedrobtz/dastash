@@ -1,6 +1,6 @@
 ## Submission
 
-This is the first submission of dastash.
+This is the first submission of dazcache.
 
 ## Test environments
 

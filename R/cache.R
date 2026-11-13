@@ -1,94 +1,94 @@
-# The stash handle and its opening and closing (design.md §3.1).
+# The cache handle and its opening and closing (design.md §3.1).
 
-dastash_state <- new.env(parent = emptyenv())
-dastash_state$stage <- 0L
+dazcache_state <- new.env(parent = emptyenv())
+dazcache_state$stage <- 0L
 
-#' Open a stash
+#' Open a cache
 #'
 #' @description
-#' `stash()` opens the cache in directory `dir`, creating it if needed, and
-#' returns a handle for the other `stash_*()` functions. Any number of R
+#' `cache()` opens the cache in directory `dir`, creating it if needed, and
+#' returns a handle for the other `cache_*()` functions. Any number of R
 #' processes on the machine can open the same directory at once; they share it
 #' safely.
 #'
-#' `local_stash()` opens a stash that closes when the calling function returns,
+#' `local_cache()` opens a cache that closes when the calling function returns,
 #' in a new temporary directory unless you give one, which is then deleted. At
 #' the top level there is no function to return from, so nothing closes it:
-#' call `stash_close()` yourself. `with_stash()` opens one, passes it to a
+#' call `cache_close()` yourself. `with_cache()` opens one, passes it to a
 #' function, and closes it afterwards.
 #'
-#' `stash_close()` closes a handle, `stash_is_open()` says whether it is open,
-#' and `stash_dir()` returns its directory.
+#' `cache_close()` closes a handle, `cache_is_open()` says whether it is open,
+#' and `cache_dir()` returns its directory.
 #'
 #' @details
 #' `size_limit`, `eviction`, `inline_max` and `codec` belong to the store and are
-#' fixed when it is created: a later `stash()` that passes a *different* value
-#' raises `dastash_config_conflict`, and one that leaves them out uses the stored
+#' fixed when it is created: a later `cache()` that passes a *different* value
+#' raises `dazcache_config_conflict`, and one that leaves them out uses the stored
 #' values. The other settings belong to this handle only.
 #'
-#' A second `stash()` on a directory this process already has open shares the
+#' A second `cache()` on a directory this process already has open shares the
 #' same underlying database; each handle is closed separately. While a
 #' read-only handle is open, the same process cannot open the directory for
 #' writing: close it first.
 #'
 #' A handle cannot be used from a forked child process, such as a
-#' [parallel::mclapply()] worker; open the stash inside the worker instead.
+#' [parallel::mclapply()] worker; open the cache inside the worker instead.
 #'
-#' Opening a stash that exists only reads it, so it never waits for another
-#' process's write. Writes take the stash's one write lock in turn, waiting up
+#' Opening a cache that exists only reads it, so it never waits for another
+#' process's write. Writes take the cache's one write lock in turn, waiting up
 #' to `timeout` seconds. On Linux and Windows the lock of a process killed
 #' while writing is released at once. On macOS and other platforms it is not:
-#' every later write raises `dastash_busy` until every process with the stash
+#' every later write raises `dazcache_busy` until every process with the cache
 #' open has closed it, after which the next to open it recovers the lock.
 #' Reads are not affected.
 #'
-#' @param dir The stash's directory.
+#' @param dir The cache's directory.
 #' @param ... Must be empty.
-#' @param size_limit The size, in bytes, the stash is kept under. `Inf` for no
-#'   limit. Stored with the stash.
-#' @param eviction Which entries make room when the stash is over `size_limit`:
+#' @param size_limit The size, in bytes, the cache is kept under. `Inf` for no
+#'   limit. Stored with the cache.
+#' @param eviction Which entries make room when the cache is over `size_limit`:
 #'   the least recently stored, or `"none"` to never evict. Stored with the
-#'   stash. `"least-recently-used"` and `"least-frequently-used"` are not yet
+#'   cache. `"least-recently-used"` and `"least-frequently-used"` are not yet
 #'   available.
 #' @param inline_max Values smaller than this many bytes are kept inside the
-#'   database; larger ones become files. Stored with the stash.
+#'   database; larger ones become files. Stored with the cache.
 #' @param codec The default codec for writes; see [codec()]. Stored with the
-#'   stash, by name.
+#'   cache, by name.
 #' @param codecs A list of your own codecs, made with [codec()], that this
 #'   handle can read and write.
 #' @param durability `"safe"` makes every write durable before it returns.
 #'   `"fast"` does not wait for the disk: a crash may lose recent writes but
-#'   never damages the stash. `"unsafe"` can damage it in a crash. The first
-#'   process to open a stash sets this for everyone who opens it while it is
+#'   never damages the cache. `"unsafe"` can damage it in a crash. The first
+#'   process to open a cache sets this for everyone who opens it while it is
 #'   open.
 #' @param map_size The most the database file may grow to, in bytes.
 #' @param cull_limit How many entries one eviction step removes at most.
 #' @param timeout How long, in seconds, a write waits for another process's
-#'   write to finish before raising `dastash_busy`.
+#'   write to finish before raising `dazcache_busy`.
 #' @param readonly Open for reading only.
-#' @param create Create the directory and the stash if they do not exist.
+#' @param create Create the directory and the cache if they do not exist.
 #'
-#' @return `stash()` and `local_stash()` return a `dastash_stash`.
-#'   `with_stash()` returns what `fn` returns. `stash_close()` returns the stash,
-#'   invisibly; `stash_is_open()` `TRUE` or `FALSE`; and `stash_dir()` the
-#'   stash's directory, normalised.
+#' @return `cache()` and `local_cache()` return a `dazcache_cache`.
+#'   `with_cache()` returns what `fn` returns. `cache_close()` returns the cache,
+#'   invisibly; `cache_is_open()` `TRUE` or `FALSE`; and `cache_dir()` the
+#'   cache's directory, normalised.
 #'
 #' @examples
-#' dir <- tempfile("stash-")
-#' s <- stash(dir)
-#' stash_set(s, "greeting", "hello")
-#' stash_get(s, "greeting")
-#' stash_close(s)
+#' dir <- tempfile("cache-")
+#' s <- cache(dir)
+#' cache_set(s, "greeting", "hello")
+#' cache_get(s, "greeting")
+#' cache_close(s)
 #' unlink(dir, recursive = TRUE)
 #'
 #' f <- function() {
-#'   s <- local_stash()
-#'   stash_set(s, "n", 1:3)
-#'   stash_get(s, "n")
+#'   s <- local_cache()
+#'   cache_set(s, "n", 1:3)
+#'   cache_get(s, "n")
 #' }
 #' f()
 #' @export
-stash <- function(
+cache <- function(
   dir,
   ...,
   size_limit = 1024^3,
@@ -149,7 +149,7 @@ stash <- function(
   if (!dir.exists(dir) || !file.exists(path)) {
     if (readonly || !create) {
       abort_not_found(
-        sprintf("There is no stash in %s.", encodeString(dir, quote = "\"")),
+        sprintf("There is no cache in %s.", encodeString(dir, quote = "\"")),
         dir = dir,
         call = call
       )
@@ -162,7 +162,7 @@ stash <- function(
   }
 
   s <- new.env(parent = emptyenv())
-  class(s) <- "dastash_stash"
+  class(s) <- "dazcache_cache"
   s$dir <- dir
   s$readonly <- readonly
   s$closed <- FALSE
@@ -202,44 +202,44 @@ stash <- function(
   s
 }
 
-#' @rdname stash
-#' @inheritParams stash_get
+#' @rdname cache
+#' @inheritParams cache_get
 #' @export
-stash_close <- function(stash) {
-  check_stash(stash)
-  if (!stash$closed) {
-    engine_close(stash$engine)
-    stash$closed <- TRUE
+cache_close <- function(cache) {
+  check_cache(cache)
+  if (!cache$closed) {
+    engine_close(cache$engine)
+    cache$closed <- TRUE
   }
-  invisible(stash)
+  invisible(cache)
 }
 
-#' @rdname stash
+#' @rdname cache
 #' @export
-stash_is_open <- function(stash) {
-  check_stash(stash)
-  !stash$closed
+cache_is_open <- function(cache) {
+  check_cache(cache)
+  !cache$closed
 }
 
-#' @rdname stash
+#' @rdname cache
 #' @export
-stash_dir <- function(stash) {
-  check_stash(stash)
-  stash$dir
+cache_dir <- function(cache) {
+  check_cache(cache)
+  cache$dir
 }
 
-#' @rdname stash
-#' @param .local_envir The environment whose exit closes the stash.
+#' @rdname cache
+#' @param .local_envir The environment whose exit closes the cache.
 #' @export
-local_stash <- function(dir = NULL, ..., .local_envir = parent.frame()) {
+local_cache <- function(dir = NULL, ..., .local_envir = parent.frame()) {
   temporary <- is.null(dir)
   if (temporary) {
-    dir <- tempfile("stash-")
+    dir <- tempfile("cache-")
   }
-  s <- stash(dir, ...)
+  s <- cache(dir, ...)
   defer(
     {
-      stash_close(s)
+      cache_close(s)
       if (temporary) unlink(s$dir, recursive = TRUE)
     },
     envir = .local_envir
@@ -247,27 +247,27 @@ local_stash <- function(dir = NULL, ..., .local_envir = parent.frame()) {
   s
 }
 
-#' @rdname stash
-#' @param fn A function of one argument, the open stash.
+#' @rdname cache
+#' @param fn A function of one argument, the open cache.
 #' @export
-with_stash <- function(dir, fn, ...) {
+with_cache <- function(dir, fn, ...) {
   check_supplied(c("dir", "fn"))
   if (!is.function(fn)) {
-    abort_type_error("`fn` must be a function of one argument, the open stash.")
+    abort_type_error("`fn` must be a function of one argument, the open cache.")
   }
-  s <- stash(dir, ...)
-  on.exit(stash_close(s))
+  s <- cache(dir, ...)
+  on.exit(cache_close(s))
   fn(s)
 }
 
 #' @export
-format.dastash_stash <- function(x, ...) {
-  header <- paste0("<dastash_stash> ", x$dir)
+format.dazcache_cache <- function(x, ...) {
+  header <- paste0("<dazcache_cache> ", x$dir)
   if (x$closed) {
     return(c(header, "  closed"))
   }
   # Printing must not fail, whatever stops the count.
-  n <- tryCatch(format(stash_count(x), big.mark = ","), error = function(cnd) {
+  n <- tryCatch(format(cache_count(x), big.mark = ","), error = function(cnd) {
     "unavailable"
   })
   c(
@@ -278,19 +278,19 @@ format.dastash_stash <- function(x, ...) {
       " \u00b7 eviction ",
       x$config$eviction,
       " \u00b7 durability ",
-      stash_durability(x),
+      cache_durability(x),
       if (x$readonly) " \u00b7 read-only"
     )
   )
 }
 
 #' @export
-print.dastash_stash <- function(x, ...) {
+print.dazcache_cache <- function(x, ...) {
   cat(format(x), sep = "\n")
   invisible(x)
 }
 
-stash_durability <- function(s) {
+cache_durability <- function(s) {
   flags <- engine_flags(s$engine)
   if ("UTTERLY_NOSYNC" %in% flags) {
     "unsafe"
@@ -303,33 +303,33 @@ stash_durability <- function(s) {
 
 # Checks -----------------------------------------------------------------------
 
-check_stash <- function(x, call = rlang::caller_env()) {
+check_cache <- function(x, call = rlang::caller_env()) {
   if (missing(x)) {
-    abort_type_error("`stash` is required.", call = call)
+    abort_type_error("`cache` is required.", call = call)
   }
-  if (!inherits(x, "dastash_stash")) {
+  if (!inherits(x, "dazcache_cache")) {
     abort_type_error(
-      "`stash` must be a stash opened with `stash()`.",
+      "`cache` must be a cache opened with `cache()`.",
       call = call
     )
   }
 }
 
 check_open <- function(s, call = rlang::caller_env()) {
-  check_stash(s, call)
+  check_cache(s, call)
   if (s$closed) {
-    abort_closed("This stash has been closed.", dir = s$dir, call = call)
+    abort_closed("This cache has been closed.", dir = s$dir, call = call)
   }
 }
 
 check_writable <- function(s, call = rlang::caller_env()) {
   check_open(s, call)
   if (s$readonly) {
-    abort_readonly("This stash was opened read-only.", dir = s$dir, call = call)
+    abort_readonly("This cache was opened read-only.", dir = s$dir, call = call)
   }
 }
 
-# Raise dastash_type_error for the first of the caller's arguments `args` it
+# Raise dazcache_type_error for the first of the caller's arguments `args` it
 # was not given, rather than letting R's own "argument is missing" escape the
 # taxonomy when the argument is first used.
 check_supplied <- function(args, call = rlang::caller_env()) {
@@ -389,7 +389,7 @@ check_number <- function(
 }
 
 # Run `expr` when `envir`'s function returns. At the top level there is no such
-# moment, so nothing is registered and the caller closes the stash.
+# moment, so nothing is registered and the caller closes the cache.
 defer <- function(expr, envir) {
   thunk <- as.call(list(function() expr))
   if (!identical(envir, globalenv())) {
@@ -398,13 +398,13 @@ defer <- function(expr, envir) {
   invisible()
 }
 
-# A new staging path in the stash's own tmp/, so a rename into blobs/ stays on
+# A new staging path in the cache's own tmp/, so a rename into blobs/ stays on
 # one device (design.md §8).
 stage_path <- function(s) {
   if (s$readonly) {
     # Only a decode can stage on a read-only handle, and nothing is renamed.
-    return(tempfile("dastash-"))
+    return(tempfile("dazcache-"))
   }
-  dastash_state$stage <- dastash_state$stage + 1L
-  file.path(s$dir, "tmp", sprintf("%d-%d", Sys.getpid(), dastash_state$stage))
+  dazcache_state$stage <- dazcache_state$stage + 1L
+  file.path(s$dir, "tmp", sprintf("%d-%d", Sys.getpid(), dazcache_state$stage))
 }

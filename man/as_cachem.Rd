@@ -2,32 +2,32 @@
 % Please edit documentation in R/interop.R
 \name{as_cachem}
 \alias{as_cachem}
-\title{Use a stash through the cachem interface}
+\title{Use a cache through the cachem interface}
 \usage{
-as_cachem(stash, ..., prefix = "cachem/", expire = NULL, codec = NULL)
+as_cachem(cache, ..., prefix = "cachem/", expire = NULL, codec = NULL)
 }
 \arguments{
-\item{stash}{A stash, from \code{\link[=stash]{stash()}}.}
+\item{cache}{A cache, from \code{\link[=cache]{cache()}}.}
 
 \item{...}{Must be empty.}
 
-\item{prefix}{Where in the stash the keys live.}
+\item{prefix}{Where in the cache the keys live.}
 
-\item{expire, codec}{Passed to \code{\link[=stash_set]{stash_set()}} on every \code{set()}.}
+\item{expire, codec}{Passed to \code{\link[=cache_set]{cache_set()}} on every \code{set()}.}
 }
 \value{
-A list of functions with class \code{c("dastash_cachem", "cachem")}.
+A list of functions with class \code{c("dazcache_cachem", "cachem")}.
 }
 \description{
 Returns an object with the methods of a cachem cache — \code{get()}, \code{set()},
 \code{exists()}, \code{remove()}, \code{reset()}, \code{keys()}, \code{prune()}, \code{size()} and
 \code{info()} — so code written for cachem, such as \code{memoise::memoise()} and
-Shiny's \code{bindCache()}, can store in a stash. Keys follow cachem's rule,
+Shiny's \code{bindCache()}, can store in a cache. Keys follow cachem's rule,
 lower-case letters, digits, \verb{_} and \code{-}, and are stored under \code{prefix}.
 }
 \examples{
 \dontshow{if (requireNamespace("memoise", quietly = TRUE)) withAutoprint(\{ # examplesIf}
-s <- local_stash()
+s <- local_cache()
 cache <- as_cachem(s)
 cache$set("answer", 42)
 cache$get("answer")

@@ -12,20 +12,20 @@ engine_fill <- function(e, pairs, db = NULL) {
   })
 }
 
-# A child process loads dastash from the library, not from the sources under
+# A child process loads dazcache from the library, not from the sources under
 # test. R CMD check installs the copy it checks; devtools::test() does not, so
-# there the child tests run only when DASTASH_TEST_CHILDREN=true says the
+# there the child tests run only when DAZCACHE_TEST_CHILDREN=true says the
 # installed copy is current (after R CMD INSTALL .).
 skip_unless_children_see_this_build <- function() {
   skip_if_not_installed("callr")
-  if (!testthat::is_checking() && !isTRUE(as.logical(Sys.getenv("DASTASH_TEST_CHILDREN")))) {
-    skip("child processes would load an installed dastash, not this build")
+  if (!testthat::is_checking() && !isTRUE(as.logical(Sys.getenv("DAZCACHE_TEST_CHILDREN")))) {
+    skip("child processes would load an installed dazcache, not this build")
   }
 }
 
 # Every storage invariant that must hold between transactions (design.md §7, §8,
 # cache-model.md §11.3), as a character vector of violations; empty when sound.
-# Orphan files are allowed: they are harmless and stash_check() reclaims them.
+# Orphan files are allowed: they are harmless and cache_check() reclaims them.
 store_violations <- function(s) {
   e <- s$engine
   engine_read(e, function(txn) {

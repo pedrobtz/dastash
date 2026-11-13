@@ -1,8 +1,8 @@
 ---
-title: "Getting started with dastash"
+title: "Getting started with dazcache"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Getting started with dastash}
+  %\VignetteIndexEntry{Getting started with dazcache}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -11,47 +11,47 @@ vignette: >
 knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 ```
 
-dastash keeps R values on disk, under keys, for as long as you want them and no
-longer. A stash is a directory: open it, read and write it, and every R process on the
+dazcache keeps R values on disk, under keys, for as long as you want them and no
+longer. A cache is a directory: open it, read and write it, and every R process on the
 machine that opens the same directory sees the same entries.
 
 ```{r}
-library(dastash)
+library(dazcache)
 
 dir <- file.path(tempdir(), "getting-started")
-s <- stash(dir)
+s <- cache(dir)
 s
 ```
 
 ## Reading and writing
 
-`stash_set()` stores a value under a key and returns the stash, so writes chain.
-`stash_get()` reads it back.
+`cache_set()` stores a value under a key and returns the cache, so writes chain.
+`cache_get()` reads it back.
 
 ```{r}
 s |>
-  stash_set("greeting", "hello") |>
-  stash_set("numbers", 1:10)
+  cache_set("greeting", "hello") |>
+  cache_set("numbers", 1:10)
 
-stash_get(s, "numbers")
+cache_get(s, "numbers")
 ```
 
 A key with no entry is an error, unless you supply a `default`. A stored `NULL` is a
 value like any other, so the two never get confused.
 
 ```{r}
-try(stash_get(s, "absent"))
-stash_get(s, "absent", default = NA)
-stash_has(s, c("greeting", "absent"))
+try(cache_get(s, "absent"))
+cache_get(s, "absent", default = NA)
+cache_has(s, c("greeting", "absent"))
 ```
 
-`stash_mget()` and `stash_mset()` read and write several entries at once, and
-`stash_delete()` removes entries.
+`cache_mget()` and `cache_mset()` read and write several entries at once, and
+`cache_delete()` removes entries.
 
 ```{r}
-stash_mset(s, list(a = 1, b = 2))
-stash_mget(s, c("a", "b"))
-stash_delete(s, c("a", "b"))
+cache_mset(s, list(a = 1, b = 2))
+cache_mget(s, c("a", "b"))
+cache_delete(s, c("a", "b"))
 ```
 
 ## Keys
@@ -59,9 +59,9 @@ stash_delete(s, c("a", "b"))
 A string is its own key, so a `"group/item"` convention gives you prefixes to list by:
 
 ```{r}
-stash_set(s, "prices/XSWX", 101.2)
-stash_set(s, "prices/XNYS", 57.8)
-stash_keys(s, prefix = "prices/")
+cache_set(s, "prices/XSWX", 101.2)
+cache_set(s, "prices/XNYS", 57.8)
+cache_keys(s, prefix = "prices/")
 ```
 
 A key can also be a number, a date, a vector or a named list. It is written in a fixed
@@ -69,9 +69,9 @@ text encoding: names are sorted, `1L` and `1` agree, and a time zone is not part
 time's identity, so the same values always find the same entry.
 
 ```{r}
-stash_set(s, list(exchange = "XSWX", date = as.Date("2026-08-29")), "quotes")
-stash_get(s, list(date = as.Date("2026-08-29"), exchange = "XSWX"))
-stash_key_chr(list(exchange = "XSWX", date = as.Date("2026-08-29")))
+cache_set(s, list(exchange = "XSWX", date = as.Date("2026-08-29")), "quotes")
+cache_get(s, list(date = as.Date("2026-08-29"), exchange = "XSWX"))
+cache_key_chr(list(exchange = "XSWX", date = as.Date("2026-08-29")))
 ```
 
 ## Expiry and tags
@@ -80,25 +80,25 @@ An entry can expire: after a number of seconds, a `difftime`, or at a `POSIXct` 
 expired entry is gone for every reader at once.
 
 ```{r}
-stash_set(s, "session-token", "abc123", expire = as.difftime(30, units = "mins"))
-stash_set(s, "stale", 1, expire = 0)
-stash_has(s, "stale")
+cache_set(s, "session-token", "abc123", expire = as.difftime(30, units = "mins"))
+cache_set(s, "stale", 1, expire = 0)
+cache_has(s, "stale")
 ```
 
 Tags group entries for invalidation. Tag everything derived from one source, and drop
 it all when that source changes:
 
 ```{r}
-stash_set(s, "report/q3", "...", tags = "ledger")
-stash_set(s, "report/q4", "...", tags = "ledger")
-stash_evict(s, tag = "ledger")
-stash_keys(s, prefix = "report/")
+cache_set(s, "report/q3", "...", tags = "ledger")
+cache_set(s, "report/q4", "...", tags = "ledger")
+cache_evict(s, tag = "ledger")
+cache_keys(s, prefix = "report/")
 ```
 
 ## Memoising a function
 
-`stash_memoise()` wraps a function so that each call is looked up first and computed
-only on a miss. The results outlive the session, and every process using the stash
+`cache_memoise()` wraps a function so that each call is looked up first and computed
+only on a miss. The results outlive the session, and every process using the cache
 shares them.
 
 ```{r}
@@ -107,7 +107,7 @@ slow_mean <- function(n, seed = 1) {
   set.seed(seed)
   mean(rnorm(n))
 }
-fast_mean <- stash_memoise(slow_mean, s)
+fast_mean <- cache_memoise(slow_mean, s)
 
 system.time(fast_mean(1e5))
 system.time(fast_mean(1e5))
@@ -118,20 +118,20 @@ A call is keyed on the function's name and its arguments, with defaults filled i
 depend on the function's code: when its meaning changes, pass a new `version`.
 
 ```{r}
-stash_memoise_key(fast_mean, 1e5)
-stash_forget(fast_mean, 1e5)
+cache_memoise_key(fast_mean, 1e5)
+cache_forget(fast_mean, 1e5)
 ```
 
 ## Large values
 
 Values of `inline_max` bytes (32 KiB) or more are stored as read-only files, named by
-the hash of their content, so identical values are stored once. `stash_path()` gives
+the hash of their content, so identical values are stored once. `cache_path()` gives
 the file, for tools that read it in place.
 
 ![A small value lives inside its record in `cache.mdbx`; a large one becomes a file in
 `blobs/` that the record points at.](storage.svg){width=100%}
 
-The stash's directory holds the database, its lock file, the files and a staging area:
+The cache's directory holds the database, its lock file, the files and a staging area:
 
 ```text
 getting-started/
@@ -143,8 +143,8 @@ getting-started/
 
 ```{r}
 big <- runif(1e5)
-stash_set(s, "big", big)
-path <- stash_path(s, "big")
+cache_set(s, "big", big)
+path <- cache_path(s, "big")
 file.size(path)
 identical(readRDS(path), big)
 ```
@@ -152,11 +152,11 @@ identical(readRDS(path), big)
 ## Looking inside
 
 ```{r}
-stash_entries(s)[, c("key", "bytes", "inline", "expires")]
-stash_stats(s)[, c("count", "bytes_inline", "bytes_blob", "volume")]
+cache_entries(s)[, c("key", "bytes", "inline", "expires")]
+cache_stats(s)[, c("count", "bytes_inline", "bytes_blob", "volume")]
 ```
 
 ```{r}
-stash_close(s)
+cache_close(s)
 unlink(dir, recursive = TRUE)
 ```
