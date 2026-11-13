@@ -40,7 +40,9 @@ reserved_codec_names <- c(
 #'   a name it already knows: give a changed codec a new name or `version`.
 #' @param encode `function(value, path)`: write `value` to the file `path`. It
 #'   may return a small named list, stored with the entry and passed back to
-#'   `decode()`; anything else it returns is ignored.
+#'   `decode()`; anything else it returns is ignored. An element named exactly
+#'   `ext` sets this value's file extension in place of the codec's `ext`, as
+#'   `codec_file()` does to keep a file's own extension.
 #' @param decode `function(path, meta)`: read the value back from `path`.
 #'   `meta` is what `encode()` returned, or `NULL`.
 #' @param ... Must be empty.
@@ -49,6 +51,10 @@ reserved_codec_names <- c(
 #'   written by a newer version than the handle knows is refused.
 #' @param supports `function(value)` returning `TRUE` for values the codec
 #'   round-trips without loss, or `NULL` for every value.
+#' @param always_file `TRUE` to store every value as a file, however small.
+#'   Needed when `decode()` returns `path` itself, or anything that reads it
+#'   later: a small value is otherwise kept in the database and decoded from a
+#'   temporary file that is gone when the value is returned.
 #' @param compress Passed to [saveRDS()]. Off by default: compression costs more
 #'   time than a local disk saves. A cache created with `compress = TRUE` keeps
 #'   it when reopened.
@@ -76,9 +82,13 @@ codec <- function(
   ...,
   ext = NULL,
   version = 1L,
-  supports = NULL
+  supports = NULL,
+  always_file = FALSE
 ) {
   rlang::check_dots_empty()
+  if (!isTRUE(always_file) && !isFALSE(always_file)) {
+    abort_codec_error("`always_file` must be TRUE or FALSE.")
+  }
   if (
     !is.character(name) ||
       length(name) != 1L ||
@@ -104,7 +114,8 @@ codec <- function(
     decode,
     ext = ext,
     version = version,
-    supports = supports
+    supports = supports,
+    always_file = always_file
   )
 }
 
@@ -498,7 +509,7 @@ codec_encode <- function(codec, value, path, call = rlang::caller_env()) {
       call = call
     )
   }
-  ext <- meta$ext %||% codec$ext
+  ext <- meta[["ext", exact = TRUE]] %||% codec$ext
   # The extension becomes part of the stored file's name.
   if (
     !is.null(ext) &&
@@ -540,26 +551,28 @@ codec_encode_value <- function(
       codec = codec$name,
       version = codec$version,
       meta = out$meta,
-      ext = out$meta$ext %||% codec$ext
+      ext = out$meta[["ext", exact = TRUE]] %||% codec$ext
     ))
   }
   path <- stage()
   # Whatever ends the encode early, an error or an interrupt, the staged file
   # goes with it; nothing else knows its name yet.
   done <- FALSE
-  on.exit(if (!done) unlink(path))
+  on.exit(if (!done) unstage_path(path))
   info <- codec_encode(codec, value, path, call = call)
-  size <- file.size(path)
-  if (is.na(size)) {
+  wrote <- staged_kind(path)
+  if (wrote != "file") {
     abort_codec_error(
       sprintf(
-        "The codec %s wrote no file.",
-        encodeString(codec$name, quote = "\"")
+        "The codec %s wrote %s where a file was expected.",
+        encodeString(codec$name, quote = "\""),
+        wrote
       ),
       codec = codec$name,
       call = call
     )
   }
+  size <- file.size(path)
   out <- c(list(bytes = NULL, path = path, size = size), info)
   done <- TRUE
   out
@@ -580,7 +593,55 @@ codec_decode_bytes <- function(
   path <- stage()
   on.exit(unlink(path))
   writeBin(bytes, path)
-  codec_decode(codec, path, meta, call = call)
+  value <- codec_decode(codec, path, meta, call = call)
+  # The file is gone once this returns, so a value that is its path would
+  # name nothing.
+  if (is.character(value) && length(value) == 1L && identical(value, path)) {
+    abort_codec_error(
+      c(
+        sprintf(
+          "The codec %s decoded a value to the path it read, which is temporary for a value kept in the database.",
+          encodeString(codec$name, quote = "\"")
+        ),
+        i = "Create the codec with `always_file = TRUE`."
+      ),
+      codec = codec$name,
+      call = call
+    )
+  }
+  value
+}
+
+# What an encoder left at its path: "file" for a regular file, else a
+# description for the error.
+staged_kind <- function(path) {
+  if (nzchar(Sys.readlink(path))) {
+    return("a symbolic link")
+  }
+  info <- file.info(path, extra_cols = FALSE)
+  if (is.na(info$isdir)) {
+    return("no file")
+  }
+  if (info$isdir) {
+    return("a directory")
+  }
+  "file"
+}
+
+# Remove whatever an encoder left at a staging path, a directory included,
+# making it writable first so a read-only one goes too.
+unstage_path <- function(path) {
+  if (dir.exists(path) && !nzchar(Sys.readlink(path))) {
+    Sys.chmod(
+      c(path, list.files(path, recursive = TRUE, include.dirs = TRUE, full.names = TRUE, all.files = TRUE)),
+      "0755",
+      use_umask = FALSE
+    )
+    unlink(path, recursive = TRUE)
+  } else {
+    unlink(path)
+  }
+  invisible()
 }
 
 codec_check_supports <- function(codec, value, call) {
