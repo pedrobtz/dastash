@@ -170,6 +170,47 @@ cache_evict <- function(cache, ..., tag = NULL, prefix = NULL) {
   invisible(cache)
 }
 
+# Delete the entries under `prefix` whose key text `matches()` accepts: a
+# namespace inside a prefix, such as a memoised function's versions, where a
+# raw prefix would also take a user's key that merely extends it. Pages through
+# the prefix in write transactions of ENGINE_SCAN_CHUNK, stepping past the
+# keys it keeps. A digested key too long to keep is judged by its preview.
+evict_prefix_where <- function(cache, prefix, matches) {
+  e <- cache$engine
+  chunk <- ENGINE_SCAN_CHUNK
+  start <- NULL
+  repeat {
+    found <- engine_write(
+      e,
+      function(txn) {
+        page <- store_scan_prefix(cache, txn, prefix, start = start, n = chunk)
+        text <- vapply(
+          seq_along(page$stored),
+          function(i) {
+            r <- page$records[[i]]
+            if (record_digested(r)) {
+              r$key_text %||% r$key_preview %||% ""
+            } else {
+              page$stored[[i]]
+            }
+          },
+          character(1)
+        )
+        for (k in page$stored[matches(text)]) {
+          store_delete_entry(cache, txn, k)
+        }
+        if (length(page$stored) > 0L) {
+          start <<- page$stored[[length(page$stored)]]
+        }
+        length(page$stored)
+      },
+      timeout = cache$timeout
+    )
+    if (found < chunk) break
+  }
+  invisible(cache)
+}
+
 #' @rdname cache_cull
 #' @export
 cache_clear <- function(cache) {

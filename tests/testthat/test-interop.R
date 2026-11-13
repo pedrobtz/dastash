@@ -70,3 +70,18 @@ test_that("as.list() warns on a large cache", {
   expect_warning(out <- as.list(s), "1001")
   expect_length(out, 1001L)
 })
+
+test_that("an adapter owns only its own keys, and a prefix must be delimited (#108)", {
+  s <- local_cache()
+  expect_error(as_cachem(s, prefix = "cachem"), class = "dazcache_key_invalid")
+  a <- as_cachem(s, prefix = "a/")
+  a2 <- as_cachem(s, prefix = "a2/")
+  a$set("x", 1)
+  a2$set("y", 2)
+  cache_set(s, "a/deeper/z", 3)
+  expect_identical(a$keys(), "x")
+  expect_identical(a$size(), 1L)
+  a$reset()
+  expect_identical(sort(cache_keys(s)), c("a/deeper/z", "a2/y"))
+  expect_identical(a2$get("y"), 2)
+})

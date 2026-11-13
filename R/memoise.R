@@ -188,7 +188,13 @@ cache_forget <- function(f, ...) {
 #' @export
 cache_forget_all <- function(f) {
   info <- memo_info(f)
-  cache_evict(info$cache, prefix = paste0(info$name, "/v"))
+  check_writable(info$cache)
+  prefix <- paste0(info$name, "/v")
+  # Only `<name>/v<digits>/...`: a user's `<name>/video` is not the function's.
+  evict_prefix_where(info$cache, prefix, function(text) {
+    startsWith(text, prefix) &
+      grepl("^[0-9]+/", substring(text, nchar(prefix) + 1L))
+  })
   invisible(f)
 }
 

@@ -11,7 +11,9 @@ as_cachem(cache, ..., prefix = "cachem/", expire = NULL, codec = NULL)
 
 \item{...}{Must be empty.}
 
-\item{prefix}{Where in the cache the keys live.}
+\item{prefix}{Where in the cache the keys live. It must end with a
+character a cachem key cannot contain, such as \code{/}, so that two adapters
+never share keys; the adapter lists and resets only its own keys.}
 
 \item{expire, codec}{Passed to \code{\link[=cache_set]{cache_set()}} on every \code{set()}.}
 }

@@ -11,7 +11,9 @@
 #'
 #' @inheritParams cache_get
 #' @param ... Must be empty.
-#' @param prefix Where in the cache the keys live.
+#' @param prefix Where in the cache the keys live. It must end with a
+#'   character a cachem key cannot contain, such as `/`, so that two adapters
+#'   never share keys; the adapter lists and resets only its own keys.
 #' @param expire,codec Passed to [cache_set()] on every `set()`.
 #'
 #' @return A list of functions with class `c("dazcache_cachem", "cachem")`.
@@ -40,6 +42,17 @@ as_cachem <- function(
   if (starts_with_opener(prefix)) {
     abort_key_invalid("`prefix` cannot start like an encoded key.")
   }
+  if (grepl("[a-z0-9_-]$", prefix)) {
+    abort_key_invalid(c(
+      "`prefix` must end with a character a cachem key cannot contain, such as `/`.",
+      i = "Otherwise `prefix = \"a\"` would also own the keys of `prefix = \"a2\"`."
+    ))
+  }
+  # The adapter's own keys: the prefix and one cachem key, nothing deeper.
+  own <- function(text) {
+    startsWith(text, prefix) &
+      grepl("^[a-z0-9_-]+$", substring(text, nchar(prefix) + 1L))
+  }
   parse_expire(expire, 0)
   key_missing <- structure(list(), class = "key_missing")
   full <- function(key) {
@@ -57,7 +70,8 @@ as_cachem <- function(
     paste0(prefix, key)
   }
   keys <- function() {
-    substring(cache_keys(cache, prefix = prefix), nchar(prefix) + 1L)
+    text <- cache_keys(cache, prefix = prefix)
+    substring(text[own(text)], nchar(prefix) + 1L)
   }
   structure(
     list(
@@ -74,7 +88,8 @@ as_cachem <- function(
         invisible(TRUE)
       },
       reset = function() {
-        cache_evict(cache, prefix = prefix)
+        check_writable(cache)
+        evict_prefix_where(cache, prefix, own)
         invisible(TRUE)
       },
       keys = keys,
