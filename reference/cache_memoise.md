@@ -86,7 +86,8 @@ is_cache_memoised(f)
 
 - version:
 
-  A whole number, part of every key.
+  A whole number, part of every key, up to `2^53`: a date stamp such as
+  `20261113120000` will do.
 
 - name:
 

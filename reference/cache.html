@@ -147,16 +147,19 @@ open.</p></dd>
 
 
 <dt id="arg-map-size">map_size<a class="anchor" aria-label="anchor" href="#arg-map-size"></a></dt>
-<dd><p>The most the database file may grow to, in bytes.</p></dd>
+<dd><p>The most the database file may grow to, in bytes: a whole
+number of at least 256 KiB (<code>2^18</code>).</p></dd>
 
 
 <dt id="arg-cull-limit">cull_limit<a class="anchor" aria-label="anchor" href="#arg-cull-limit"></a></dt>
-<dd><p>How many entries one eviction step removes at most.</p></dd>
+<dd><p>How many entries one eviction step removes at most, up
+to <code>.Machine$integer.max</code>.</p></dd>
 
 
 <dt id="arg-timeout">timeout<a class="anchor" aria-label="anchor" href="#arg-timeout"></a></dt>
 <dd><p>How long, in seconds, a write waits for another process's
-write to finish before raising <code>dazcache_busy</code>.</p></dd>
+write to finish before raising <code>dazcache_busy</code>. <code>Inf</code> waits for as long
+as it takes.</p></dd>
 
 
 <dt id="arg-readonly">readonly<a class="anchor" aria-label="anchor" href="#arg-readonly"></a></dt>

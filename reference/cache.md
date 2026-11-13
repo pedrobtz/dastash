@@ -94,16 +94,19 @@ with_cache(dir, fn, ...)
 
 - map_size:
 
-  The most the database file may grow to, in bytes.
+  The most the database file may grow to, in bytes: a whole number of at
+  least 256 KiB (`2^18`).
 
 - cull_limit:
 
-  How many entries one eviction step removes at most.
+  How many entries one eviction step removes at most, up to
+  `.Machine$integer.max`.
 
 - timeout:
 
   How long, in seconds, a write waits for another process's write to
-  finish before raising `dazcache_busy`.
+  finish before raising `dazcache_busy`. `Inf` waits for as long as it
+  takes.
 
 - readonly:
 
