@@ -220,3 +220,49 @@ test_that("cache_pop() reads a shared file it releases, and leaves nothing stage
   expect_length(blob_files(s), 0L)
   expect_identical(store_violations(s), character())
 })
+
+test_that("a counter stops with an error at ±2^53, one step from the limit (#93)", {
+  s <- local_cache()
+  expect_identical(cache_incr(s, "n", default = 2^53 - 1), 2^53)
+  expect_error(cache_incr(s, "n"), class = "dazcache_type_error")
+  expect_identical(cache_get(s, "n"), 2^53)
+  expect_identical(cache_decr(s, "m", default = -2^53 + 1), -2^53)
+  expect_error(cache_decr(s, "m"), class = "dazcache_type_error")
+  expect_identical(cache_get(s, "m"), -2^53)
+  expect_identical(cache_incr(s, "w", default = -2^53, by = 2^53), 0)
+  expect_identical(cache_decr(s, "v", default = 2^53, by = 2^53), 0)
+})
+
+test_that("counters return a double whatever type `by` and `default` are (#110)", {
+  skip_if_not_installed("bit64")
+  s <- local_cache()
+  for (by in list(1L, 1, bit64::as.integer64(1))) {
+    for (default in list(0L, 0, bit64::as.integer64(0))) {
+      expect_identical(class(cache_incr(s, "c", by = by, default = default)), "numeric")
+      expect_identical(class(cache_decr(s, "c", by = by, default = default)), "numeric")
+    }
+  }
+})
+
+test_that("a counter row that is not 8 bytes is a codec error (#100)", {
+  for (n in c(0L, 7L, 9L)) {
+    expect_error(counter_value(as.raw(seq_len(n))), class = "dazcache_codec_error")
+  }
+  expect_identical(counter_value(counter_bytes(-5)), -5)
+  s <- local_cache()
+  cache_incr(s, "c")
+  e <- s$engine
+  engine_write(e, function(txn) engine_put(txn, engine_db(e, "values"), "c", as.raw(1:3)))
+  expect_error(cache_get(s, "c"), class = "dazcache_codec_error")
+  expect_error(cache_incr(s, "c"), class = "dazcache_codec_error")
+})
+
+test_that("counter writes run the cull step like every other write (#117)", {
+  s <- local_cache(size_limit = 15)
+  cache_set(s, "a", as.raw(1:10))
+  cache_incr(s, "c")
+  cache_incr(s, "d")
+  expect_lte(held(s), 15)
+  expect_true(cache_has(s, "d"))
+  expect_gt(cache_stats(s)$evictions, 0)
+})
