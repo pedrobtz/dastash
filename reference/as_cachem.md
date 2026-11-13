@@ -29,7 +29,9 @@ as_cachem(cache, ..., prefix = "cachem/", expire = NULL, codec = NULL)
 
 - prefix:
 
-  Where in the cache the keys live.
+  Where in the cache the keys live. It must end with a character a
+  cachem key cannot contain, such as `/`, so that two adapters never
+  share keys; the adapter lists and resets only its own keys.
 
 - expire, codec:
 

@@ -69,7 +69,9 @@ lower-case letters, digits, <code>_</code> and <code>-</code>, and are stored un
 
 
 <dt id="arg-prefix">prefix<a class="anchor" aria-label="anchor" href="#arg-prefix"></a></dt>
-<dd><p>Where in the cache the keys live.</p></dd>
+<dd><p>Where in the cache the keys live. It must end with a
+character a cachem key cannot contain, such as <code>/</code>, so that two adapters
+never share keys; the adapter lists and resets only its own keys.</p></dd>
 
 
 <dt id="arg-expire-codec">expire, codec<a class="anchor" aria-label="anchor" href="#arg-expire-codec"></a></dt>
