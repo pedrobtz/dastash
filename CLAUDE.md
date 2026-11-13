@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 for CRAN: the cache, blobs, expiry, tags, eviction, transactions, memoisation, `cachem`
 interop and `cache_check()`. CI is the R-CMD-check, coverage and pkgdown workflows from
 `pedrobtz/r-actions`. Later releases (frames, access-aware eviction, the rest of
-`design.md` v1) follow the roadmap. The design lives in `.agents/`, five documents:
+`design.md` v1) follow the roadmap. The design lives in `.agents/`, five documents, and `.agents/assurance.md` records how the code is checked:
 
 - **`.agents/design.md`** — **the contract**: semantics, API, storage, concurrency, and the
   engine as verified against `mdbx` 0.1.1. Section references `§N` and decisions `Dn`
@@ -22,6 +22,12 @@ interop and `cache_check()`. CI is the R-CMD-check, coverage and pkgdown workflo
   clean.
 - **`.agents/typed-layer.md`** — the typed dataset layer (schemas, producers,
   identifiers). **Deferred**; it sits above the cache and is built after it.
+- **`.agents/assurance.md`** — what checks each boundary, long-lived object and limit
+  against an answer, and the `assurance` issue for every gap. The standard is
+  `.claude/shared/assurance.md`; CI's `assurance` workflow holds the file to it. A change
+  that adds a boundary, object or limit adds its row.
+
+@.claude/shared/assurance.md
 
 **Read `design.md` §0 first.** Earlier drafts (an R6-based first contract, its review, a
 functional-API proposal, a typed-store design and plan) were folded into these on
