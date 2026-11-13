@@ -240,8 +240,19 @@ test_that("closing the cache inside a block aborts it with a classed error", {
       cache_set(s, "a", 1)
       cache_close(s)
     }),
-    class = "dazcache_error"
+    class = "dazcache_closed"
   )
+  expect_false(cache_is_open(s))
+  # Leaving the block by return() after the close ends it the same way (#97).
+  s <- cache(dir)
+  f <- function() {
+    cache_transact(s, {
+      cache_set(s, "a", 1)
+      cache_close(s)
+      return(1)
+    })
+  }
+  expect_error(f(), class = "dazcache_closed")
   s2 <- local_cache(dir)
   expect_false(cache_has(s2, "a"))
   cache_set(s2, "b", 1)

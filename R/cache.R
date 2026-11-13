@@ -29,10 +29,13 @@ dazcache_state$stage <- 0L
 #' A second `cache()` on a directory this process already has open shares the
 #' same underlying database; each handle is closed separately. While a
 #' read-only handle is open, the same process cannot open the directory for
-#' writing: close it first.
+#' writing: close it first. A handle that is dropped without being closed
+#' releases its share when it is garbage-collected; `cache_close()` releases it
+#' at once.
 #'
 #' A handle cannot be used from a forked child process, such as a
-#' [parallel::mclapply()] worker; open the cache inside the worker instead.
+#' [parallel::mclapply()] worker; open the cache inside the worker instead,
+#' which works whether or not the parent has it open.
 #'
 #' Opening a cache that exists only reads it, so it never waits for another
 #' process's write. Writes take the cache's one write lock in turn, waiting up
@@ -200,8 +203,18 @@ cache <- function(
   # writing with it is then an error, reading is not.
   s$codec <- if (explicit$codec) codec else codec_known(s$config$codec, codecs, s$config$codec_args)
   codec_register(s, s$codec)
+  # A handle dropped without cache_close() releases its share of the
+  # environment when it is collected, so the directory does not stay open,
+  # read-only perhaps, for the rest of the session (#102).
+  reg.finalizer(s, cache_finalize)
   opened <- TRUE
   s
+}
+
+cache_finalize <- function(s) {
+  if (!isTRUE(s$closed) && identical(s$engine$pid, Sys.getpid())) {
+    try(cache_close(s), silent = TRUE)
+  }
 }
 
 #' @rdname cache
@@ -210,8 +223,10 @@ cache <- function(
 cache_close <- function(cache) {
   check_cache(cache)
   if (!cache$closed) {
-    engine_close(cache$engine)
+    # Closed first: the handle is closed whatever closing the environment
+    # says (#122).
     cache$closed <- TRUE
+    engine_close(cache$engine)
   }
   invisible(cache)
 }
@@ -220,7 +235,7 @@ cache_close <- function(cache) {
 #' @export
 cache_is_open <- function(cache) {
   check_cache(cache)
-  !cache$closed
+  !cache$closed && !isTRUE(cache$engine$closed)
 }
 
 #' @rdname cache
@@ -319,7 +334,7 @@ check_cache <- function(x, call = rlang::caller_env()) {
 
 check_open <- function(s, call = rlang::caller_env()) {
   check_cache(s, call)
-  if (s$closed) {
+  if (s$closed || isTRUE(s$engine$closed)) {
     abort_closed("This cache has been closed.", dir = s$dir, call = call)
   }
 }
