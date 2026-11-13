@@ -316,3 +316,54 @@ test_that("a key's class and attributes are not part of it, digested or not (#10
   }
   expect_null(attributes(cache_key_text(structure("ab", class = "glue"))$text))
 })
+
+test_that("malformed and exotic classed values key or are refused, never another error (#106)", {
+  deep <- list(1)
+  for (i in 1:3000) deep <- list(deep)
+  refused <- list(
+    structure(5L, class = "factor", levels = c("a", "b")),
+    structure(1L, class = "factor"),
+    structure(1, class = "difftime"),
+    structure(1, class = "difftime", units = "fortnights"),
+    structure(c("x", "y"), class = c("POSIXct", "POSIXt")),
+    structure(c("2026-01-01", "x"), class = "Date"),
+    structure(list(a = 1:2, b = 1), class = "data.frame"),
+    deep
+  )
+  for (x in refused) {
+    expect_error(cache_key_chr(x), class = "dazcache_key_invalid")
+  }
+  expect_identical(cache_key_chr(numeric_version("1.2")), "(i[1,2])")
+  expect_identical(cache_key_chr(package_version("1.2.3")), "(i[1,2,3])")
+  expect_identical(cache_key_chr(structure(list(), class = "data.frame")), "D{}")
+  expect_identical(cache_key_chr(structure(list(1, "a"), class = "foo")), "(i:1,s:a)")
+  s <- local_cache()
+  cache_set(s, getRversion(), 1)
+  expect_identical(cache_get(s, getRversion()), 1)
+})
+
+test_that("a non-ASCII prefix matches the same keys in a C locale (#107)", {
+  skip_unless_children_see_this_build()
+  skip_on_os("windows")
+  dir <- withr::local_tempdir()
+  got <- callr::r(
+    function(dir) {
+      u <- rawToChar(as.raw(c(0x63, 0x61, 0x66, 0xc3, 0xa9)))
+      s <- dazcache::cache(dir)
+      dazcache::cache_set(s, u, 1)
+      dazcache::cache_set(s, paste0(u, "/x"), 2)
+      dazcache::cache_set(s, "other", 3)
+      keys <- length(dazcache::cache_keys(s, prefix = u))
+      entries <- nrow(dazcache::cache_entries(s, prefix = u))
+      a <- dazcache::as_cachem(s, prefix = paste0(u, "/"))
+      size <- a$size()
+      dazcache::cache_evict(s, prefix = u)
+      left <- dazcache::cache_count(s)
+      dazcache::cache_close(s)
+      c(keys, entries, size, left)
+    },
+    args = list(dir = dir),
+    env = c(callr::rcmd_safe_env(), LC_ALL = "C", LANG = "C")
+  )
+  expect_identical(got, c(2L, 2L, 1L, 1L))
+})
