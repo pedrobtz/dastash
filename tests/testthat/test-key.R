@@ -2,26 +2,48 @@
 # found. Fix the code, never the golden file (spec §0).
 
 test_that("every golden vector encodes, hashes and stores as recorded", {
-  g <- golden()
-  expect_gt(nrow(g), 100)
-  for (i in seq_len(nrow(g))) {
-    row <- g[i, ]
-    # A missing bit64 skips its own rows, not every row after them.
-    if (grepl("bit64::", row$expr, fixed = TRUE) && !requireNamespace("bit64", quietly = TRUE)) next
-    value <- eval(parse(text = row$expr, encoding = "UTF-8"))
-    if (name_reread_by_locale(value)) next
-    text <- cache_key_chr(value)
-    if (startsWith(row$canon, "<") && endsWith(row$canon, " bytes>")) {
-      expect_identical(
-        paste0("<", nchar(text, type = "bytes"), " bytes>"), row$canon,
-        label = row$expr
-      )
-    } else {
-      expect_identical(text, enc2utf8(row$canon), label = row$expr)
-    }
-    expect_identical(cache_key_hash(value), row$hash, label = row$expr)
-    expect_identical(key_storage(text)$stored, enc2utf8(row$stored), label = row$expr)
-  }
+  expect_golden_vectors()
+})
+
+test_that("every golden vector holds in a hostile session (#67)", {
+  withr::local_options(OutDec = ",", scipen = -5, digits = 3, warn = 2)
+  withr::local_collate("C")
+  withr::local_timezone("Pacific/Chatham")
+  expect_golden_vectors()
+})
+
+test_that("every golden vector holds in a C-locale session (#67)", {
+  skip_unless_children_see_this_build()
+  skip_on_os("windows")
+  golden_file <- test_path("golden", "key-vectors.csv")
+  got <- callr::r(
+    function(golden_file) {
+      options(OutDec = ",", scipen = -5, digits = 3)
+      g <- utils::read.csv(golden_file, colClasses = "character", encoding = "UTF-8", na.strings = character())
+      bad <- character()
+      for (i in seq_len(nrow(g))) {
+        row <- g[i, ]
+        if (grepl("bit64::", row$expr, fixed = TRUE) && !requireNamespace("bit64", quietly = TRUE)) next
+        value <- eval(parse(text = row$expr, encoding = "UTF-8"))
+        # Names whose bytes this locale rereads are not the row's value.
+        nms <- names(value)
+        if (!is.null(nms) && any(Encoding(nms) == "unknown" & grepl("[^ -~]", nms, useBytes = TRUE))) next
+        text <- dazcache::cache_key_chr(value)
+        ok <- if (startsWith(row$canon, "<")) {
+          identical(paste0("<", nchar(text, type = "bytes"), " bytes>"), row$canon)
+        } else {
+          identical(charToRaw(text), charToRaw(enc2utf8(row$canon)))
+        }
+        if (!ok || !identical(dazcache::cache_key_hash(value), row$hash)) bad <- c(bad, row$expr)
+      }
+      list(locale = Sys.getlocale("LC_CTYPE"), n = nrow(g), bad = bad)
+    },
+    args = list(golden_file = normalizePath(golden_file)),
+    env = c(callr::rcmd_safe_env(), LC_ALL = "C", LANG = "C", TZ = "Asia/Kathmandu")
+  )
+  expect_identical(got$locale, "C")
+  expect_gt(got$n, 100)
+  expect_identical(got$bad, character())
 })
 
 test_that("the key encoding version is 1", {
@@ -366,4 +388,100 @@ test_that("a non-ASCII prefix matches the same keys in a C locale (#107)", {
     env = c(callr::rcmd_safe_env(), LC_ALL = "C", LANG = "C")
   )
   expect_identical(got, c(2L, 2L, 1L, 1L))
+})
+
+test_that("a whole double at ±2^53 keys as the integer64 of the same value (#92)", {
+  skip_if_not_installed("bit64")
+  for (x in c(2^53, -2^53, 2^53 - 1, -(2^53 - 1), 0, 1)) {
+    big <- bit64::as.integer64(x)
+    expect_identical(cache_key_chr(x), cache_key_chr(big), label = format(x, digits = 17))
+    expect_identical(cache_key_chr(x), paste0("i:", sprintf("%.0f", x)))
+  }
+  expect_false(identical(cache_key_chr(2^53 + 2), cache_key_chr(bit64::as.integer64(2^53 + 2))))
+})
+
+# A key shared by two different values returns one's value for the other: the
+# one failure a cache cannot tolerate. #101 was one (far dates all keyed as
+# `d:NA`). Values are drawn from the whole grammar, avoiding the pairs the spec
+# makes equal (`1L` and `1`, `-0` and `0`, ignored attributes), so any two that
+# differ must key differently (#133).
+test_that("different values never share a key", {
+  set.seed(133)
+  pick <- function(x, n = 1) x[sample.int(length(x), n, replace = TRUE)]
+  specials <- c("", "a", "b", ",", "=", "[", "]", "{", "}", "(", ")", ":", "!", "~", "%",
+    "%2C", "#", "\\", "\n", "\t", "é", "é", "中", "s:a", "i:1", "D{", "~x")
+  text <- function(n) {
+    vapply(seq_len(n), function(i) paste(pick(specials, sample.int(3, 1)), collapse = ""), "")
+  }
+  doubles <- c(0, 1, -1, 2^53, -2^53, 2^53 + 2, 0.1, 1 / 3, -1.5, 1e300, 5e-324, NaN, NA, Inf, -Inf)
+  days <- c(0, -1, 59, 60, -719528, 2932896, 2932897, -719529, 1e12, -4e15, 2^52)
+  secs <- c(0, -1, 0.5, 1e-6, -1e-6, 86399.999999, 253402300800, 1e15, -1e15)
+  atom <- function() {
+    n <- pick(c(1L, 1L, 2L, 3L))
+    switch(
+      pick(c("s", "f", "l", "r", "d", "t", "e", "u")),
+      s = text(n),
+      f = pick(doubles, n),
+      l = pick(c(TRUE, FALSE, NA), n),
+      r = as.raw(sample.int(256, n, replace = TRUE) - 1L),
+      d = structure(pick(days, n), class = "Date"),
+      t = .POSIXct(pick(secs, n), tz = "UTC"),
+      e = factor(text(n)),
+      u = as.difftime(pick(doubles[is.finite(doubles)], n), units = "secs")
+    )
+  }
+  named <- function(x) {
+    if (length(x) > 0L && runif(1) < 0.3) {
+      nms <- make.unique(text(length(x)))
+      nms[!nzchar(nms)] <- "z"
+      names(x) <- make.unique(nms)
+    }
+    x
+  }
+  value <- function(depth = 0L) {
+    r <- runif(1)
+    if (depth >= 3L || r < 0.55) return(named(atom()))
+    if (r < 0.62) return(NULL)
+    if (r < 0.70) {
+      cols <- sample.int(3, 1)
+      rows <- sample.int(3, 1)
+      df <- lapply(seq_len(cols), function(j) pick(doubles, rows))
+      names(df) <- make.unique(paste0("c", text(cols)))
+      return(as.data.frame(df, optional = TRUE))
+    }
+    named(lapply(seq_len(sample.int(3, 1) - 1L), function(i) value(depth + 1L)))
+  }
+  values <- lapply(seq_len(3000), function(i) value())
+  # A dense family where an escape that fails collides at once: vectors and
+  # lists of a few separator-laden strings, `c("a,", "a")` beside `c("a", ",a")`.
+  tight <- c("a", ",", "a,", ",a", "=", "a=", "(", ")", "[", "]", ":")
+  dense <- lapply(seq_len(1500), function(i) {
+    x <- pick(tight, sample.int(3, 1))
+    switch(pick(c("v", "l", "n")), v = x, l = as.list(x), n = list(x, pick(tight)))
+  })
+  values <- c(values, dense)
+  values <- values[!duplicated(values)]
+  keys <- vapply(values, cache_key_chr, "")
+  dup <- which(duplicated(keys))
+  if (length(dup) > 0L) {
+    first <- match(keys[dup[[1L]]], keys)
+    fail(paste(
+      "Two different values share a key:",
+      paste(deparse(values[[first]]), collapse = ""),
+      paste(deparse(values[[dup[[1L]]]]), collapse = ""),
+      keys[[first]],
+      sep = "\n"
+    ))
+  }
+  expect_gt(length(values), 2200)
+  # And the pairs the spec makes equal do share one.
+  expect_identical(cache_key_chr(1L), cache_key_chr(1))
+  expect_identical(cache_key_chr(list(-0)), cache_key_chr(list(0)))
+  expect_identical(cache_key_chr(matrix(1:4, 2)), cache_key_chr(1:4))
+  expect_identical(cache_key_chr(factor("a", levels = c("a", "b"))), cache_key_chr(factor("a")))
+  expect_identical(
+    cache_key_chr(.POSIXct(0, tz = "UTC")),
+    cache_key_chr(.POSIXct(0, tz = "America/New_York"))
+  )
+  expect_identical(cache_key_chr(as.difftime(1, units = "mins")), cache_key_chr(as.difftime(60, units = "secs")))
 })
