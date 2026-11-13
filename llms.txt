@@ -1,7 +1,7 @@
-# dastash
+# dazcache
 
-dastash is a persistent disk cache that every R process on a machine can
-share, in the style of Python’s
+dazcache is a persistent disk cache that every R process on a machine
+can share, in the style of Python’s
 [diskcache](https://github.com/grantjenks/python-diskcache). Keys map to
 values that outlive the session, expire on a clock, carry tags for bulk
 invalidation, and are evicted when the cache grows past a size limit.
@@ -15,7 +15,7 @@ hold them.
 
 ``` r
 
-install.packages("dastash")
+install.packages("dazcache")
 ```
 
 The development version is on GitHub:
@@ -23,27 +23,27 @@ The development version is on GitHub:
 ``` r
 
 # install.packages("pak")
-pak::pak("pedrobtz/dastash")
+pak::pak("pedrobtz/dazcache")
 ```
 
 ## A tour
 
 ``` r
 
-library(dastash)
+library(dazcache)
 
-s <- stash(file.path(tempdir(), "prices"))
+s <- cache(file.path(tempdir(), "prices"))
 
 # Keys map to values, with expiry and tags.
-s |> stash_set("XSWX/2026-08-29", c(101.2, 101.9), expire = 3600, tags = "XSWX")
-stash_get(s, "XSWX/2026-08-29")
+s |> cache_set("XSWX/2026-08-29", c(101.2, 101.9), expire = 3600, tags = "XSWX")
+cache_get(s, "XSWX/2026-08-29")
 #> [1] 101.2 101.9
-stash_get(s, "missing", default = NULL)
+cache_get(s, "missing", default = NULL)
 #> NULL
 
 # A key can be any combination of values; field order does not matter.
-stash_set(s, list(exchange = "XSWX", date = as.Date("2026-08-29")), "quotes")
-stash_get(s, list(date = as.Date("2026-08-29"), exchange = "XSWX"))
+cache_set(s, list(exchange = "XSWX", date = as.Date("2026-08-29")), "quotes")
+cache_get(s, list(date = as.Date("2026-08-29"), exchange = "XSWX"))
 #> [1] "quotes"
 
 # A function, cached across sessions and processes.
@@ -51,7 +51,7 @@ slow_square <- function(x) {
   Sys.sleep(1)
   x^2
 }
-square <- stash_memoise(slow_square, s)
+square <- cache_memoise(slow_square, s)
 system.time(square(12))
 #>    user  system elapsed 
 #>   0.003   0.000   1.034
@@ -60,138 +60,138 @@ system.time(square(12))
 #>   0.000   0.000   0.001
 
 # The catalogue is a data frame.
-stash_entries(s)[, c("key", "bytes", "codec", "expires")]
+cache_entries(s)[, c("key", "bytes", "codec", "expires")]
 #>                                   key bytes codec             expires
 #> 1                     XSWX/2026-08-29    47   rds 2026-09-29 19:59:14
 #> 2             slow_square/v1/{x=i:12}    39   rds                <NA>
 #> 3 {date=d:2026-08-29,exchange=s:XSWX}     6   raw                <NA>
 
-stash_close(s)
+cache_close(s)
 ```
 
 ## Where it works
 
 Many R processes on **one machine**, over a **local filesystem**:
 interactive sessions, scheduled jobs and parallel workers can use one
-stash at once. Reads never wait; writes take turns. A stash on a network
+cache at once. Reads never wait; writes take turns. A cache on a network
 filesystem (NFS, SMB, cloud file shares) is not supported, because its
 locks cannot be relied on.
 
-A stash cannot be carried into a forked child such as a
+A cache cannot be carried into a forked child such as a
 [`parallel::mclapply()`](https://rdrr.io/r/parallel/mclapply.html)
 worker: open it inside the worker.
 
 ## Learn more
 
 - [Getting
-  started](https://pedrobtz.github.io/dastash/articles/dastash.html)
+  started](https://pedrobtz.github.io/dazcache/articles/dazcache.html)
 - [Operating a shared
-  stash](https://pedrobtz.github.io/dastash/articles/shared-stash.html)
-- [Reference](https://pedrobtz.github.io/dastash/reference/)
+  cache](https://pedrobtz.github.io/dazcache/articles/shared-cache.html)
+- [Reference](https://pedrobtz.github.io/dazcache/reference/)
 
 # Package index
 
 ## Open and close
 
-- [`stash()`](https://pedrobtz.github.io/dastash/reference/stash.md)
-  [`stash_close()`](https://pedrobtz.github.io/dastash/reference/stash.md)
-  [`stash_is_open()`](https://pedrobtz.github.io/dastash/reference/stash.md)
-  [`stash_dir()`](https://pedrobtz.github.io/dastash/reference/stash.md)
-  [`local_stash()`](https://pedrobtz.github.io/dastash/reference/stash.md)
-  [`with_stash()`](https://pedrobtz.github.io/dastash/reference/stash.md)
-  : Open a stash
+- [`cache()`](https://pedrobtz.github.io/dazcache/reference/cache.md)
+  [`cache_close()`](https://pedrobtz.github.io/dazcache/reference/cache.md)
+  [`cache_is_open()`](https://pedrobtz.github.io/dazcache/reference/cache.md)
+  [`cache_dir()`](https://pedrobtz.github.io/dazcache/reference/cache.md)
+  [`local_cache()`](https://pedrobtz.github.io/dazcache/reference/cache.md)
+  [`with_cache()`](https://pedrobtz.github.io/dazcache/reference/cache.md)
+  : Open a cache
 
 ## Keys and codecs
 
-- [`stash_key()`](https://pedrobtz.github.io/dastash/reference/stash_key.md)
-  [`stash_key_chr()`](https://pedrobtz.github.io/dastash/reference/stash_key.md)
-  [`stash_key_text()`](https://pedrobtz.github.io/dastash/reference/stash_key.md)
-  [`stash_key_hash()`](https://pedrobtz.github.io/dastash/reference/stash_key.md)
+- [`cache_key()`](https://pedrobtz.github.io/dazcache/reference/cache_key.md)
+  [`cache_key_chr()`](https://pedrobtz.github.io/dazcache/reference/cache_key.md)
+  [`cache_key_text()`](https://pedrobtz.github.io/dazcache/reference/cache_key.md)
+  [`cache_key_hash()`](https://pedrobtz.github.io/dazcache/reference/cache_key.md)
   : Keys
-- [`codec()`](https://pedrobtz.github.io/dastash/reference/codec.md)
-  [`codec_auto()`](https://pedrobtz.github.io/dastash/reference/codec.md)
-  [`codec_rds()`](https://pedrobtz.github.io/dastash/reference/codec.md)
-  [`codec_raw()`](https://pedrobtz.github.io/dastash/reference/codec.md)
-  [`codec_file()`](https://pedrobtz.github.io/dastash/reference/codec.md)
+- [`codec()`](https://pedrobtz.github.io/dazcache/reference/codec.md)
+  [`codec_auto()`](https://pedrobtz.github.io/dazcache/reference/codec.md)
+  [`codec_rds()`](https://pedrobtz.github.io/dazcache/reference/codec.md)
+  [`codec_raw()`](https://pedrobtz.github.io/dazcache/reference/codec.md)
+  [`codec_file()`](https://pedrobtz.github.io/dazcache/reference/codec.md)
   : Codecs
 
 ## Read
 
-- [`stash_get()`](https://pedrobtz.github.io/dastash/reference/stash_get.md)
-  [`stash_mget()`](https://pedrobtz.github.io/dastash/reference/stash_get.md)
-  [`stash_has()`](https://pedrobtz.github.io/dastash/reference/stash_get.md)
-  : Read from a stash
-- [`stash_path()`](https://pedrobtz.github.io/dastash/reference/stash_path.md)
+- [`cache_get()`](https://pedrobtz.github.io/dazcache/reference/cache_get.md)
+  [`cache_mget()`](https://pedrobtz.github.io/dazcache/reference/cache_get.md)
+  [`cache_has()`](https://pedrobtz.github.io/dazcache/reference/cache_get.md)
+  : Read from a cache
+- [`cache_path()`](https://pedrobtz.github.io/dazcache/reference/cache_path.md)
   : The file behind an entry
 
 ## Write
 
-- [`stash_set()`](https://pedrobtz.github.io/dastash/reference/stash_set.md)
-  [`stash_mset()`](https://pedrobtz.github.io/dastash/reference/stash_set.md)
-  [`stash_delete()`](https://pedrobtz.github.io/dastash/reference/stash_set.md)
-  : Write to a stash
-- [`stash_incr()`](https://pedrobtz.github.io/dastash/reference/stash_add.md)
-  [`stash_decr()`](https://pedrobtz.github.io/dastash/reference/stash_add.md)
-  [`stash_add()`](https://pedrobtz.github.io/dastash/reference/stash_add.md)
-  [`stash_pop()`](https://pedrobtz.github.io/dastash/reference/stash_add.md)
-  [`stash_touch()`](https://pedrobtz.github.io/dastash/reference/stash_add.md)
+- [`cache_set()`](https://pedrobtz.github.io/dazcache/reference/cache_set.md)
+  [`cache_mset()`](https://pedrobtz.github.io/dazcache/reference/cache_set.md)
+  [`cache_delete()`](https://pedrobtz.github.io/dazcache/reference/cache_set.md)
+  : Write to a cache
+- [`cache_incr()`](https://pedrobtz.github.io/dazcache/reference/cache_add.md)
+  [`cache_decr()`](https://pedrobtz.github.io/dazcache/reference/cache_add.md)
+  [`cache_add()`](https://pedrobtz.github.io/dazcache/reference/cache_add.md)
+  [`cache_pop()`](https://pedrobtz.github.io/dazcache/reference/cache_add.md)
+  [`cache_touch()`](https://pedrobtz.github.io/dazcache/reference/cache_add.md)
   : Atomic writes
 
 ## List and describe
 
-- [`stash_keys()`](https://pedrobtz.github.io/dastash/reference/stash_keys.md)
-  [`stash_count()`](https://pedrobtz.github.io/dastash/reference/stash_keys.md)
-  [`stash_volume()`](https://pedrobtz.github.io/dastash/reference/stash_keys.md)
-  : List and count a stash's entries
-- [`stash_entries()`](https://pedrobtz.github.io/dastash/reference/stash_entries.md)
-  [`stash_info()`](https://pedrobtz.github.io/dastash/reference/stash_entries.md)
-  [`stash_stats()`](https://pedrobtz.github.io/dastash/reference/stash_entries.md)
-  : The catalogue of a stash
+- [`cache_keys()`](https://pedrobtz.github.io/dazcache/reference/cache_keys.md)
+  [`cache_count()`](https://pedrobtz.github.io/dazcache/reference/cache_keys.md)
+  [`cache_volume()`](https://pedrobtz.github.io/dazcache/reference/cache_keys.md)
+  : List and count a cache's entries
+- [`cache_entries()`](https://pedrobtz.github.io/dazcache/reference/cache_entries.md)
+  [`cache_info()`](https://pedrobtz.github.io/dazcache/reference/cache_entries.md)
+  [`cache_stats()`](https://pedrobtz.github.io/dazcache/reference/cache_entries.md)
+  : The catalogue of a cache
 
 ## Maintain
 
-- [`stash_expire()`](https://pedrobtz.github.io/dastash/reference/stash_expire.md)
+- [`cache_expire()`](https://pedrobtz.github.io/dazcache/reference/cache_expire.md)
   : Reclaim expired entries
-- [`stash_cull()`](https://pedrobtz.github.io/dastash/reference/stash_cull.md)
-  [`stash_evict()`](https://pedrobtz.github.io/dastash/reference/stash_cull.md)
-  [`stash_clear()`](https://pedrobtz.github.io/dastash/reference/stash_cull.md)
-  : Keep a stash under its size limit
-- [`stash_check()`](https://pedrobtz.github.io/dastash/reference/stash_check.md)
-  : Check a stash, and repair it
+- [`cache_cull()`](https://pedrobtz.github.io/dazcache/reference/cache_cull.md)
+  [`cache_evict()`](https://pedrobtz.github.io/dazcache/reference/cache_cull.md)
+  [`cache_clear()`](https://pedrobtz.github.io/dazcache/reference/cache_cull.md)
+  : Keep a cache under its size limit
+- [`cache_check()`](https://pedrobtz.github.io/dazcache/reference/cache_check.md)
+  : Check a cache, and repair it
 
 ## Compose
 
-- [`stash_transact()`](https://pedrobtz.github.io/dastash/reference/stash_transact.md)
+- [`cache_transact()`](https://pedrobtz.github.io/dazcache/reference/cache_transact.md)
   : Run several writes as one transaction
-- [`stash_memoise()`](https://pedrobtz.github.io/dastash/reference/stash_memoise.md)
-  [`stash_memoise_key()`](https://pedrobtz.github.io/dastash/reference/stash_memoise.md)
-  [`stash_forget()`](https://pedrobtz.github.io/dastash/reference/stash_memoise.md)
-  [`stash_forget_all()`](https://pedrobtz.github.io/dastash/reference/stash_memoise.md)
-  [`is_stash_memoised()`](https://pedrobtz.github.io/dastash/reference/stash_memoise.md)
-  : Memoise a function in a stash
+- [`cache_memoise()`](https://pedrobtz.github.io/dazcache/reference/cache_memoise.md)
+  [`cache_memoise_key()`](https://pedrobtz.github.io/dazcache/reference/cache_memoise.md)
+  [`cache_forget()`](https://pedrobtz.github.io/dazcache/reference/cache_memoise.md)
+  [`cache_forget_all()`](https://pedrobtz.github.io/dazcache/reference/cache_memoise.md)
+  [`is_cache_memoised()`](https://pedrobtz.github.io/dazcache/reference/cache_memoise.md)
+  : Memoise a function in a cache
 
 ## Interoperate
 
-- [`as_cachem()`](https://pedrobtz.github.io/dastash/reference/as_cachem.md)
-  : Use a stash through the cachem interface
-- [`length(`*`<dastash_stash>`*`)`](https://pedrobtz.github.io/dastash/reference/stash-generics.md)
-  [`` `[[`( ``*`<dastash_stash>`*`)`](https://pedrobtz.github.io/dastash/reference/stash-generics.md)
-  [`` `[[<-`( ``*`<dastash_stash>`*`)`](https://pedrobtz.github.io/dastash/reference/stash-generics.md)
-  [`as.list(`*`<dastash_stash>`*`)`](https://pedrobtz.github.io/dastash/reference/stash-generics.md)
-  : Base generics for a stash
+- [`as_cachem()`](https://pedrobtz.github.io/dazcache/reference/as_cachem.md)
+  : Use a cache through the cachem interface
+- [`length(`*`<dazcache_cache>`*`)`](https://pedrobtz.github.io/dazcache/reference/cache-generics.md)
+  [`` `[[`( ``*`<dazcache_cache>`*`)`](https://pedrobtz.github.io/dazcache/reference/cache-generics.md)
+  [`` `[[<-`( ``*`<dazcache_cache>`*`)`](https://pedrobtz.github.io/dazcache/reference/cache-generics.md)
+  [`as.list(`*`<dazcache_cache>`*`)`](https://pedrobtz.github.io/dazcache/reference/cache-generics.md)
+  : Base generics for a cache
 
 ## Conditions
 
-- [`dastash-conditions`](https://pedrobtz.github.io/dastash/reference/dastash-conditions.md)
-  : Conditions raised by dastash
+- [`dazcache-conditions`](https://pedrobtz.github.io/dazcache/reference/dazcache-conditions.md)
+  : Conditions raised by dazcache
 
 # Articles
 
 ### Articles
 
 - [Getting started with
-  dastash](https://pedrobtz.github.io/dastash/articles/dastash.md):
+  dazcache](https://pedrobtz.github.io/dazcache/articles/dazcache.md):
 - [Caching slow
-  work](https://pedrobtz.github.io/dastash/articles/caching-slow-work.md):
+  work](https://pedrobtz.github.io/dazcache/articles/caching-slow-work.md):
 - [Operating a shared
-  stash](https://pedrobtz.github.io/dastash/articles/shared-stash.md):
+  cache](https://pedrobtz.github.io/dazcache/articles/shared-cache.md):

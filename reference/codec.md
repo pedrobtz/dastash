@@ -1,6 +1,6 @@
 # Codecs
 
-A codec turns a value into a file and back. The stash records which
+A codec turns a value into a file and back. The cache records which
 codec wrote each entry and always decodes with that one, so changing the
 default never makes stored entries unreadable.
 
@@ -26,7 +26,7 @@ default never makes stored entries unreadable.
 
 - `codec()` defines your own. Every process that reads its entries must
   pass it to
-  [`stash()`](https://pedrobtz.github.io/dastash/reference/stash.md) in
+  [`cache()`](https://pedrobtz.github.io/dazcache/reference/cache.md) in
   `codecs`.
 
 ## Usage
@@ -85,15 +85,15 @@ codec_file()
 
 ## Value
 
-A codec: a list with class `dastash_codec`.
+A codec: a list with class `dazcache_codec`.
 
 ## Examples
 
 ``` r
 codec_auto()
-#> <dastash_codec> auto: raw for raw vectors and single strings, rds otherwise
+#> <dazcache_codec> auto: raw for raw vectors and single strings, rds otherwise
 codec_rds()
-#> <dastash_codec> rds v1 .rds
+#> <dazcache_codec> rds v1 .rds
 
 # A codec that stores a character vector as lines of text.
 lines <- codec(
@@ -104,5 +104,5 @@ lines <- codec(
   supports = function(value) is.character(value) && !anyNA(value)
 )
 lines
-#> <dastash_codec> lines v1 .txt
+#> <dazcache_codec> lines v1 .txt
 ```

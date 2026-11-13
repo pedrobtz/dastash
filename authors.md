@@ -7,16 +7,16 @@
 ## Citation
 
 Source:
-[`DESCRIPTION`](https://github.com/pedrobtz/dastash/blob/main/DESCRIPTION)
+[`DESCRIPTION`](https://github.com/pedrobtz/dazcache/blob/main/DESCRIPTION)
 
-Baltazar P (2026). *dastash: Persistent Disk Cache Shared Between
+Baltazar P (2026). *dazcache: Persistent Disk Cache Shared Between
 Processes*. R package version 0.1.0,
-<https://pedrobtz.github.io/dastash/>.
+<https://pedrobtz.github.io/dazcache/>.
 
     @Manual{,
-      title = {dastash: Persistent Disk Cache Shared Between Processes},
+      title = {dazcache: Persistent Disk Cache Shared Between Processes},
       author = {Pedro Baltazar},
       year = {2026},
       note = {R package version 0.1.0},
-      url = {https://pedrobtz.github.io/dastash/},
+      url = {https://pedrobtz.github.io/dazcache/},
     }

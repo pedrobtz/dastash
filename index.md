@@ -1,7 +1,7 @@
-# dastash
+# dazcache
 
-dastash is a persistent disk cache that every R process on a machine can
-share, in the style of Python’s
+dazcache is a persistent disk cache that every R process on a machine
+can share, in the style of Python’s
 [diskcache](https://github.com/grantjenks/python-diskcache). Keys map to
 values that outlive the session, expire on a clock, carry tags for bulk
 invalidation, and are evicted when the cache grows past a size limit.
@@ -15,7 +15,7 @@ hold them.
 
 ``` r
 
-install.packages("dastash")
+install.packages("dazcache")
 ```
 
 The development version is on GitHub:
@@ -23,27 +23,27 @@ The development version is on GitHub:
 ``` r
 
 # install.packages("pak")
-pak::pak("pedrobtz/dastash")
+pak::pak("pedrobtz/dazcache")
 ```
 
 ## A tour
 
 ``` r
 
-library(dastash)
+library(dazcache)
 
-s <- stash(file.path(tempdir(), "prices"))
+s <- cache(file.path(tempdir(), "prices"))
 
 # Keys map to values, with expiry and tags.
-s |> stash_set("XSWX/2026-08-29", c(101.2, 101.9), expire = 3600, tags = "XSWX")
-stash_get(s, "XSWX/2026-08-29")
+s |> cache_set("XSWX/2026-08-29", c(101.2, 101.9), expire = 3600, tags = "XSWX")
+cache_get(s, "XSWX/2026-08-29")
 #> [1] 101.2 101.9
-stash_get(s, "missing", default = NULL)
+cache_get(s, "missing", default = NULL)
 #> NULL
 
 # A key can be any combination of values; field order does not matter.
-stash_set(s, list(exchange = "XSWX", date = as.Date("2026-08-29")), "quotes")
-stash_get(s, list(date = as.Date("2026-08-29"), exchange = "XSWX"))
+cache_set(s, list(exchange = "XSWX", date = as.Date("2026-08-29")), "quotes")
+cache_get(s, list(date = as.Date("2026-08-29"), exchange = "XSWX"))
 #> [1] "quotes"
 
 # A function, cached across sessions and processes.
@@ -51,7 +51,7 @@ slow_square <- function(x) {
   Sys.sleep(1)
   x^2
 }
-square <- stash_memoise(slow_square, s)
+square <- cache_memoise(slow_square, s)
 system.time(square(12))
 #>    user  system elapsed 
 #>   0.003   0.000   1.034
@@ -60,31 +60,31 @@ system.time(square(12))
 #>   0.000   0.000   0.001
 
 # The catalogue is a data frame.
-stash_entries(s)[, c("key", "bytes", "codec", "expires")]
+cache_entries(s)[, c("key", "bytes", "codec", "expires")]
 #>                                   key bytes codec             expires
 #> 1                     XSWX/2026-08-29    47   rds 2026-09-29 19:59:14
 #> 2             slow_square/v1/{x=i:12}    39   rds                <NA>
 #> 3 {date=d:2026-08-29,exchange=s:XSWX}     6   raw                <NA>
 
-stash_close(s)
+cache_close(s)
 ```
 
 ## Where it works
 
 Many R processes on **one machine**, over a **local filesystem**:
 interactive sessions, scheduled jobs and parallel workers can use one
-stash at once. Reads never wait; writes take turns. A stash on a network
+cache at once. Reads never wait; writes take turns. A cache on a network
 filesystem (NFS, SMB, cloud file shares) is not supported, because its
 locks cannot be relied on.
 
-A stash cannot be carried into a forked child such as a
+A cache cannot be carried into a forked child such as a
 [`parallel::mclapply()`](https://rdrr.io/r/parallel/mclapply.html)
 worker: open it inside the worker.
 
 ## Learn more
 
 - [Getting
-  started](https://pedrobtz.github.io/dastash/articles/dastash.html)
+  started](https://pedrobtz.github.io/dazcache/articles/dazcache.html)
 - [Operating a shared
-  stash](https://pedrobtz.github.io/dastash/articles/shared-stash.html)
-- [Reference](https://pedrobtz.github.io/dastash/reference/)
+  cache](https://pedrobtz.github.io/dazcache/articles/shared-cache.html)
+- [Reference](https://pedrobtz.github.io/dazcache/reference/)
