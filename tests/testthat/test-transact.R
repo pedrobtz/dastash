@@ -240,8 +240,19 @@ test_that("closing the cache inside a block aborts it with a classed error", {
       cache_set(s, "a", 1)
       cache_close(s)
     }),
-    class = "dazcache_error"
+    class = "dazcache_closed"
   )
+  expect_false(cache_is_open(s))
+  # Leaving the block by return() after the close ends it the same way (#97).
+  s <- cache(dir)
+  f <- function() {
+    cache_transact(s, {
+      cache_set(s, "a", 1)
+      cache_close(s)
+      return(1)
+    })
+  }
+  expect_error(f(), class = "dazcache_closed")
   s2 <- local_cache(dir)
   expect_false(cache_has(s2, "a"))
   cache_set(s2, "b", 1)
@@ -270,4 +281,62 @@ test_that("repair inside a block unlinks nothing until the block commits", {
     expect_true(file.exists(path))
   })
   expect_false(file.exists(path))
+})
+
+test_that("an error only signalled in a block does not abort it (#124)", {
+  s <- local_cache()
+  # Signal an error that nothing raises: the engine's handler sees it, then a
+  # handler outside the block returns control here, before testthat would
+  # count it as the test's error.
+  soft_signal <- function() {
+    withRestarts(signalCondition(simpleError("soft")), soft_done = function() NULL)
+  }
+  resume <- function(cnd) {
+    if (identical(conditionMessage(cnd), "soft")) invokeRestart("soft_done")
+  }
+  exits <- list(
+    ret = function(k) {
+      cache_transact(s, {
+        cache_set(s, k, 1)
+        soft_signal()
+        return("ret")
+      })
+      "late"
+    },
+    brk = function(k) {
+      for (i in 1) {
+        cache_transact(s, {
+          cache_set(s, k, 1)
+          soft_signal()
+          break
+        })
+      }
+    },
+    normal = function(k) {
+      cache_transact(s, {
+        cache_set(s, k, 1)
+        soft_signal()
+      })
+    }
+  )
+  for (k in names(exits)) {
+    withCallingHandlers(exits[[k]](k), error = resume)
+    expect_true(cache_has(s, k), label = k)
+  }
+  raisers <- list(
+    stop = function() stop("hard"),
+    abort = function() rlang::abort("hard"),
+    internal = function() log(-1, base = "x"),
+    warn2 = function() {
+      withr::local_options(warn = 2)
+      as.integer("x")
+    }
+  )
+  for (k in names(raisers)) {
+    expect_error(cache_transact(s, {
+      cache_set(s, k, 1)
+      raisers[[k]]()
+    }))
+    expect_false(cache_has(s, k), label = k)
+  }
 })

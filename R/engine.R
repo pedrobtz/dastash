@@ -40,8 +40,26 @@ engine_open <- function(
     basename(path)
   )
   e <- engine_registry[[key]]
+  if (!is.null(e) && !identical(e$pid, Sys.getpid())) {
+    # Inherited across a fork: the environment is the parent's, and is left
+    # alone, unclosed, for the parent to close. This process opens its own
+    # (#96).
+    rm(list = key, envir = engine_registry)
+    e <- NULL
+  }
   if (!is.null(e)) {
-    engine_check_pid(e, call)
+    if (!file.exists(key)) {
+      # The directory was deleted under open handles. Joining their
+      # environment would write to a file no other process can see (#126).
+      abort_closed(
+        c(
+          "This cache was deleted while open in this process.",
+          i = "Close its handles with `cache_close()`, then open it again."
+        ),
+        dir = dirname(key),
+        call = call
+      )
+    }
     if (e$readonly && !readonly) {
       abort_readonly(
         c(
@@ -73,6 +91,7 @@ engine_open <- function(
   e$pid <- Sys.getpid()
   e$readonly <- readonly
   e$refs <- 1L
+  e$closed <- FALSE
   e$txn <- NULL
   e$write <- FALSE
   e$after_commit <- list()
@@ -81,27 +100,41 @@ engine_open <- function(
   e
 }
 
-# Release one handle's share; the environment closes with the last.
+# Release one handle's share; the environment closes with the last. The
+# engine is marked closed and leaves the registry before the environment is
+# closed, so a close that fails (MDBX_PANIC after a writer was killed, #122)
+# still leaves nothing half open, and only this engine's own entry is removed:
+# after a reload another engine may hold the path (#123). A transaction still
+# open, inside cache_transact(), is aborted, and the block ends with
+# dazcache_closed when it tries to commit (#97).
 engine_close <- function(e, call = rlang::caller_env()) {
+  if (isTRUE(e$closed)) {
+    return(invisible(FALSE))
+  }
   engine_check_pid(e, call)
-  e$refs <- e$refs - 1L
+  e$refs <- max(e$refs - 1L, 0L)
   if (e$refs > 0L) {
     return(invisible(FALSE))
   }
+  e$closed <- TRUE
+  if (identical(engine_registry[[e$path]], e)) {
+    rm(list = e$path, envir = engine_registry)
+  }
   if (!is.null(e$txn)) {
-    engine_try(mdbx::mdbx_txn_abort(e$txn), call)
+    try(mdbx::mdbx_txn_abort(e$txn), silent = TRUE)
     e$txn <- NULL
   }
   engine_try(mdbx::mdbx_env_close(e$env), call)
-  rm(list = e$path, envir = engine_registry)
   invisible(TRUE)
 }
 
 # On unload, close whatever this process still has open, so a reload can open
-# the same paths again.
+# the same paths again. Handles from before the unload then say they are
+# closed (#123).
 engine_close_all <- function() {
   for (key in ls(engine_registry)) {
     e <- engine_registry[[key]]
+    e$closed <- TRUE
     if (identical(e$pid, Sys.getpid())) {
       if (!is.null(e$txn)) {
         try(mdbx::mdbx_txn_abort(e$txn), silent = TRUE)
@@ -114,6 +147,9 @@ engine_close_all <- function() {
 }
 
 engine_check_pid <- function(e, call = rlang::caller_env()) {
+  if (isTRUE(e$closed)) {
+    abort_closed("This cache has been closed.", dir = dirname(e$path), call = call)
+  }
   if (!identical(e$pid, Sys.getpid())) {
     abort_forked(
       c(
@@ -258,6 +294,17 @@ engine_write <- function(e, fn, timeout = 60, call = rlang::caller_env()) {
   }
   commit <- function() {
     committing <<- TRUE
+    if (isTRUE(e$closed)) {
+      e$after_commit <- list()
+      abort_closed(
+        c(
+          "The cache was closed inside `cache_transact()`.",
+          i = "Nothing the block wrote was kept."
+        ),
+        dir = dirname(e$path),
+        call = call
+      )
+    }
     withCallingHandlers(
       engine_try(mdbx::mdbx_txn_commit(txn), call),
       error = function(cnd) release()
@@ -277,11 +324,35 @@ engine_write <- function(e, fn, timeout = 60, call = rlang::caller_env()) {
   })
   result <- withVisible(withCallingHandlers(
     fn(txn),
-    error = function(cnd) failed <<- TRUE,
+    # Only an error that is raised fails the transaction: one merely
+    # signalled, which `fn` carries on past, does not (#124).
+    error = function(cnd) if (engine_error_raised()) failed <<- TRUE,
     interrupt = function(cnd) failed <<- TRUE
   ))
   commit()
   if (result$visible) result$value else invisible(result$value)
+}
+
+# Inside a calling handler for an error: whether the error is being raised,
+# and so will unwind, rather than only signalled with signalCondition(). A
+# raise runs through stop(), .handleSimpleError() (an error from C code) or
+# rlang's signal_abort(), whose frames are still on the stack while the
+# handler runs.
+engine_error_raised <- function() {
+  raisers <- list(base::stop, base::.handleSimpleError)
+  signal_abort <- get0("signal_abort", envir = asNamespace("rlang"), inherits = FALSE)
+  if (is.function(signal_abort)) {
+    raisers <- c(raisers, signal_abort)
+  }
+  for (i in rev(seq_len(sys.nframe()))) {
+    f <- sys.function(i)
+    for (r in raisers) {
+      if (identical(f, r)) {
+        return(TRUE)
+      }
+    }
+  }
+  FALSE
 }
 
 engine_begin_write <- function(e, timeout, call) {

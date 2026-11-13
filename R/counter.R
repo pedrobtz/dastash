@@ -119,10 +119,10 @@ counter_add <- function(cache, key, by, default, call = rlang::caller_env()) {
             call = call
           )
         }
-        current <- counter_value(
-          engine_get(txn, engine_db(cache$engine, "values"), key$stored),
-          call = call
-        )
+        bytes <- engine_get(txn, engine_db(cache$engine, "values"), key$stored)
+        # Damage is raised as cache_get() raises it.
+        store_inline_ready(list(record = record, bytes = bytes), key, call)
+        current <- counter_value(bytes, call = call)
         expire <- record$expire
         tags <- record$tags
       }

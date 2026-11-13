@@ -184,7 +184,13 @@ store_counters <- function(txn) {
 # The meta record stored under `stored`, or NULL.
 store_get_record <- function(s, txn, stored) {
   bytes <- engine_get(txn, engine_db(s$engine, "meta"), stored)
-  if (is.null(bytes)) NULL else record_decode(bytes)
+  if (is.null(bytes)) {
+    return(NULL)
+  }
+  record_decode(
+    bytes,
+    sprintf("The record of key %s", display_key(stored))
+  )
 }
 
 # Write one entry in the open transaction, replacing whatever the key held. An

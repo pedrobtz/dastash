@@ -22,9 +22,10 @@
 #'
 #' @return A data frame with columns `kind`, `key`, `path`, `detail` and
 #'   `repaired`, one row per finding. The kinds are `index_orphan`,
-#'   `index_missing`, `value_orphan`, `value_missing`, `blob_missing`,
-#'   `blob_orphan`, `blob_corrupt`, `refcount_drift`, `counter_drift`,
-#'   `tmp_stale` and `reader_stale`.
+#'   `index_missing`, `record_corrupt`, `value_orphan`, `value_missing`,
+#'   `value_corrupt`, `blob_missing`, `blob_orphan`, `blob_corrupt`,
+#'   `blob_mode`, `refcount_drift`, `counter_drift`, `tmp_stale` and
+#'   `reader_stale`.
 #'
 #' @examples
 #' s <- local_cache()
@@ -68,6 +69,12 @@ cache_check <- function(cache, ..., repair = FALSE, hash = FALSE) {
     },
     timeout = cache$timeout
   )
+  # A misplaced file is at no path a read could reach, so it can go at once.
+  misplaced <- findings$kind == "blob_orphan" &
+    findings$detail %in% "not where its name puts it"
+  for (path in findings$path[misplaced]) {
+    blob_unlink(path)
+  }
   findings$repaired <- rep(TRUE, nrow(findings))
   readers <- engine_reader_check(e)
   if (readers > 0) {
@@ -83,7 +90,8 @@ cache_check <- function(cache, ..., repair = FALSE, hash = FALSE) {
   rbind(findings, check_tmp(cache, repair = TRUE))
 }
 
-# Everything the check compares, read in one transaction.
+# Everything the check compares, read in one transaction. Records are decoded
+# one by one, so a damaged one is a finding rather than the end of the check.
 check_snapshot <- function(s, txn) {
   e <- s$engine
   meta <- engine_scan(
@@ -92,8 +100,10 @@ check_snapshot <- function(s, txn) {
     as = "character",
     values = TRUE
   )
-  records <- lapply(meta$values, record_decode)
+  records <- lapply(meta$values, record_try_decode)
   names(records) <- meta$keys
+  damaged <- meta$keys[vapply(records, is.null, logical(1))]
+  records <- records[!names(records) %in% damaged]
   index <- list()
   for (db in setdiff(store_databases(s$config), c("meta", "values", "blobs"))) {
     rows <- engine_scan(txn, engine_db(e, db))
@@ -105,22 +115,39 @@ check_snapshot <- function(s, txn) {
     as = "character",
     values = TRUE
   )
-  rows <- lapply(blobs$values, record_decode)
+  rows <- lapply(blobs$values, record_try_decode)
   names(rows) <- blobs$keys
-  files <- list.files(file.path(s$dir, "blobs"), recursive = TRUE)
+  values <- engine_scan(
+    txn,
+    engine_db(e, "values"),
+    as = "character",
+    values = TRUE
+  )
+  # A file counts as a blob only at the path its name implies; one anywhere
+  # else under blobs/ is an orphan whatever its name.
+  listed <- list.files(file.path(s$dir, "blobs"), recursive = TRUE)
+  placed <- listed == file.path(substr(basename(listed), 1L, 2L), basename(listed))
   list(
     records = records,
-    values = engine_scan(txn, engine_db(e, "values"), as = "character"),
+    damaged = damaged,
+    values = values$keys,
+    value_sizes = stats::setNames(lengths(values$values), values$keys),
     index = index,
-    blobs = rows,
-    files = basename(files),
-    counters = store_counters(txn)
+    blobs = rows[!vapply(rows, is.null, logical(1))],
+    blob_rows = blobs$keys,
+    files = basename(listed[placed]),
+    misplaced = file.path(s$dir, "blobs", listed[!placed]),
+    counters = record_try_decode(engine_get(txn, NULL, "counters"))
   )
 }
 
-# Names of blobs whose bytes do not hash to their name.
+# Names of blobs whose bytes do not hash to their name: every file a record
+# or a blobs row names, counted or not.
 check_hashes <- function(s, snap) {
-  stored <- intersect(names(snap$blobs), snap$files)
+  named <- unlist(lapply(snap$records, function(r) {
+    if (!isTRUE(r$inline)) record_blob_name(r)
+  }))
+  stored <- intersect(union(names(snap$blobs), named), snap$files)
   bad <- vapply(
     stored,
     function(name) {
@@ -135,6 +162,10 @@ check_findings <- function(s, snap, corrupt = character()) {
   out <- list()
   add <- function(...) out[[length(out) + 1L]] <<- finding(...)
   records <- snap$records
+
+  for (k in snap$damaged) {
+    add("record_corrupt", key = k, detail = "meta record unreadable")
+  }
 
   # Index rows: what the records imply against what is there.
   expected <- list()
@@ -163,7 +194,20 @@ check_findings <- function(s, snap, corrupt = character()) {
   for (k in setdiff(inline, snap$values)) {
     add("value_missing", key = k)
   }
-  for (k in setdiff(snap$values, inline)) {
+  for (k in intersect(inline, snap$values)) {
+    if (snap$value_sizes[[k]] != records[[k]]$bytes) {
+      add(
+        "value_corrupt",
+        key = k,
+        detail = sprintf(
+          "%d bytes where %s were written",
+          snap$value_sizes[[k]],
+          format(records[[k]]$bytes)
+        )
+      )
+    }
+  }
+  for (k in setdiff(snap$values, c(inline, snap$damaged))) {
     add("value_orphan", key = k)
   }
 
@@ -178,15 +222,10 @@ check_findings <- function(s, snap, corrupt = character()) {
     }
     name <- record_blob_name(r)
     path <- blob_path(s, name)
+    # Whether the file is right is asked before whether it is counted: a
+    # repair adopts an uncounted file, and must not adopt a damaged one.
     if (!name %in% snap$files) {
       add("blob_missing", key = k, path = path, detail = "file absent")
-    } else if (is.null(snap$blobs[[name]])) {
-      add(
-        "refcount_drift",
-        key = k,
-        path = path,
-        detail = "file present but not counted"
-      )
     } else if (file.size(path) != r$bytes || name %in% corrupt) {
       add(
         "blob_corrupt",
@@ -198,6 +237,19 @@ check_findings <- function(s, snap, corrupt = character()) {
           "wrong size"
         }
       )
+    } else if (is.null(snap$blobs[[name]])) {
+      add(
+        "refcount_drift",
+        key = k,
+        path = path,
+        detail = if (name %in% snap$blob_rows) {
+          "file present but its count is unreadable"
+        } else {
+          "file present but not counted"
+        }
+      )
+    } else if (blob_is_writable(path)) {
+      add("blob_mode", key = k, path = path, detail = "writable, not read-only")
     }
   }
   for (name in names(snap$blobs)) {
@@ -217,8 +269,18 @@ check_findings <- function(s, snap, corrupt = character()) {
   for (name in setdiff(snap$files, names(snap$blobs))) {
     if (!name %in% names(refs)) add("blob_orphan", path = blob_path(s, name))
   }
+  for (path in snap$misplaced) {
+    add("blob_orphan", path = path, detail = "not where its name puts it")
+  }
+  for (name in setdiff(snap$blob_rows, c(names(snap$blobs), names(refs)))) {
+    add("refcount_drift", path = blob_path(s, name), detail = "count unreadable")
+  }
 
   # Counters.
+  if (is.null(snap$counters)) {
+    add("counter_drift", detail = "counters record unreadable")
+    return(do.call(rbind, out))
+  }
   bytes_inline <- sum(vapply(records[inline], function(r) r$bytes, numeric(1)))
   bytes_blob <- sum(vapply(snap$blobs, function(r) r$bytes, numeric(1)))
   if (!isTRUE(all.equal(snap$counters$bytes_inline, bytes_inline))) {
@@ -251,7 +313,8 @@ check_repair <- function(s, txn, snap, findings) {
   e <- s$engine
   records <- snap$records
   drop <- unique(findings$key[
-    findings$kind %in% c("value_missing", "blob_missing", "blob_corrupt")
+    findings$kind %in%
+      c("record_corrupt", "value_missing", "value_corrupt", "blob_missing", "blob_corrupt")
   ])
   for (k in drop) {
     engine_del(txn, engine_db(e, "meta"), k)
@@ -283,10 +346,13 @@ check_repair <- function(s, txn, snap, findings) {
   db <- engine_db(e, "blobs")
   corrupt <- basename(findings$path[findings$kind == "blob_corrupt"])
   reap <- unique(c(setdiff(snap$files, names(refs)), corrupt))
-  for (name in names(snap$blobs)) {
+  for (name in snap$blob_rows) {
     if (is.null(refs[[name]]) || name %in% corrupt) {
       engine_del(txn, db, name)
     }
+  }
+  for (path in findings$path[findings$kind == "blob_mode"]) {
+    Sys.chmod(path, "0444", use_umask = FALSE)
   }
   bytes_blob <- 0
   for (name in names(refs)) {
@@ -299,7 +365,7 @@ check_repair <- function(s, txn, snap, findings) {
     engine_put(txn, db, name, record_encode(row))
     bytes_blob <- bytes_blob + row$bytes
   }
-  counters <- store_counters(txn)
+  counters <- snap$counters %||% record_counters()
   counters$bytes_inline <- sum(vapply(
     records,
     function(r) if (isTRUE(r$inline)) r$bytes else 0,
@@ -308,6 +374,15 @@ check_repair <- function(s, txn, snap, findings) {
   counters$bytes_blob <- bytes_blob
   engine_put(txn, NULL, "counters", record_encode(counters))
   reap
+}
+
+# Whether a blob file has a write bit: blobs are 0444 (design.md §7.1), and a
+# writable one is what a crash between the chmod and the rename of a replace
+# leaves. The mode is read rather than access() asked, which says yes to root.
+# Windows has no mode bits to compare.
+blob_is_writable <- function(path) {
+  .Platform$OS.type == "unix" &&
+    bitwAnd(as.integer(file.info(path, extra_cols = FALSE)$mode), strtoi("222", 8L)) != 0L
 }
 
 # Staging files left by processes that are gone. A file whose process is known
@@ -327,10 +402,16 @@ check_tmp <- function(s, repair) {
       max(info$mtime, info$ctime),
       units = "secs"
     ))
-    if (is.na(pid) || pid == Sys.getpid() || is.na(age)) {
+    if (is.na(pid) || is.na(age)) {
       next
     }
-    if (!pid_known_dead(pid) && (age < 3600 || pid_alive(pid))) {
+    if (pid == Sys.getpid()) {
+      # This process's own files are in use; another with its PID is from an
+      # earlier process the PID was reused from, and is stale.
+      if (startsWith(basename(path), stage_prefix())) {
+        next
+      }
+    } else if (!pid_known_dead(pid) && (age < 3600 || pid_alive(pid))) {
       next
     }
     if (repair) {

@@ -61,7 +61,7 @@ checks are legitimate (`design.md` §0, §11.3).
 <root>/cache.mdbx                  metadata and every index
 <root>/cache.mdbx-lck              libmdbx's lock file
 <root>/blobs/<aa>/<hash>[.<ext>]   values above inline_max, content-addressed, mode 0444
-<root>/tmp/<pid>-<n>               staging, same device, for atomic rename
+<root>/tmp/<pid>-<token>-<n>       staging, same device, for atomic rename
 <root>/tree/...                    derived browsable view, only when cache_tree() ran
 ```
 
