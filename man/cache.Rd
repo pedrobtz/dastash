@@ -49,8 +49,10 @@ the least recently stored, or \code{"none"} to never evict. Stored with the
 cache. \code{"least-recently-used"} and \code{"least-frequently-used"} are not yet
 available.}
 
-\item{inline_max}{Values smaller than this many bytes are kept inside the
-database; larger ones become files. Stored with the cache.}
+\item{inline_max}{Values whose encoding is smaller than this many bytes are
+kept inside the database; the rest, from exactly \code{inline_max} bytes up,
+become files. Counters are always kept inside, even with \code{inline_max = 0}.
+Stored with the cache.}
 
 \item{codec}{The default codec for writes; see \code{\link[=codec]{codec()}}. Stored with the
 cache, by name.}
