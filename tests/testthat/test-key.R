@@ -300,3 +300,19 @@ test_that("cache_key_text() turns every listed key back into its key", {
   expect_error(cache_key_text(NA_character_), class = "dazcache_key_invalid")
   expect_error(cache_key_text(c("a", "b")), class = "dazcache_key_invalid")
 })
+
+test_that("a key's class and attributes are not part of it, digested or not (#105)", {
+  s <- local_cache()
+  for (n in c(10L, 600L, 5000L)) {
+    long <- strrep("k", n)
+    g <- structure(long, note = "x", class = c("glue", "character"))
+    expect_identical(cache_key(g), cache_key(long))
+    expect_null(attributes(cache_key_chr(g)))
+    expect_null(attributes(cache_key(g)$text))
+    cache_set(s, g, "G")
+    expect_identical(cache_get(s, long, default = "MISS"), "G")
+    expect_false(cache_add(s, long, "second"))
+    expect_identical(cache_get(s, g), "G")
+  }
+  expect_null(attributes(cache_key_text(structure("ab", class = "glue"))$text))
+})

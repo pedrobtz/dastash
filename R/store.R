@@ -301,7 +301,7 @@ store_key <- function(key, call = rlang::caller_env()) {
 store_record_matches <- function(record, key) {
   !isTRUE(key$digested) ||
     is.null(record$key_text) ||
-    identical(record$key_text, key$text)
+    identical(charToRaw(record$key_text), charToRaw(key$text))
 }
 
 # Prefix scans -----------------------------------------------------------------

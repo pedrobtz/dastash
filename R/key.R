@@ -103,7 +103,7 @@ cache_key_hash <- function(key) {
 }
 
 new_dazcache_key <- function(text) {
-  structure(list(text = text), class = "dazcache_key")
+  structure(list(text = as.vector(text, "character")), class = "dazcache_key")
 }
 
 as_dazcache_key <- function(x) {
@@ -137,7 +137,8 @@ key_canon <- function(x, call = rlang::caller_env()) {
   if (is_plain_string(x)) {
     text <- utf8_text(x, call = call)
     if (!starts_with_opener(text)) {
-      return(text)
+      # A class or other attribute is not part of the key (spec §6).
+      return(as.vector(text, "character"))
     }
   }
   canon_value(x, call = call)

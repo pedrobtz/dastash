@@ -286,3 +286,17 @@ test_that("a codec that refuses a result stays an error", {
   m <- cache_memoise(function(x) list(x), s, codec = codec_raw(), name = "listed")
   expect_error(m(1), class = "dazcache_type_error")
 })
+
+test_that("cache_forget_all() takes only the function's versions, not keys that extend its name (#108)", {
+  s <- local_cache()
+  f <- function(x) x
+  m1 <- cache_memoise(f, s, name = "q", version = 1)
+  m10 <- cache_memoise(f, s, name = "q", version = 10)
+  m1(1)
+  m10(2)
+  m1(strrep("a", 5000))
+  users <- c("q/video", "q/v", "q/v1x", "q/v1", "q/vv/1")
+  for (k in users) cache_set(s, k, k)
+  cache_forget_all(m1)
+  expect_identical(sort(cache_keys(s)), sort(users))
+})
