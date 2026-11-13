@@ -148,13 +148,13 @@ One row per limit the package enforces. "Straddled by" is the test of
 <!-- markdownlint-disable MD013 -->
 | Limit                                         | Unit                                                    | Straddled by                                                                                                |
 | --------------------------------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `KEY_MAX` (512)                               | UTF-8 bytes of the canonical key text                   | gap #84                                                                                                   |
-| `CANON_KEEP_MAX` (4096)                       | UTF-8 bytes of the canonical key text                   | gap #85                                                                                                   |
-| `KEY_PREVIEW_MAX` (256)                       | UTF-8 bytes, cut back to a character boundary           | gap #129                                                                                                    |
+| `KEY_MAX` (512)                               | UTF-8 bytes of the canonical key text                   | tests/testthat/test-limits.R |
+| `CANON_KEEP_MAX` (4096)                       | UTF-8 bytes of the canonical key text                   | tests/testthat/test-limits.R |
+| `KEY_PREVIEW_MAX` (256)                       | UTF-8 bytes, cut back to a character boundary           | tests/testthat/test-limits.R |
 | `TAG_MAX` (256)                               | UTF-8 bytes of one tag                                  | gap #86                                                                                                   |
 | 16 tags per entry                             | distinct tags, after `unique()`                         | gap #86                                                                                                   |
-| `inline_max`                                  | encoded value bytes (codec output), `>=` makes a file   | gap #87                                                                                                   |
-| `size_limit`                                  | encoded bytes held: inline values plus each blob once   | gap #88                                                                                                   |
+| `inline_max`                                  | encoded value bytes (codec output), `>=` makes a file   | tests/testthat/test-limits.R |
+| `size_limit`                                  | encoded bytes held: inline values plus each blob once   | tests/testthat/test-limits.R |
 | `size_limit` on counter writes                | encoded bytes held                                      | tests/testthat/test-expire.R |
 | `cull_limit`                                  | entries per transaction                                 | tests/testthat/test-cache.R |
 | memoise `version`                             | whole number, up to 2^53                                | tests/testthat/test-cache.R |

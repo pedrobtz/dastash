@@ -57,8 +57,10 @@ dazcache_state$stage <- 0L
 #'   the least recently stored, or `"none"` to never evict. Stored with the
 #'   cache. `"least-recently-used"` and `"least-frequently-used"` are not yet
 #'   available.
-#' @param inline_max Values smaller than this many bytes are kept inside the
-#'   database; larger ones become files. Stored with the cache.
+#' @param inline_max Values whose encoding is smaller than this many bytes are
+#'   kept inside the database; the rest, from exactly `inline_max` bytes up,
+#'   become files. Counters are always kept inside, even with `inline_max = 0`.
+#'   Stored with the cache.
 #' @param codec The default codec for writes; see [codec()]. Stored with the
 #'   cache, by name.
 #' @param codecs A list of your own codecs, made with [codec()], that this
