@@ -406,3 +406,21 @@ test_that("a key error names the verb that was called", {
   err <- tryCatch(cache_delete(s, environment()), dazcache_type_error = function(cnd) cnd)
   expect_identical(err$call[[1L]], quote(cache_delete))
 })
+
+test_that("a forked worker opens a directory its parent has open (#96)", {
+  skip_on_os("windows")
+  skip_on_cran()
+  dir <- withr::local_tempdir()
+  s <- cache(dir)
+  withr::defer(cache_close(s))
+  cache_set(s, "k", "v")
+  worker <- function() {
+    w <- cache(dir)
+    on.exit(cache_close(w))
+    cache_get(w, "k", default = "miss")
+  }
+  jobs <- list(parallel::mcparallel(worker()), parallel::mcparallel(worker()))
+  got <- parallel::mccollect(jobs)
+  expect_identical(unname(unlist(got)), c("v", "v"))
+  expect_identical(cache_get(s, "k"), "v")
+})

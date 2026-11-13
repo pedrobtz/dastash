@@ -321,3 +321,72 @@ test_that("a failed commit raises its own error, and the engine stays usable", {
   expect_identical(engine_read(e, function(txn) engine_get(txn, NULL, "b", as = "character")), "2")
   expect_null(engine_read(e, function(txn) engine_get(txn, NULL, "a")))
 })
+
+test_that("a dropped handle releases its share when collected (#102)", {
+  dir <- withr::local_tempdir()
+  cache_close(cache(dir))
+  r <- cache(dir, readonly = TRUE)
+  rm(r)
+  invisible(gc())
+  w <- cache(dir)
+  expect_true(cache_is_open(w))
+  cache_close(w)
+  w1 <- cache(dir)
+  w2 <- cache(dir)
+  rm(w1)
+  invisible(gc())
+  expect_identical(w2$engine$refs, 1L)
+  cache_close(w2)
+  expect_null(engine_registry[[w2$engine$path]])
+})
+
+test_that("a close that fails still closes the handle and leaves the registry (#122)", {
+  dir <- withr::local_tempdir()
+  s <- cache(dir)
+  path <- s$engine$path
+  local_mocked_bindings(
+    mdbx_env_close = function(env) {
+      rlang::abort("MDBX_PANIC: Environment had fatal error", class = "mdbx_panic")
+    },
+    .package = "mdbx"
+  )
+  expect_error(cache_close(s), class = "dazcache_engine_error")
+  expect_false(cache_is_open(s))
+  expect_null(engine_registry[[path]])
+  expect_silent(cache_close(s))
+  expect_identical(s$engine$refs, 0L)
+})
+
+test_that("a deleted directory is not joined by a later open (#126)", {
+  dir <- withr::local_tempdir()
+  s <- cache(dir)
+  unlink(dir, recursive = TRUE)
+  expect_error(cache(dir), class = "dazcache_closed")
+  cache_close(s)
+  s2 <- cache(dir)
+  withr::defer(cache_close(s2))
+  cache_set(s2, "k", 1)
+  expect_true(file.exists(file.path(dir, "cache.mdbx")))
+})
+
+test_that("handles from before an unload say they are closed, and closing one spares the new entry (#123)", {
+  skip_unless_children_see_this_build()
+  dir <- withr::local_tempdir()
+  got <- callr::r(function(dir) {
+    library(dazcache)
+    s <- cache(dir)
+    unloadNamespace("dazcache")
+    library(dazcache)
+    s2 <- cache(dir)
+    old_open <- cache_is_open(s)
+    old_class <- tryCatch(cache_get(s, "x"), error = function(e) class(e)[1])
+    cache_close(s)
+    s3 <- cache(dir)
+    cache_set(s2, "k", 1)
+    out <- list(old_open, old_class, cache_get(s3, "k"))
+    cache_close(s2)
+    cache_close(s3)
+    out
+  }, args = list(dir = dir))
+  expect_identical(got, list(FALSE, "dazcache_closed", 1))
+})
