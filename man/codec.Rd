@@ -8,7 +8,16 @@
 \alias{codec_file}
 \title{Codecs}
 \usage{
-codec(name, encode, decode, ..., ext = NULL, version = 1L, supports = NULL)
+codec(
+  name,
+  encode,
+  decode,
+  ...,
+  ext = NULL,
+  version = 1L,
+  supports = NULL,
+  always_file = FALSE
+)
 
 codec_auto()
 
@@ -25,7 +34,9 @@ a name it already knows: give a changed codec a new name or \code{version}.}
 
 \item{encode}{\verb{function(value, path)}: write \code{value} to the file \code{path}. It
 may return a small named list, stored with the entry and passed back to
-\code{decode()}; anything else it returns is ignored.}
+\code{decode()}; anything else it returns is ignored. An element named exactly
+\code{ext} sets this value's file extension in place of the codec's \code{ext}, as
+\code{codec_file()} does to keep a file's own extension.}
 
 \item{decode}{\verb{function(path, meta)}: read the value back from \code{path}.
 \code{meta} is what \code{encode()} returned, or \code{NULL}.}
@@ -39,6 +50,11 @@ written by a newer version than the handle knows is refused.}
 
 \item{supports}{\verb{function(value)} returning \code{TRUE} for values the codec
 round-trips without loss, or \code{NULL} for every value.}
+
+\item{always_file}{\code{TRUE} to store every value as a file, however small.
+Needed when \code{decode()} returns \code{path} itself, or anything that reads it
+later: a small value is otherwise kept in the database and decoded from a
+temporary file that is gone when the value is returned.}
 
 \item{compress}{Passed to \code{\link[=saveRDS]{saveRDS()}}. Off by default: compression costs more
 time than a local disk saves. A cache created with \code{compress = TRUE} keeps

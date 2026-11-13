@@ -237,3 +237,68 @@ test_that("a cache keeps its codec's parameters when reopened (#120)", {
   expect_error(cache(dir, codec = codec_rds()), class = "dazcache_config_conflict")
   s <- cache(dir, codec = codec_rds(compress = TRUE))
 })
+
+test_that("only a meta element named exactly `ext` sets a blob's extension (#118)", {
+  s <- local_cache(inline_max = 0)
+  extra <- codec(
+    "extra",
+    encode = function(value, path) {
+      writeLines(value, path)
+      list(extra = "zzz")
+    },
+    decode = function(path, meta) readLines(path)
+  )
+  cache_set(s, "m", "hello", codec = extra)
+  expect_identical(tools::file_ext(cache_path(s, "m")), "")
+  expect_identical(cache_get(s, "m"), "hello")
+  own <- codec(
+    "own",
+    encode = function(value, path) {
+      writeLines(value, path)
+      list(ext = "csv")
+    },
+    decode = function(path, meta) readLines(path),
+    ext = "txt"
+  )
+  cache_set(s, "o", "hello", codec = own)
+  expect_identical(tools::file_ext(cache_path(s, "o")), "csv")
+})
+
+test_that("a codec that writes a directory or a link is a codec error and leaves nothing staged (#119)", {
+  s <- local_cache(inline_max = 0)
+  dir_codec <- codec(
+    "d",
+    encode = function(value, path) {
+      dir.create(path)
+      writeLines("x", file.path(path, "f"))
+      Sys.chmod(path, "0555")
+    },
+    decode = function(path, meta) path
+  )
+  expect_error(cache_set(s, "k", 1, codec = dir_codec), "a directory", class = "dazcache_codec_error")
+  skip_on_os("windows")
+  link_codec <- codec(
+    "l",
+    encode = function(value, path) file.symlink(withr::local_tempfile(), path),
+    decode = function(path, meta) path
+  )
+  expect_error(cache_set(s, "l", 1, codec = link_codec), "a symbolic link", class = "dazcache_codec_error")
+  expect_identical(list.files(file.path(s$dir, "tmp"), all.files = TRUE, no.. = TRUE), character())
+  expect_identical(cache_count(s), 0L)
+})
+
+test_that("a decoder that returns its path needs always_file, and is refused without it (#121)", {
+  s <- local_cache()
+  bare <- codec("p", encode = function(value, path) writeLines(value, path), decode = function(path, meta) path)
+  cache_set(s, "a", "x", codec = bare)
+  expect_error(cache_get(s, "a"), "always_file", class = "dazcache_codec_error")
+  filed <- codec(
+    "pf",
+    encode = function(value, path) writeLines(value, path),
+    decode = function(path, meta) path,
+    always_file = TRUE
+  )
+  cache_set(s, "b", "x", codec = filed)
+  expect_identical(readLines(cache_get(s, "b")), "x")
+  expect_error(codec("q", identity, identity, always_file = NA), class = "dazcache_codec_error")
+})
