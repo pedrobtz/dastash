@@ -21,6 +21,9 @@ it is full or it is read-only, the result is returned anyway, with a
 warning of class `dazcache_memoise_unstored`. A codec that cannot store
 it is an error.
 
+A result stored as a file, with `codec = codec_file()`, is the path of
+the cached file on a miss as on a hit, not the path `f` returned.
+
 `cache_memoise_key()` returns the key a call would use, `cache_forget()`
 deletes one call's entry, and `cache_forget_all()` every entry of the
 function.
