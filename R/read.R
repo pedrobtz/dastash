@@ -154,7 +154,7 @@ cache_keys <- function(cache, ..., prefix = NULL, start = NULL, n = Inf) {
   rlang::check_dots_empty()
   check_open(cache)
   if (!is.null(prefix)) {
-    check_string_or_empty(prefix, "prefix")
+    prefix <- key_prefix(prefix)
   }
   check_number(n, "n", min = 0, whole = TRUE, allow_inf = TRUE)
   from <- if (!is.null(start)) key_start(start)
@@ -458,6 +458,13 @@ display_key <- function(text, max = 80L) {
 # listing, so a string is a key's text, as cache_keys() returns it, and is not
 # encoded again: the text of a structured key such as `{n=i:2}` would
 # otherwise be escaped as a string and sort before every structured key.
+# A `prefix` argument as the UTF-8 text keys are stored in, so it matches
+# the same keys in every locale, as `start` and keys themselves do.
+key_prefix <- function(prefix, call = rlang::caller_env()) {
+  check_string_or_empty(prefix, "prefix", call)
+  as.vector(utf8_text(prefix, call = call), "character")
+}
+
 key_start <- function(start, call = rlang::caller_env()) {
   if (is_dazcache_key(start)) {
     return(store_key(start, call = call)$stored)

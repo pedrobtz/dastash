@@ -9,8 +9,11 @@ changes stay version 1: dates and times are written from a computed calendar for
 year within 2⁵² days or seconds of 1970 (§3.1), where version 1 had used the platform's
 `strftime()`, which differed between systems below year 1000 and wrote `NA` beyond 9999;
 and the microseconds of a time are rounded on their own, as the rule already said, where
-the code had rounded the whole value scaled by 10⁶ and lost precision. After the first
-release this paragraph is closed.
+the code had rounded the whole value scaled by 10⁶ and lost precision. A class §6 does not
+read is dropped before the value is walked, nesting is capped at 256, and malformed
+values of the classes it reads are refused (§7, #106); these had overflowed the C stack or
+raised errors outside the taxonomy, and gave no key. After the first release this
+paragraph is closed.
 
 The encoding maps an R value to a **canonical text**, a UTF-8 string. Two values are the
 same key exactly when their canonical texts are byte-identical. The text is what the
@@ -118,12 +121,17 @@ digested key:
 
 Only `names`; `class` for factor, `Date`, `POSIXct`, `POSIXlt`, `difftime`,
 `integer64` and `data.frame`; `levels`; `tzone`; and `units` are read. Every other
-attribute and class is ignored: a matrix is its elements, and `I(1:3)` is `1:3`.
+attribute and class is ignored: a matrix is its elements, `I(1:3)` is `1:3`, and a
+`numeric_version` is the list of integer vectors it holds, so `numeric_version("1.2")` is
+`(i[1,2])`.
 
 ## 7. Not keys
 
 Functions, environments, symbols and calls, external pointers, S4 objects, complex
-numbers, and strings that are not valid UTF-8 (or are marked `"bytes"`) raise
+numbers, strings that are not valid UTF-8 (or are marked `"bytes"`), lists nested more
+than 256 deep, and a value of a class read in §6 whose shape that class does not allow
+(a factor code outside its levels, a `difftime` without known `units`, a `Date` or
+`POSIXct` that is not numeric, a data frame whose columns differ in length) raise
 `dazcache_key_invalid`.
 
 ## 8. Storage form and hash

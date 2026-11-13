@@ -156,7 +156,7 @@ cache_evict <- function(cache, ..., tag = NULL, prefix = NULL) {
     check_string(tag, "tag")
     tag <- utf8_text(tag)
   } else {
-    check_string_or_empty(prefix, "prefix")
+    prefix <- key_prefix(prefix)
   }
   e <- cache$engine
   chunk <- ENGINE_SCAN_CHUNK
