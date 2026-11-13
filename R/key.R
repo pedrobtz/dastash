@@ -310,7 +310,9 @@ atomic_payloads <- function(x, call) {
     }
     text <- rep("!", length(x))
     ok <- !is.na(days)
-    text[ok] <- format(structure(floor(days[ok]), class = "Date"), "%Y-%m-%d")
+    whole <- floor(days[ok])
+    check_calendar_range(whole, "A `Date` in a key", "days", call)
+    text[ok] <- civil_date_text(whole)
     return(list(tag = "d", payload = text))
   }
   if (inherits(x, "POSIXct")) {
@@ -423,16 +425,68 @@ timestamp_payload <- function(secs, call) {
   }
   out <- rep("!", length(secs))
   ok <- !is.na(secs)
-  micros <- round(secs[ok] * 1e6)
-  whole <- floor(micros / 1e6)
-  frac <- micros - whole * 1e6
-  stamp <- format(
-    as.POSIXct(whole, origin = "1970-01-01", tz = "UTC"),
-    "%Y-%m-%dT%H:%M:%S",
-    tz = "UTC"
+  secs <- secs[ok]
+  check_calendar_range(secs, "A `POSIXct` in a key", "seconds", call)
+  # Whole seconds and the fraction are each exact, so rounding to the
+  # microsecond rounds the instant itself, at any magnitude.
+  whole <- floor(secs)
+  micros <- round((secs - whole) * 1e6)
+  carry <- micros == 1e6
+  whole[carry] <- whole[carry] + 1
+  micros[carry] <- 0
+  day_secs <- whole %% 86400
+  out[ok] <- paste0(
+    civil_date_text((whole - day_secs) / 86400),
+    "T",
+    sprintf(
+      "%02.0f:%02.0f:%02.0f",
+      day_secs %/% 3600,
+      day_secs %% 3600 %/% 60,
+      day_secs %% 60
+    ),
+    ".",
+    sprintf("%06.0f", micros),
+    "Z"
   )
-  out[ok] <- paste0(stamp, ".", sprintf("%06.0f", frac), "Z")
   out
+}
+
+# Days and seconds a key can carry: within 2^52 of 1970-01-01, where every
+# step of the calendar arithmetic below is exact in doubles.
+CALENDAR_MAX <- 2^52
+
+check_calendar_range <- function(x, what, unit, call) {
+  if (any(abs(x) > CALENDAR_MAX)) {
+    abort_key_invalid(
+      sprintf("%s must be within 2^52 %s of 1970-01-01.", what, unit),
+      call = call
+    )
+  }
+}
+
+# `YYYY-MM-DD` of whole days since 1970-01-01 in the proleptic Gregorian
+# calendar, with astronomical years: at least four digits, and a `-` before
+# years below 0000. Computed rather than formatted, so the text does not
+# depend on the platform's `strftime()`. The algorithm is Howard Hinnant's
+# `civil_from_days()`; every quantity is a whole double below 2^53.
+civil_date_text <- function(days) {
+  z <- days + 719468
+  era <- (z - z %% 146097) / 146097
+  doe <- z - era * 146097
+  yoe <- (doe - doe %/% 1460 + doe %/% 36524 - doe %/% 146096) %/% 365
+  doy <- doe - (365 * yoe + yoe %/% 4 - yoe %/% 100)
+  mp <- (5 * doy + 2) %/% 153
+  day <- doy - (153 * mp + 2) %/% 5 + 1
+  month <- ifelse(mp < 10, mp + 3, mp - 9)
+  year <- yoe + era * 400 + (month <= 2)
+  paste0(
+    ifelse(year < 0, "-", ""),
+    sprintf("%04.0f", abs(year)),
+    "-",
+    sprintf("%02.0f", month),
+    "-",
+    sprintf("%02.0f", day)
+  )
 }
 
 # Percent-escape the structural bytes, `%` itself, and control characters.
