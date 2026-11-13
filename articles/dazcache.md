@@ -12,7 +12,7 @@ library(dazcache)
 dir <- file.path(tempdir(), "getting-started")
 s <- cache(dir)
 s
-#> <dazcache_cache> /tmp/RtmpT2Kqw5/getting-started
+#> <dazcache_cache> /tmp/RtmpRb2Pls/getting-started
 #>   entries 0 · eviction least-recently-stored · durability safe
 ```
 
@@ -136,7 +136,7 @@ fast_mean <- cache_memoise(slow_mean, s)
 
 system.time(fast_mean(1e5))
 #>    user  system elapsed 
-#>   0.005   0.000   0.505
+#>   0.007   0.000   0.508
 system.time(fast_mean(1e5))
 #>    user  system elapsed 
 #>   0.001   0.000   0.001
@@ -201,7 +201,7 @@ cache_entries(s)[, c("key", "bytes", "inline", "expires")]
 #> 3                             numbers    133   TRUE                <NA>
 #> 4                         prices/XNYS     39   TRUE                <NA>
 #> 5                         prices/XSWX     39   TRUE                <NA>
-#> 6                       session-token      6   TRUE 2026-11-13 14:29:28
+#> 6                       session-token      6   TRUE 2026-11-13 14:34:21
 #> 7 {date=d:2026-08-29,exchange=s:XSWX}      6   TRUE                <NA>
 cache_stats(s)[, c("count", "bytes_inline", "bytes_blob", "volume")]
 #>   count bytes_inline bytes_blob  volume
