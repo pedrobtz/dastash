@@ -1,0 +1,22 @@
+source("common.R")
+big <- function(i) as.raw(rep(i, 50000))
+# real origin of a held link: process killed inside cache_pop's transaction (in cache_transact so that the window is wide)
+d <- tempfile("c"); flag <- tempfile("f")
+callr::r(function(d) { library(dazcache); s <- cache(d); cache_set(s, "live", as.raw(rep(1, 50000))); cache_close(s) }, list(d), libpath = LP)
+bg <- callr::r_bg(function(d, flag) { library(dazcache); s <- cache(d); cache_transact(s, { v <- cache_pop(s, "live"); file.create(flag); Sys.sleep(60) }) }, list(d, flag), libpath = LP)
+while (!file.exists(flag)) Sys.sleep(0.01); 
+show("tmp while pop in open txn", list.files(file.path(d, "tmp")))
+tools::pskill(bg$get_pid(), tools::SIGKILL); bg$wait()
+s <- cache(d, timeout = 1)
+show("tmp after kill", list.files(file.path(d, "tmp"))); show("live survives", identical(cache_get(s, "live"), big(1)))
+bp <- cache_path(s, "live"); show("blob mode before", as.character(file.mode(bp)))
+stale <- list.files(file.path(d, "tmp"), full.names = TRUE)
+# simulate PID reuse: this process gets the dead pid's staging name
+mine <- file.path(d, "tmp", sprintf("%d-%d", Sys.getpid(), dazcache:::dazcache_state$stage + 1L))
+if (length(stale)) file.rename(stale, mine)
+show("set big with colliding stale held link", tr({cache_set(s, "other", big(2)); "ok"}))
+show("live after", tr(identical(cache_get(s, "live"), big(1)))); show("tmp", list.files(file.path(d, "tmp")))
+# plain stale file collision with cache_pop hold
+cache_set(s, "p", big(3)); mine <- file.path(d, "tmp", sprintf("%d-%d", Sys.getpid(), dazcache:::dazcache_state$stage + 1L)); writeLines("junk", mine)
+show("pop with colliding stale", tr(identical(cache_pop(s, "p"), big(3)))); show("tmp", list.files(file.path(d, "tmp")))
+show("p still there", cache_has(s, "p"))
