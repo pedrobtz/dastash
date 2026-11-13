@@ -140,14 +140,10 @@ model_run <- function(seed, steps) {
     if (step %% 50 == 0) expect_identical(store_violations(s), character())
 
   }
-  # An aborted block that published a blob leaves it as an orphan, which is
-  # allowed (design.md §3.7, §8): nothing refers to it and a repair reclaims
-  # it. Anything else is damage.
+  # An aborted block reaps the blobs it published, so nothing is left over,
+  # not even an orphan.
   found <- cache_check(s, hash = TRUE)
-  damage <- found[found$kind != "blob_orphan", ]
-  expect_identical(nrow(damage), 0L, label = paste(seed, paste(damage$kind, damage$key, damage$detail, collapse = "; ")))
-  cache_check(s, repair = TRUE)
-  expect_identical(nrow(cache_check(s, hash = TRUE)), 0L)
+  expect_identical(nrow(found), 0L, label = paste(seed, paste(found$kind, found$key, found$detail, collapse = "; ")))
   check("after repair")
 }
 
