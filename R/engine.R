@@ -324,11 +324,35 @@ engine_write <- function(e, fn, timeout = 60, call = rlang::caller_env()) {
   })
   result <- withVisible(withCallingHandlers(
     fn(txn),
-    error = function(cnd) failed <<- TRUE,
+    # Only an error that is raised fails the transaction: one merely
+    # signalled, which `fn` carries on past, does not (#124).
+    error = function(cnd) if (engine_error_raised()) failed <<- TRUE,
     interrupt = function(cnd) failed <<- TRUE
   ))
   commit()
   if (result$visible) result$value else invisible(result$value)
+}
+
+# Inside a calling handler for an error: whether the error is being raised,
+# and so will unwind, rather than only signalled with signalCondition(). A
+# raise runs through stop(), .handleSimpleError() (an error from C code) or
+# rlang's signal_abort(), whose frames are still on the stack while the
+# handler runs.
+engine_error_raised <- function() {
+  raisers <- list(base::stop, base::.handleSimpleError)
+  signal_abort <- get0("signal_abort", envir = asNamespace("rlang"), inherits = FALSE)
+  if (is.function(signal_abort)) {
+    raisers <- c(raisers, signal_abort)
+  }
+  for (i in rev(seq_len(sys.nframe()))) {
+    f <- sys.function(i)
+    for (r in raisers) {
+      if (identical(f, r)) {
+        return(TRUE)
+      }
+    }
+  }
+  FALSE
 }
 
 engine_begin_write <- function(e, timeout, call) {

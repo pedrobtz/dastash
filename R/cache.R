@@ -422,6 +422,33 @@ stage_path <- function(s) {
     # Only a decode can stage on a read-only handle, and nothing is renamed.
     return(tempfile("dazcache-"))
   }
-  dazcache_state$stage <- dazcache_state$stage + 1L
-  file.path(s$dir, "tmp", sprintf("%d-%d", Sys.getpid(), dazcache_state$stage))
+  # `<pid>-<token>-<n>`: the token tells this process's files from those a
+  # crashed process with the same, reused, PID left behind (#127). A name
+  # that is somehow taken is skipped.
+  repeat {
+    dazcache_state$stage <- dazcache_state$stage + 1L
+    path <- file.path(
+      s$dir,
+      "tmp",
+      sprintf("%s%d", stage_prefix(), dazcache_state$stage)
+    )
+    if (!file.exists(path)) {
+      return(path)
+    }
+  }
+}
+
+# The start of this process's staging names, `<pid>-<token>-`. The token is
+# the time the process first staged, in microseconds; a forked child, with
+# its own PID, takes a new one.
+stage_prefix <- function() {
+  pid <- Sys.getpid()
+  if (!identical(dazcache_state$token_pid, pid)) {
+    dazcache_state$token_pid <- pid
+    dazcache_state$token <- format(
+      floor(unclass(Sys.time()) * 1e6),
+      scientific = FALSE
+    )
+  }
+  sprintf("%d-%s-", pid, dazcache_state$token)
 }
